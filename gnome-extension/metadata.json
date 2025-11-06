@@ -1,0 +1,16 @@
+{
+  "uuid": "simple-clipboard@tfcbm",
+  "name": "Simple Clipboard Monitor",
+  "description": "Monitors clipboard changes and sends them to a UNIX socket",
+  "shell-version": [
+    "43",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49"
+  ],
+  "version": 1,
+  "url": "https://github.com/yourusername/simple-clipboard"
+}
