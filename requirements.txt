@@ -1,0 +1,5 @@
+# TFCBM - The Fucking Clipboard Manager
+# Minimal requirements for the actual project
+
+# Testing (optional, only needed for running tests)
+pytest==8.4.2

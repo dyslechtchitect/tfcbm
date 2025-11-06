@@ -9,7 +9,7 @@ certifi==2025.7.9
 cffi==2.0.0
 charset-normalizer==3.4.3
 click==8.1.7
-cockpit @ file:///builddir/build/BUILD/cockpit-350-build/cockpit-350/tmp/wheel/cockpit-350-py3-none-any.whl#sha256=e9cb30e75d498ef4db7f9bc5812d340005d173418bb52a80db76b1124bbfcf1d
+cockpit==3.5.0
 crypt_r==3.13.1
 cryptography==45.0.4
 cupshelpers==1.0
@@ -59,7 +59,7 @@ pycups==2.0.4
 pyenchant==3.2.2
 PyGObject==3.54.5
 pyinotify==0.9.6
-pykickstart @ file:///builddir/build/BUILD/pykickstart-3.66-build/pykickstart-3.66
+pykickstart==3.66
 pyOpenSSL==25.1.0
 pyparted==3.13.0
 PySocks==1.7.1
@@ -71,7 +71,9 @@ python-pam==2.0.2
 pyudev==0.24.3
 pyxdg==0.27
 PyYAML==6.0.2
-pyynl @ file:///builddir/build/BUILD/kernel-6.17.6-build/kernel-6.17.6/linux-6.17.6-300.fc43.x86_64/tools/net/ynl
+# pyynl - Not available on PyPI (kernel networking tool)
+# Install from local wheel: ./pyynl-0.1-py3-none-any.whl
+# Or build from kernel source: tools/net/ynl
 RapidFuzz==3.12.2
 referencing==0.36.2
 regex==2025.8.29
@@ -80,8 +82,12 @@ requests-file==2.0.0
 requests-ftp==0.3.1
 rpds-py==0.27.0
 rpm==6.0.0
-selinux @ file:///builddir/build/BUILD/libselinux-3.9-build/libselinux-3.9/src
-sepolicy @ file:///builddir/build/BUILD/policycoreutils-3.9-build/selinux-3.9/python/sepolicy
+# selinux - Not available on PyPI (libselinux Python bindings)
+# Install from local wheel: ./selinux-3.9-py3-none-any.whl
+# Or install via system package manager: dnf install python3-libselinux
+# sepolicy - Not available on PyPI (SELinux policy tools)
+# Install from local wheel: ./sepolicy-3.9-py3-none-any.whl
+# Or install via system package manager: dnf install python3-policycoreutils
 setools==4.6.0
 setuptools==78.1.1
 simpleline==1.9.0
