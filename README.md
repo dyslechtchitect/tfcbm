@@ -11,6 +11,14 @@ This uses a **two-part solution** to work around GNOME Wayland's clipboard secur
 
 ## Quick Start
 
+### 0. Install Dependencies (First Time Only)
+
+```bash
+./install.sh
+```
+
+This installs system dependencies including `grim` for screenshot capture.
+
 ### 1. Install the GNOME Shell Extension
 
 ```bash
@@ -28,6 +36,7 @@ python3 tfcbm_server.py
 ### 3. Test It
 
 Copy some text and watch it appear in the terminal!
+Screenshots are captured automatically every 30 seconds.
 
 ## Manual Installation
 
@@ -47,10 +56,13 @@ gnome-extensions enable simple-clipboard@tfcbm
 ## Features
 
 - ✓ Event-driven clipboard monitoring (250ms polling inside GNOME Shell)
+- ✓ Automatic screenshot capture every 30 seconds (configurable)
 - ✓ No interference with browser context menus
 - ✓ Works on GNOME Wayland
 - ✓ Text clipboard support
-- ✓ Image support available (commented out in extension.js)
+- ✓ Image clipboard support
+- ✓ Screenshot logging to history
+- ✓ Optional screenshot saving to disk
 - ✓ Simple UNIX socket IPC
 
 ## Why This Approach?
@@ -93,13 +105,27 @@ journalctl -f -o cat /usr/bin/gnome-shell
 - Verify GNOME Shell version matches metadata.json (43-47)
 - Check file permissions in extension directory
 
+## Screenshot Feature
+
+Screenshots are automatically captured every 30 seconds and added to clipboard history.
+
+**Configure in tfcbm_server.py:**
+```python
+SCREENSHOT_INTERVAL = 30  # seconds between screenshots
+SCREENSHOT_ENABLED = True  # set to False to disable
+SCREENSHOT_SAVE_DIR = './screenshots'  # uncomment to save to disk
+```
+
+See **SCREENSHOT_FEATURE.md** for full documentation.
+
 ## Future Ideas
 
-- [ ] Save history to disk
+- [ ] Save history to disk (JSON export)
 - [ ] GUI for browsing history
-- [ ] Image clipboard support
 - [ ] Clipboard search
 - [ ] D-Bus interface instead of UNIX socket
+- [ ] History size limits
+- [ ] Screenshot area/window selection
 
 ## License
 

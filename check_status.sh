@@ -6,10 +6,34 @@ set -e
 
 EXTENSION_DIR="$HOME/.local/share/gnome-shell/extensions/simple-clipboard@tfcbm"
 SOCKET_PATH="${XDG_RUNTIME_DIR:-/tmp}/simple-clipboard.sock"
+SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=========================================="
 echo "TFCBM Status Check"
 echo "=========================================="
+echo ""
+
+# Check version
+echo "0. Version Information:"
+if [ -f "$SOURCE_DIR/gnome-extension/metadata.json" ]; then
+    SOURCE_VERSION=$(grep '"version"' "$SOURCE_DIR/gnome-extension/metadata.json" | sed 's/.*"version"[^"]*"\([^"]*\)".*/\1/')
+    echo "  Source version: $SOURCE_VERSION"
+else
+    echo "  ⚠ Source metadata.json not found"
+fi
+
+if [ -f "$EXTENSION_DIR/metadata.json" ]; then
+    INSTALLED_VERSION=$(grep '"version"' "$EXTENSION_DIR/metadata.json" | sed 's/.*"version"[^"]*"\([^"]*\)".*/\1/')
+    echo "  Installed version: $INSTALLED_VERSION"
+
+    if [ -n "$SOURCE_VERSION" ] && [ "$SOURCE_VERSION" = "$INSTALLED_VERSION" ]; then
+        echo "  ✓ Versions match - extension is up to date"
+    elif [ -n "$SOURCE_VERSION" ] && [ "$SOURCE_VERSION" != "$INSTALLED_VERSION" ]; then
+        echo "  ⚠ VERSION MISMATCH - Run ./install_extension.sh to update"
+    fi
+else
+    echo "  ✗ Installed metadata.json not found"
+fi
 echo ""
 
 # Check GNOME Shell version
