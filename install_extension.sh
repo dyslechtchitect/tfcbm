@@ -13,6 +13,7 @@ mkdir -p "$EXTENSION_DIR"
 # Copy files
 cp gnome-extension/extension.js "$EXTENSION_DIR/"
 cp gnome-extension/metadata.json "$EXTENSION_DIR/"
+cp -r gnome-extension/src "$EXTENSION_DIR/"
 
 echo "✓ Files copied to $EXTENSION_DIR"
 

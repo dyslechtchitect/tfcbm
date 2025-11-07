@@ -1,61 +1,71 @@
-# TFCBM Status - Ready After Logout/Login
+# TFCBM Status - Fixed Install Script, Need Logout/Login
 
-## What We Just Did (Latest Session)
+## What We Just Did (Latest Session - 2025-11-07)
 
-Added image clipboard monitoring support with full test coverage:
+Fixed VM installation issue where extension was failing to load:
 
-- **Previous Status**: Text monitoring was working after logout/login
-- **Issue**: Images (screenshots, copied image files) were not being detected
-- **Solution**: Implemented image clipboard support
-  - Added `getImage()` method to ClipboardPort interface
-  - Implemented GNOME image clipboard API in GnomeClipboardAdapter
-    - Checks multiple mime types: png, jpeg, jpg, gif, bmp
-    - Converts binary data to base64 for transmission
-  - Updated ClipboardMonitorService to check both text and images
-    - Text takes priority over images
-    - Handles duplicate detection for both types
-  - Added 5 new unit tests for image functionality
+- **Issue**: Extension showed `State: ERROR` in VM (worked fine on host)
+  - Error: "Unable to load file from: ClipboardMonitorService.js (No such file or directory)"
+  - Text clipboard events were not being logged
 
-- **Tests Run**: All 9 unit tests PASSED ✓
-  - Original 4 text tests still passing
-  - New image tests:
-    - Notifies when clipboard has new image
-    - Does not notify for duplicate images
-    - Notifies when image content changes
-    - Text takes priority over image
-    - Notifies when switching from text to image
+- **Root Cause**: `install_extension.sh` script was incomplete
+  - Only copied `extension.js` and `metadata.json`
+  - **Did NOT copy the `src/` directory** containing all the actual code modules
 
-## Current State
+- **Solution**:
+  1. Manually copied `src/` directory to installed extension location
+  2. Fixed `install_extension.sh` to include `src/` directory (line 16)
+  3. Created `check_status.sh` script for debugging
 
-- Text monitoring: WORKING ✓
-- Image monitoring: CODE READY, needs logout/login
-- Extension code updated with image support (source + installed)
-- **Need to log out and log back in** to clear module cache and load image support code
+- **Status**: Extension files are now in place, but **GNOME Shell needs restart**
+  - On Wayland, this requires **logging out and logging back in**
+  - GNOME Shell caches extension modules and won't reload them until restarted
 
-## After You Log Back In
+## Quick Status Check
 
-1. Check extension status:
+Run this anytime to check the system status:
+```bash
+./check_status.sh
+```
+
+Or manually check:
 ```bash
 gnome-extensions info simple-clipboard@tfcbm
 ```
-Should now show: `State: ACTIVE` (not ERROR)
 
-2. Start Python server if not running:
-```bash
-cd /home/ron/Documents/git/TFCBM
-python tfcbm_server.py
-```
+## Current State (After Fixes)
 
-3. Test both text and images:
-   - Copy some text - should see `type: "text"` in server output
-   - Take a screenshot or copy an image file - should see `type: "image"` with base64 data
+- ✅ Extension files installed correctly (including `src/` directory)
+- ✅ `install_extension.sh` fixed for future installations
+- ✅ `check_status.sh` created for easy debugging
+- ⏳ Extension still shows `ERROR` due to GNOME Shell cache
+- ⏳ **NEED TO LOG OUT AND LOG BACK IN** to restart GNOME Shell
 
-4. If still issues, check logs:
-```bash
-journalctl -b 0 --user -o cat /usr/bin/gnome-shell | grep simple-clipboard | tail -20
-```
+## After You Log Back In
 
-**Note**: Python server may need updating to properly decode/save base64 image data. Images are sent as JSON: `{mimeType: "image/png", data: "base64string..."}`
+1. **Check extension status:**
+   ```bash
+   ./check_status.sh
+   # or
+   gnome-extensions info simple-clipboard@tfcbm
+   ```
+   Should now show: `State: ACTIVE` (not ERROR)
+
+2. **Start Python server:**
+   ```bash
+   cd /home/ron-vm/Documents/tfcbm
+   python3 tfcbm_server.py
+   ```
+
+3. **Test clipboard:**
+   - Copy some text - should see `✓ Copied: <text>` in terminal
+   - Copy an image - should see `✓ Copied image` in terminal
+
+4. **If still having issues:**
+   ```bash
+   ./check_status.sh
+   # Check section 5 (Recent Extension Logs) for errors
+   ```
 
 ## Project Structure
 
