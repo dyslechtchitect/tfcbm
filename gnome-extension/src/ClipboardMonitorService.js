@@ -9,6 +9,7 @@ export class ClipboardMonitorService {
 
     async checkAndNotify() {
         const mimeTypes = await this.clipboardPort.getMimeTypes();
+        log(`[TFCBM] Mime types: ${mimeTypes.join(', ')}`);
 
         const sendEvent = async (type, data) => {
             const event = new ClipboardEvent(type, data);
@@ -19,18 +20,10 @@ export class ClipboardMonitorService {
             await this.notificationPort.send(event);
         };
 
-        if (mimeTypes.includes('text/plain') || mimeTypes.includes('UTF8_STRING')) {
-            const text = await this.clipboardPort.getText();
-            if (text) {
-                await sendEvent('text', text);
-                return;
-            }
-        }
-
+        // 1. Check for image
         const image = await this.clipboardPort.getImage();
         if (image) {
             let imageType = 'image/generic';
-
             if (mimeTypes.includes('text/uri-list')) {
                 imageType = 'image/file';
             } else if (mimeTypes.includes('text/html')) {
@@ -43,8 +36,27 @@ export class ClipboardMonitorService {
                     imageType = 'image/screenshot';
                 }
             }
-
             await sendEvent(imageType, JSON.stringify(image));
+            return;
+        }
+
+        // 2. Check for file copy (if not an image)
+        if (mimeTypes.includes('text/uri-list')) {
+            const uriList = await this.clipboardPort.getText();
+            if (uriList) {
+                const uri = uriList.split('\n')[0].trim();
+                if (uri.startsWith('file://')) {
+                    await sendEvent('file', uri);
+                    return;
+                }
+            }
+        }
+
+        // 3. Check for text
+        const text = await this.clipboardPort.getText();
+        if (text) {
+            await sendEvent('text', text);
+            return;
         }
     }
 
