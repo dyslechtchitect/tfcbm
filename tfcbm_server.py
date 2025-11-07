@@ -125,10 +125,15 @@ def start_server():
         while True:
             conn, _ = server.accept()
             try:
-                data = conn.recv(4096).decode('utf-8')
-                if data:
-                    # Parse JSON message
-                    message = json.loads(data.strip())
+                full_data = b''
+                while True:
+                    data = conn.recv(4096)
+                    if not data:
+                        break
+                    full_data += data
+                
+                if full_data:
+                    message = json.loads(full_data.decode('utf-8').strip())
 
                     if message['type'] == 'text':
                         text = message['content']
@@ -150,17 +155,17 @@ def start_server():
                                 print(f"✓ Copied: {text}")
                             print(f"  (History: {len(history)} items)\n")
 
-                    elif message['type'] == 'image':
+                    elif message['type'].startswith('image/'):
                         # Handle image data (base64 encoded)
                         image_content = json.loads(message['content'])
                         image_data = image_content['data']
 
                         history.append({
-                            'type': 'image',
+                            'type': message['type'],
                             'content': image_data,
                             'timestamp': datetime.now().isoformat(),
                         })
-                        print(f"✓ Copied image ({len(image_data)} bytes)")
+                        print(f"✓ Copied image ({message['type']}) ({len(image_data)} bytes)")
                         print(f"  (History: {len(history)} items)\n")
 
             except json.JSONDecodeError:
