@@ -3,7 +3,12 @@
 
 set -e
 
-echo "Installing system dependencies..."
+echo "=========================================="
+echo "TFCBM Project Installer"
+echo "=========================================="
+
+echo ""
+echo "--> Installing system dependencies..."
 sudo dnf install -y \
     gcc \
     cairo-devel \
@@ -11,13 +16,23 @@ sudo dnf install -y \
     gtk3-devel \
     pkg-config \
     python3-devel \
-    grim
+    grim \
+    npm
 
 echo ""
-echo "Installing Python dependencies..."
+echo "--> Installing Python dependencies..."
 pip install -r requirements.txt
 
 echo ""
-echo "✓ Installation complete!"
+echo "--> Installing GNOME Shell extension..."
+bash install_extension.sh
+
 echo ""
-echo "grim installed for screenshot capture (Wayland)"
+echo "=========================================="
+echo "✓ Installation complete!"
+echo "=========================================="
+echo ""
+echo "Next steps:"
+echo "1. Restart your GNOME Shell (log out and log in)."
+echo "2. Run the server: python3 tfcbm_server.py"
+echo ""

@@ -3,9 +3,13 @@
 
 set -e
 
-EXTENSION_DIR="$HOME/.local/share/gnome-shell/extensions/simple-clipboard@tfcbm"
-
 echo "Installing Simple Clipboard Monitor Extension..."
+
+# Install npm dependencies
+echo "--> Installing npm dependencies..."
+(cd gnome-extension && npm install)
+
+EXTENSION_DIR="$HOME/.local/share/gnome-shell/extensions/simple-clipboard@tfcbm"
 
 # Create extension directory
 mkdir -p "$EXTENSION_DIR"
@@ -14,6 +18,7 @@ mkdir -p "$EXTENSION_DIR"
 cp gnome-extension/extension.js "$EXTENSION_DIR/"
 cp gnome-extension/metadata.json "$EXTENSION_DIR/"
 cp -r gnome-extension/src "$EXTENSION_DIR/"
+cp -r gnome-extension/node_modules "$EXTENSION_DIR/"
 
 echo "✓ Files copied to $EXTENSION_DIR"
 
