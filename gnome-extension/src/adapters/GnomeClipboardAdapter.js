@@ -39,11 +39,13 @@ export class GnomeClipboardAdapter extends ClipboardPort {
     }
 
     async getMimeTypes() {
-        return new Promise((resolve) => {
-            this.clipboard.get_mimetypes((mimeTypes) => {
-                resolve(mimeTypes || []);
-            });
-        });
+        try {
+            const mimeTypes = this.clipboard.get_mimetypes();
+            return Promise.resolve(mimeTypes || []);
+        } catch (e) {
+            log(`[TFCBM] Error calling get_mimetypes synchronously: ${e}`);
+            return Promise.resolve([]);
+        }
     }
 
     async _getContentForMimeType(mimeType) {
