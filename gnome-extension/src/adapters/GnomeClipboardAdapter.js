@@ -38,6 +38,14 @@ export class GnomeClipboardAdapter extends ClipboardPort {
         return null;
     }
 
+    async getMimeTypes() {
+        return new Promise((resolve) => {
+            this.clipboard.get_mimetypes(St.ClipboardType.CLIPBOARD, (clipboard, mimeTypes) => {
+                resolve(mimeTypes || []);
+            });
+        });
+    }
+
     async _getContentForMimeType(mimeType) {
         return new Promise((resolve) => {
             this.clipboard.get_content(St.ClipboardType.CLIPBOARD, mimeType, (_, bytes) => {

@@ -6,4 +6,8 @@ export class ClipboardPort {
     async getImage() {
         throw new Error('Not implemented');
     }
+
+    async getMimeTypes() {
+        throw new Error('Not implemented');
+    }
 }

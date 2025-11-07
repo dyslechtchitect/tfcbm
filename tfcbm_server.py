@@ -17,7 +17,7 @@ history = []
 
 # Screenshot configuration
 SCREENSHOT_INTERVAL = 30  # seconds between screenshots
-SCREENSHOT_ENABLED = True  # Set to False to disable automatic screenshots
+SCREENSHOT_ENABLED = False  # Set to False to disable automatic screenshots
 SCREENSHOT_SAVE_DIR = None  # Set to a directory path to save screenshots to disk (e.g., './screenshots')
 
 def capture_screenshot():
@@ -152,7 +152,8 @@ def start_server():
 
                     elif message['type'] == 'image':
                         # Handle image data (base64 encoded)
-                        image_data = message['content']
+                        image_content = json.loads(message['content'])
+                        image_data = image_content['data']
 
                         history.append({
                             'type': 'image',

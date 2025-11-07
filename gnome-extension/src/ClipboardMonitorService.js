@@ -8,33 +8,43 @@ export class ClipboardMonitorService {
     }
 
     async checkAndNotify() {
-        // Check for text first (priority)
-        const text = await this.clipboardPort.getText();
+        const mimeTypes = await this.clipboardPort.getMimeTypes();
 
-        if (text) {
-            const event = new ClipboardEvent('text', text);
-
+        const sendEvent = async (type, data) => {
+            const event = new ClipboardEvent(type, data);
             if (this.isDuplicate(event)) {
                 return;
             }
-
             this.lastEvent = event;
             await this.notificationPort.send(event);
-            return;
+        };
+
+        if (mimeTypes.includes('text/plain') || mimeTypes.includes('UTF8_STRING')) {
+            const text = await this.clipboardPort.getText();
+            if (text) {
+                await sendEvent('text', text);
+                return;
+            }
         }
 
-        // If no text, check for images
         const image = await this.clipboardPort.getImage();
-
         if (image) {
-            const event = new ClipboardEvent('image', JSON.stringify(image));
+            let imageType = 'image/generic';
 
-            if (this.isDuplicate(event)) {
-                return;
+            if (mimeTypes.includes('text/uri-list')) {
+                imageType = 'image/file';
+            } else if (mimeTypes.includes('text/html')) {
+                imageType = 'image/web';
+            } else if (mimeTypes.includes('image/png') || mimeTypes.includes('image/jpeg')) {
+                const hasOtherRelevantMimeTypes = mimeTypes.some(m =>
+                    m.startsWith('text/') || m.includes('uri-list') || m.includes('html')
+                );
+                if (!hasOtherRelevantMimeTypes) {
+                    imageType = 'image/screenshot';
+                }
             }
 
-            this.lastEvent = event;
-            await this.notificationPort.send(event);
+            await sendEvent(imageType, JSON.stringify(image));
         }
     }
 
