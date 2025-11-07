@@ -10,6 +10,8 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     enable() {
+        log('[TFCBM] Enabling extension...');
+
         const clipboardAdapter = new GnomeClipboardAdapter();
         const notifier = new UnixSocketNotifier();
         const service = new ClipboardMonitorService(clipboardAdapter, notifier);

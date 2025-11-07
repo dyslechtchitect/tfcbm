@@ -8,6 +8,7 @@ export class ClipboardMonitorService {
     }
 
     async checkAndNotify() {
+        log('[TFCBM] checkAndNotify called');
         const mimeTypes = await this.clipboardPort.getMimeTypes();
         log(`[TFCBM] Mime types: ${mimeTypes.join(', ')}`);
 
