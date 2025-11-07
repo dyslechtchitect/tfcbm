@@ -40,10 +40,10 @@ export class GnomeClipboardAdapter extends ClipboardPort {
 
     async getMimeTypes() {
         try {
-            const mimeTypes = this.clipboard.get_mimetypes();
+            const mimeTypes = this.clipboard.get_mimetypes(St.ClipboardType.CLIPBOARD);
             return Promise.resolve(mimeTypes || []);
         } catch (e) {
-            log(`[TFCBM] Error calling get_mimetypes synchronously: ${e}`);
+            log(`[TFCBM] Error calling get_mimetypes with clipboard type: ${e}`);
             return Promise.resolve([]);
         }
     }
