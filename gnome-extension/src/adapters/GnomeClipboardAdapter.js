@@ -18,7 +18,7 @@ export class GnomeClipboardAdapter extends ClipboardPort {
 
     async getImage() {
         // Try common image mime types
-        const mimeTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/bmp'];
+        const mimeTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/bmp', 'image/webp', 'image/avif'];
 
         for (const mimeType of mimeTypes) {
             try {
