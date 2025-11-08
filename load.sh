@@ -38,12 +38,13 @@ echo "Installing Python dependencies..."
 # --- 5. Start the Python Server ---
 echo ""
 echo "--> Starting the Python server in the background..."
+LOG_FILE="tfcbm_server.log"
 
 if pgrep -f "python3 tfcbm_server.py" > /dev/null; then
     echo "Server is already running."
 else
-    .venv/bin/python3 tfcbm_server.py &
-    echo "Server started with PID $!"
+    nohup .venv/bin/python3 tfcbm_server.py > "$LOG_FILE" 2>&1 &
+    echo "Server started with PID $! and logging to $LOG_FILE"
 fi
 
 # --- 6. Final Instructions ---
@@ -56,6 +57,7 @@ echo "Next steps:"
 echo "1. Make sure the GNOME Shell extension is enabled."
 echo "   You might need to restart your GNOME Shell (log out and log in)."
 echo "2. The Python server is running in the background."
-echo "   You can check its status with: pgrep -f tfcbm_server.py"
+echo "   To see the logs, run: tail -f tfcbm_server.log"
+echo "   To check its status, run: pgrep -f tfcbm_server.py"
 echo "   To stop it, use: pkill -f tfcbm_server.py"
 echo ""

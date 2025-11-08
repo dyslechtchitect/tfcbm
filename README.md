@@ -6,104 +6,59 @@ A clipboard history manager for GNOME Wayland that actually works.
 
 This uses a **two-part solution** to work around GNOME Wayland's clipboard security:
 
-1. **GNOME Shell Extension** (GJS) - Runs inside GNOME Shell with clipboard access, monitors changes every 250ms
-2. **Python Server** - Receives clipboard data via UNIX socket and maintains history
+1.  **GNOME Shell Extension** (GJS) - Runs inside GNOME Shell with clipboard access, monitors changes, and sends them to the Python server.
+2.  **Python Server** - Receives clipboard data via a UNIX socket, processes it, and logs it.
 
 ## Quick Start
 
-### 0. Install Dependencies (First Time Only)
+The `load.sh` script automates the entire setup process.
 
-```bash
-./install.sh
-```
+1.  **Clone the repository (if you haven't already):**
+    ```bash
+    git clone <repository_url>
+    cd TFCBM
+    ```
 
-This installs system dependencies including `grim` for screenshot capture.
+2.  **Run the loader script:**
+    ```bash
+    ./load.sh
+    ```
+    This will install all dependencies (system, Python, npm), set up the environment, and start the server in the background.
 
-### 1. Install the GNOME Shell Extension
+3.  **Restart GNOME Shell:**
+    To activate the extension, you need to restart your GNOME Shell. On Wayland, the easiest way is to **log out and log back in**.
 
-```bash
-./install_extension.sh
-```
+4.  **Done!**
+    The server is now running in the background. To see the real-time log of clipboard events, run:
+    ```bash
+    tail -f tfcbm_server.log
+    ```
 
-Then restart GNOME Shell (log out and back in on Wayland).
+## Available Scripts
 
-### 2. Start the Python Server
-
-```bash
-python3 tfcbm_server.py
-```
-
-### 3. Test It
-
-Copy some text and watch it appear in the terminal!
-Screenshots are captured automatically every 30 seconds.
-
-## Manual Installation
-
-If the install script doesn't work:
-
-```bash
-# Install extension
-mkdir -p ~/.local/share/gnome-shell/extensions/simple-clipboard@tfcbm
-cp gnome-extension/* ~/.local/share/gnome-shell/extensions/simple-clipboard@tfcbm/
-
-# Enable it
-gnome-extensions enable simple-clipboard@tfcbm
-
-# Restart GNOME Shell (Wayland: log out/in)
-```
+-   `load.sh`: The all-in-one script. Installs all dependencies, installs the GNOME extension, and starts the server in the background.
+-   `install.sh`: Installs all dependencies and the GNOME extension. Does not start the server.
+-   `install_extension.sh`: Installs only the GNOME extension and its npm dependencies.
 
 ## Features
 
-- ✓ Event-driven clipboard monitoring (250ms polling inside GNOME Shell)
-- ✓ Automatic screenshot capture every 30 seconds (configurable)
-- ✓ No interference with browser context menus
-- ✓ Works on GNOME Wayland
-- ✓ Text clipboard support
-- ✓ Image clipboard support
-- ✓ Screenshot logging to history
-- ✓ Optional screenshot saving to disk
-- ✓ Simple UNIX socket IPC
-
-## Why This Approach?
-
-GNOME Wayland has strict clipboard security - background apps can't access the clipboard. We tried:
-
-- ❌ PyGObject/GTK3 - Returns `None` for background apps
-- ❌ `wl-paste --watch` - Requires wlroots protocol (GNOME doesn't support it)
-- ❌ Polling with `wl-paste` - Interferes with Chrome/Firefox right-click menus
-
-**Solution**: Run monitoring code inside GNOME Shell itself, where clipboard access is allowed!
-
-## Files
-
-- `gnome-extension/` - GNOME Shell extension source
-  - `extension.js` - Main extension code (~90 lines)
-  - `metadata.json` - Extension metadata
-  - `README.md` - Extension docs
-- `tfcbm_server.py` - Python server that receives clipboard events
-- `install_extension.sh` - One-command installation
-- `tfcbm.py` - Old polling-based version (deprecated)
+- ✓ Event-driven clipboard monitoring.
+- ✓ Differentiates content sources (file, web, screenshot).
+- ✓ Text and image clipboard support.
+- ✓ Automatic screenshot capture (configurable).
+- ✓ Works on GNOME Wayland.
+- ✓ Simple UNIX socket IPC.
 
 ## Troubleshooting
 
-**Extension not loading?**
-```bash
-# Check if it's enabled
-gnome-extensions list --enabled | grep simple-clipboard
+-   **Extension not loading?**
+    Check if it's enabled with `gnome-extensions list --enabled | grep simple-clipboard`.
+    View detailed logs with `journalctl -f /usr/bin/gnome-shell`.
 
-# View errors
-journalctl -f -o cat /usr/bin/gnome-shell
-```
-
-**Server not receiving data?**
-- Make sure extension is installed and GNOME Shell is restarted
-- Check socket exists: `ls $XDG_RUNTIME_DIR/simple-clipboard.sock`
-- Extension silently fails if socket doesn't exist (start server first)
-
-**Still having issues?**
-- Verify GNOME Shell version matches metadata.json (43-47)
-- Check file permissions in extension directory
+-   **Server not running?**
+    Check if the server is running with `pgrep -f tfcbm_server.py`.
+    If not, you can start it with `./load.sh` or manually with `python3 tfcbm_server.py`.
+    Check the server logs with `tail -f tfcbm_server.log`.
 
 ## Screenshot Feature
 
@@ -112,8 +67,8 @@ Screenshots are automatically captured every 30 seconds and added to clipboard h
 **Configure in tfcbm_server.py:**
 ```python
 SCREENSHOT_INTERVAL = 30  # seconds between screenshots
-SCREENSHOT_ENABLED = True  # set to False to disable
-SCREENSHOT_SAVE_DIR = './screenshots'  # uncomment to save to disk
+SCREENSHOT_ENABLED = False  # Set to True to enable
+SCREENSHOT_SAVE_DIR = None  # Set to a directory path to save screenshots
 ```
 
 See **SCREENSHOT_FEATURE.md** for full documentation.
