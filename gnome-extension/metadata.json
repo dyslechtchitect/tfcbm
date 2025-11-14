@@ -12,5 +12,12 @@
     "49"
   ],
   "version": "1.0",
-  "url": "https://github.com/yourusername/simple-clipboard"
+  "url": "https://github.com/yourusername/simple-clipboard",
+  "keybindings": {
+    "toggle-tfcbm-ui": {
+      "name": "Toggle TFCBM UI",
+      "description": "Brings the TFCBM UI to the foreground",
+      "default": "<Super><Shift>C"
+    }
+  }
 }

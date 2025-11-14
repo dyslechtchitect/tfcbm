@@ -1,87 +1,61 @@
-# TFCBM - The F*cking Clipboard Manager
+C# TFCBM - The F*cking Clipboard Manager
 
-A clipboard history manager for GNOME Wayland that actually works.
+This document provides a high-level overview of the TFCBM architecture, detailing the frameworks and technologies used for each component.
 
-## How It Works
+## High-Level Architecture
 
-This uses a **two-part solution** to work around GNOME Wayland's clipboard security:
+The application is composed of three main components:
 
-1.  **GNOME Shell Extension** (GJS) - Runs inside GNOME Shell with clipboard access, monitors changes, and sends them to the Python server.
-2.  **Python Server** - Receives clipboard data via a UNIX socket, processes it, and logs it.
+1.  **UI (User Interface):** A desktop application that displays the clipboard history and allows the user to interact with it.
+2.  **Backend Server & Agent:** A background process that listens for clipboard changes, processes the data, and communicates with the UI.
+3.  **Database:** A local database that stores the clipboard history.
 
-## Quick Start
+These components work together to provide a seamless clipboard management experience. The agent detects clipboard changes, the backend server processes and stores them in the database, and the UI displays the history to the user in real-time.
 
-The `load.sh` script automates the entire setup process.
+### UI (User Interface)
 
-1.  **Clone the repository (if you haven't already):**
-    ```bash
-    git clone <repository_url>
-    cd TFCBM
-    ```
+The user interface is a standalone desktop application.
 
-2.  **Run the loader script:**
-    ```bash
-    ./load.sh
-    ```
-    This will install all dependencies (system, Python, npm), set up the environment, and start the server in the background.
+*   **Framework:** [GTK4](https://www.gtk.org/) with [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/) for modern GNOME styling.
+*   **Language:** Python
+*   **Communication:** The UI communicates with the backend server via a WebSocket connection. It receives real-time updates (e.g., new clipboard items) and sends requests (e.g., to delete an item).
+*   **Key Library:** `websockets` for WebSocket communication.
 
-3.  **Restart GNOME Shell:**
-    To activate the extension, you need to restart your GNOME Shell. On Wayland, the easiest way is to **log out and log back in**.
+### Backend Server & Agent
 
-4.  **Done!**
-    The server is now running in the background. To see the real-time log of clipboard events, run:
-    ```bash
-    tail -f tfcbm_server.log
-    ```
+The backend is a combination of a Python server and a GNOME Shell extension that acts as the clipboard monitoring agent.
 
-## Available Scripts
+*   **Python Server:**
+    *   **Framework:** A custom server built using Python's standard libraries.
+    *   **Language:** Python
+    *   **Functionality:**
+        *   Provides a WebSocket server for the UI to connect to.
+        *   Receives notifications about new clipboard items from the GNOME extension.
+        *   Processes clipboard data (e.g., creating thumbnails for images).
+        *   Interacts with the database to store and retrieve clipboard items.
+    *   **Key Library:** `websockets` for the WebSocket server.
 
--   `load.sh`: The all-in-one script. Installs all dependencies, installs the GNOME extension, and starts the server in the background.
--   `install.sh`: Installs all dependencies and the GNOME extension. Does not start the server.
--   `install_extension.sh`: Installs only the GNOME extension and its npm dependencies.
+*   **GNOME Shell Extension (Agent):**
+    *   **Framework:** GNOME Shell Extension framework.
+    *   **Language:** JavaScript (GJS)
+    *   **Functionality:**
+        *   Monitors the system's clipboard for changes at the OS level.
+        *   When a change is detected, it notifies the Python backend server.
+    *   **Location:** The code for the extension is in the `gnome-extension/` directory.
 
-## Features
+### Database
 
-- ✓ Event-driven clipboard monitoring.
-- ✓ Differentiates content sources (file, web, screenshot).
-- ✓ Text and image clipboard support.
-- ✓ Automatic screenshot capture (configurable).
-- ✓ Works on GNOME Wayland.
-- ✓ Simple UNIX socket IPC.
+The database stores all clipboard history.
 
-## Troubleshooting
+*   **Technology:** [SQLite](https://www.sqlite.org/index.html)
+*   **Language:** Python is used to interact with the database.
+*   **Functionality:**
+    *   Stores clipboard items, including text, images, and metadata like timestamps.
+    *   Provides methods for adding, retrieving, and deleting items.
+*   **Location:** The database file is stored by default in the user's home directory at `~/.local/share/tfcbm/clipboard.db`, following standard Linux conventions.
 
--   **Extension not loading?**
-    Check if it's enabled with `gnome-extensions list --enabled | grep simple-clipboard`.
-    View detailed logs with `journalctl -f /usr/bin/gnome-shell`.
+## Technologies Used
 
--   **Server not running?**
-    Check if the server is running with `pgrep -f tfcbm_server.py`.
-    If not, you can start it with `./load.sh` or manually with `python3 tfcbm_server.py`.
-    Check the server logs with `tail -f tfcbm_server.log`.
-
-## Screenshot Feature
-
-Screenshots are automatically captured every 30 seconds and added to clipboard history.
-
-**Configure in tfcbm_server.py:**
-```python
-SCREENSHOT_INTERVAL = 30  # seconds between screenshots
-SCREENSHOT_ENABLED = False  # Set to True to enable
-SCREENSHOT_SAVE_DIR = None  # Set to a directory path to save screenshots
-```
-
-See **SCREENSHOT_FEATURE.md** for full documentation.
-
-## Future Ideas
-
-- [ ] Save history to disk (JSON export)
-- [ ] GUI for browsing history
-- [ ] Clipboard search
-- [ ] D-Bus interface instead of UNIX socket
-- [ ] History size limits
-- [ ] Screenshot area/window selection
-
-## License
-
-Do whatever you want with it.
+*   **UI:** Python, GTK4, libadwaita
+*   **Backend:** Python, WebSockets, GNOME Shell Extensions (JavaScript)
+*   **Database:** SQLite
