@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=TFCBM
+GenericName=Clipboard Manager
+Comment=The F*cking Clipboard Manager
+Exec=/home/ron/Documents/git/TFCBM/.venv/bin/python3 /home/ron/Documents/git/TFCBM/ui/main.py
+Icon=/home/ron/Documents/git/TFCBM/resouces/tfcbm-256.png
+Terminal=false
+Categories=Utility;
+StartupNotify=true

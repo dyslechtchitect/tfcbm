@@ -1,4 +1,6 @@
 import { ClipboardEvent } from './domain/ClipboardEvent.js';
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 
 export class ClipboardMonitorService {
     constructor(clipboardPort, notificationPort) {
@@ -47,6 +49,20 @@ export class ClipboardMonitorService {
             if (uriList) {
                 const uri = uriList.split('\n')[0].trim();
                 if (uri.startsWith('file://')) {
+                    // Check if it's an image file
+                    const imagePath = uri.substring(7); // Remove 'file://'
+                    const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.avif'];
+                    const isImage = imageExtensions.some(ext => imagePath.toLowerCase().endsWith(ext));
+
+                    if (isImage) {
+                        // Read image file and send as image event
+                        const imageData = await this._readImageFile(imagePath);
+                        if (imageData) {
+                            await sendEvent(imageData.mimeType, JSON.stringify(imageData));
+                            return;
+                        }
+                    }
+
                     await sendEvent('file', uri);
                     return;
                 }
@@ -63,5 +79,45 @@ export class ClipboardMonitorService {
 
     isDuplicate(event) {
         return this.lastEvent && this.lastEvent.equals(event);
+    }
+
+    async _readImageFile(filePath) {
+        try {
+            log(`[TFCBM] Reading image file: ${filePath}`);
+            const file = Gio.File.new_for_path(filePath);
+
+            // Read file contents
+            const [success, contents] = file.load_contents(null);
+            if (!success || !contents) {
+                log(`[TFCBM] Failed to read file: ${filePath}`);
+                return null;
+            }
+
+            // Convert to base64
+            const base64 = GLib.base64_encode(contents);
+
+            // Determine mime type from file extension
+            const extension = filePath.toLowerCase().split('.').pop();
+            const mimeTypeMap = {
+                'png': 'image/png',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'gif': 'image/gif',
+                'bmp': 'image/bmp',
+                'webp': 'image/webp',
+                'avif': 'image/avif'
+            };
+            const mimeType = mimeTypeMap[extension] || 'image/png';
+
+            log(`[TFCBM] Successfully read image file: ${filePath}, size: ${contents.length} bytes, mime: ${mimeType}`);
+
+            return {
+                mimeType: mimeType,
+                data: base64
+            };
+        } catch (e) {
+            log(`[TFCBM] Error reading image file: ${e}`);
+            return null;
+        }
     }
 }
