@@ -6,6 +6,22 @@ echo "=========================================="
 echo "TFCBM Project Loader"
 echo "=========================================="
 
+# --- 0. Kill any other instances of this script ---
+CURRENT_PID=$$
+OTHER_PIDS=$(pgrep -f "bash.*load.sh" | grep -v "^${CURRENT_PID}$" || true)
+if [ -n "$OTHER_PIDS" ]; then
+    echo "Found other instances of load.sh running. Killing them..."
+    echo "$OTHER_PIDS" | xargs kill -9 2>/dev/null || true
+    sleep 1
+fi
+
+# Also kill any running server instances
+if pgrep -f "python3 tfcbm_server.py" > /dev/null; then
+    echo "Killing existing server instance..."
+    pkill -f "python3 tfcbm_server.py"
+    sleep 1
+fi
+
 # --- 1. Check for Dependencies ---
 if ! command -v npm &> /dev/null || ! command -v pip &> /dev/null; then
     echo "WARNING: npm or pip is not installed."
@@ -37,27 +53,15 @@ echo "Installing Python dependencies..."
 
 # --- 5. Start the Python Server ---
 echo ""
-echo "--> Starting the Python server in the background..."
-LOG_FILE="tfcbm_server.log"
-
-if pgrep -f "python3 tfcbm_server.py" > /dev/null; then
-    echo "Server is already running."
-else
-    nohup .venv/bin/python3 tfcbm_server.py > "$LOG_FILE" 2>&1 &
-    echo "Server started with PID $! and logging to $LOG_FILE"
-fi
-
-# --- 6. Final Instructions ---
-echo ""
 echo "=========================================="
 echo "Setup Complete!"
 echo "=========================================="
 echo ""
-echo "Next steps:"
-echo "1. Make sure the GNOME Shell extension is enabled."
-echo "   You might need to restart your GNOME Shell (log out and log in)."
-echo "2. The Python server is running in the background."
-echo "   To see the logs, run: tail -f tfcbm_server.log"
-echo "   To check its status, run: pgrep -f tfcbm_server.py"
-echo "   To stop it, use: pkill -f tfcbm_server.py"
+echo "Starting the Python server..."
+echo "Press Ctrl+C to stop the server"
 echo ""
+echo "=========================================="
+echo ""
+
+# Start the server in the foreground
+.venv/bin/python3 tfcbm_server.py
