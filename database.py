@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
+import logging
 
 
 class ClipboardDB:
@@ -25,6 +26,7 @@ class ClipboardDB:
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_db()
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     def _init_db(self):
         """Initialize database schema"""
@@ -44,6 +46,7 @@ class ClipboardDB:
             ON clipboard_items(timestamp DESC)
         ''')
         self.conn.commit()
+        logging.info(f"Database initialized or already exists at: {self.db_path}")
 
     def add_item(self, item_type: str, data: bytes, timestamp: str = None, thumbnail: bytes = None) -> int:
         """
@@ -67,8 +70,9 @@ class ClipboardDB:
             VALUES (?, ?, ?, ?)
         ''', (timestamp, item_type, data, thumbnail))
         self.conn.commit()
-        return cursor.lastrowid
-
+        item_id = cursor.lastrowid
+        logging.info(f"Added item to DB: ID={item_id}, Type={item_type}, Timestamp={timestamp}")
+        return item_id
     def get_items(self, limit: int = 100, offset: int = 0) -> List[Dict]:
         """
         Get clipboard items (newest first)

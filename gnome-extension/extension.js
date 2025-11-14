@@ -1,5 +1,5 @@
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
-import { Main } from 'resource:///org/gnome/shell/ui/main.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { ClipboardMonitorService } from './src/ClipboardMonitorService.js';
 import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { UnixSocketNotifier } from './src/adapters/UnixSocketNotifier.js';

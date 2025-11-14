@@ -12,6 +12,7 @@ import subprocess
 import base64
 import asyncio
 import websockets
+import logging
 from datetime import datetime
 from pathlib import Path
 from io import BytesIO
@@ -19,9 +20,12 @@ from PIL import Image
 from database import ClipboardDB
 from concurrent.futures import ThreadPoolExecutor
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 # Initialize database
 db = ClipboardDB()
-print(f"Database initialized at: {db.db_path}")
+logging.info(f"Database initialized at: {db.db_path}")
 
 history = []  # Keep in-memory for legacy compatibility
 
@@ -64,11 +68,11 @@ def generate_thumbnail(image_data: bytes, max_size: int = 250) -> bytes:
         image.save(thumbnail_io, format='PNG', optimize=True)
         thumbnail_bytes = thumbnail_io.getvalue()
 
-        print(f"  Generated thumbnail: {image.size} -> {len(thumbnail_bytes)} bytes")
+        logging.info(f"Generated thumbnail: {image.size} -> {len(thumbnail_bytes)} bytes")
         return thumbnail_bytes
 
     except Exception as e:
-        print(f"  Error generating thumbnail: {e}")
+        logging.error(f"Error generating thumbnail: {e}")
         return None
 
 
@@ -86,9 +90,9 @@ def process_thumbnail_async(item_id: int, image_data: bytes):
             if thumbnail:
                 with db_lock:
                     db.update_thumbnail(item_id, thumbnail)
-                print(f"  ✓ Thumbnail saved for item {item_id}")
+                logging.info(f"✓ Thumbnail saved for item {item_id}")
         except Exception as e:
-            print(f"  Error in thumbnail worker: {e}")
+            logging.error(f"Error in thumbnail worker: {e}")
 
     # Submit to thread pool
     thumbnail_executor.submit(worker)
@@ -121,24 +125,24 @@ def capture_screenshot():
 
             return image_data
         else:
-            print(f"⚠ Screenshot capture failed: {result.stderr.decode() if result.stderr else 'Unknown error'}")
+            logging.warning(f"Screenshot capture failed: {result.stderr.decode() if result.stderr else 'Unknown error'}")
             return None
 
     except subprocess.TimeoutExpired:
-        print("⚠ Screenshot capture timed out")
+        logging.warning("Screenshot capture timed out")
         return None
     except Exception as e:
-        print(f"⚠ Screenshot error: {e}")
+        logging.error(f"Screenshot error: {e}")
         return None
 
 def screenshot_worker():
     """Background thread that captures screenshots at regular intervals"""
-    print(f"📸 Screenshot capture started (interval: {SCREENSHOT_INTERVAL}s)")
+    logging.info(f"📸 Screenshot capture started (interval: {SCREENSHOT_INTERVAL}s)")
 
     # Create screenshot save directory if specified
     if SCREENSHOT_SAVE_DIR:
         Path(SCREENSHOT_SAVE_DIR).mkdir(parents=True, exist_ok=True)
-        print(f"📁 Saving screenshots to: {SCREENSHOT_SAVE_DIR}")
+        logging.info(f"📁 Saving screenshots to: {SCREENSHOT_SAVE_DIR}")
 
     while SCREENSHOT_ENABLED:
         try:
@@ -175,14 +179,14 @@ def screenshot_worker():
                     with open(filepath, 'wb') as f:
                         f.write(base64.b64decode(image_data))
 
-                    print(f"📸 Screenshot captured and saved: {filename}")
+                    logging.info(f"📸 Screenshot captured and saved: {filename}")
                 else:
-                    print(f"📸 Screenshot captured ({len(image_data)} bytes)")
+                    logging.info(f"📸 Screenshot captured ({len(image_data)} bytes)")
 
-                print(f"  (History: {len(history)} items)\n")
+                logging.info(f"  (History: {len(history)} items)\n")
 
         except Exception as e:
-            print(f"⚠ Screenshot worker error: {e}")
+            logging.error(f"⚠ Screenshot worker error: {e}")
 
 def prepare_item_for_ui(item: dict) -> dict:
     """Convert database item to UI-renderable format"""
@@ -234,7 +238,7 @@ async def websocket_handler(websocket):
     """Handle WebSocket client connections from UI"""
     global ws_clients, last_known_id
 
-    print(f"WebSocket client connected from {websocket.remote_address}")
+    logging.info(f"WebSocket client connected from {websocket.remote_address}")
     ws_clients.add(websocket)
 
     try:
@@ -286,19 +290,19 @@ async def websocket_handler(websocket):
                         })
 
             except Exception as e:
-                print(f"Error handling WebSocket message: {e}")
+                logging.error(f"Error handling WebSocket message: {e}")
                 import traceback
                 traceback.print_exc()
 
     except websockets.exceptions.ConnectionClosed:
         pass
     except Exception as e:
-        print(f"WebSocket handler error: {e}")
+        logging.error(f"WebSocket handler error: {e}")
         import traceback
         traceback.print_exc()
     finally:
         ws_clients.remove(websocket)
-        print(f"WebSocket client disconnected")
+        logging.info(f"WebSocket client disconnected")
 
 
 async def broadcast_ws(message: dict):
@@ -315,7 +319,7 @@ def watch_for_new_items(loop):
     """Background thread to watch for new database items and broadcast to WebSocket clients"""
     global last_known_id
 
-    print("Starting database watcher for WebSocket broadcasts...")
+    logging.info("Starting database watcher for WebSocket broadcasts...")
 
     while True:
         try:
@@ -345,14 +349,14 @@ def watch_for_new_items(loop):
                 last_known_id = latest_id
 
         except Exception as e:
-            print(f"Error in database watcher: {e}")
+            logging.error(f"Error in database watcher: {e}")
 
         time.sleep(0.5)
 
 
 async def start_websocket_server():
     """Start WebSocket server for UI"""
-    print("Starting WebSocket server on ws://localhost:8765")
+    logging.info("Starting WebSocket server on ws://localhost:8765")
     async with websockets.serve(websocket_handler, 'localhost', 8765):
         await asyncio.Future()  # Run forever
 
@@ -372,8 +376,8 @@ def start_server():
     server.bind(socket_path)
     server.listen(5)
 
-    print(f"Listening on {socket_path}")
-    print("Waiting for clipboard events from GNOME Shell extension...\n")
+    logging.info(f"Listening on {socket_path}")
+    logging.info("Waiting for clipboard events from GNOME Shell extension...\n")
 
     # Start screenshot capture thread
     if SCREENSHOT_ENABLED:
@@ -394,7 +398,7 @@ def start_server():
 
     websocket_thread = threading.Thread(target=run_websocket_server, daemon=True)
     websocket_thread.start()
-    print("WebSocket server started\n")
+    logging.info("WebSocket server started\n")
 
     try:
         while True:
@@ -444,10 +448,10 @@ def start_server():
 
                             # Print what was copied
                             if len(text) > 100:
-                                print(f"✓ Copied: {text[:100]}...")
+                                logging.info(f"✓ Copied: {text[:100]}...")
                             else:
-                                print(f"✓ Copied: {text}")
-                            print(f"  (History: {len(history)} items)\n")
+                                logging.info(f"✓ Copied: {text}")
+                            logging.info(f"  (History: {len(history)} items)\n")
 
                     elif message['type'].startswith('image/'):
                         # Handle image data (base64 encoded)
@@ -469,20 +473,25 @@ def start_server():
                         # Generate thumbnail asynchronously
                         process_thumbnail_async(item_id, image_bytes)
 
-                        print(f"✓ Copied image ({message['type']}) ({len(image_data)} bytes)")
-                        print(f"  (History: {len(history)} items)\n")
+                        logging.info(f"✓ Copied image ({message['type']}) ({len(image_data)} bytes)")
+                        logging.info(f"  (History: {len(history)} items)\n")
 
             except json.JSONDecodeError:
-                pass
+                logging.warning("Received malformed JSON message on UNIX socket.")
+            except Exception as e:
+                logging.error(f"Error handling client connection: {e}")
             finally:
                 conn.close()
 
     except KeyboardInterrupt:
-        print("\nStopping server...")
-        print(f"Total items saved: {len(history)}")
+        logging.info("\nStopping server...")
+        logging.info(f"Total items saved: {len(history)}")
     finally:
         server.close()
-        os.unlink(socket_path)
+        try:
+            os.unlink(socket_path)
+        except OSError as e:
+            logging.error(f"Error unlinking socket: {e}")
 
 if __name__ == '__main__':
     start_server()
