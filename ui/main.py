@@ -574,7 +574,7 @@ class ClipboardApp(Adw.Application):
 
         # Set default window icon list for the application
         try:
-            icon_path = Path(__file__).parent.parent / 'resouces' / 'tfcbm-256.png'
+            icon_path = Path(__file__).parent.parent / 'resouces' / 'icon.svg'
             if icon_path.exists():
                 # Load icon as pixbuf and set as default
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(icon_path))
