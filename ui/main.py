@@ -18,11 +18,12 @@ from datetime import datetime
 from pathlib import Path
 
 import gi
-import websockets
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
+
+import websockets
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 
 class ClipboardItemRow(Gtk.ListBoxRow):
@@ -477,7 +478,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add small logo to header (left side)
         try:
-            icon_path = Path(__file__).parent.parent / "resouces" / "tfcbm-256.png"
+            icon_path = Path(__file__).parent.parent / "resouces" / "icon-256.png"
             if icon_path.exists():
                 # Create image from PNG
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 24, 24, True)
@@ -685,10 +686,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 break
             self.pasted_listbox.remove(row)
 
-        # Add items (already in reverse order from backend)
+        # Add items (database returns DESC order, append to maintain it)
         for item in history:
             row = ClipboardItemRow(item, self, show_pasted_time=True)
-            self.pasted_listbox.prepend(row)  # Add to top
+            self.pasted_listbox.append(row)  # Append to maintain DESC order
 
         return False  # Don't repeat
 
