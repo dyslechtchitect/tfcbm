@@ -257,16 +257,18 @@ async def websocket_handler(websocket):
                 action = data.get("action")
 
                 if action == "get_history":
-                    limit = data.get("limit", 100)
+                    limit = data.get("limit", 20)
+                    offset = data.get("offset", 0)
 
                     # Use lock for thread-safe database access
                     with db_lock:
-                        items = db.get_items(limit=limit)
+                        items = db.get_items(limit=limit, offset=offset)
+                        total_count = db.get_total_count()
 
                     # Convert to UI format
                     ui_items = [prepare_item_for_ui(item) for item in items]
 
-                    response = {"type": "history", "items": ui_items}
+                    response = {"type": "history", "items": ui_items, "total_count": total_count, "offset": offset}
                     await websocket.send(json.dumps(response))
 
                 elif action == "get_full_image":
@@ -289,11 +291,13 @@ async def websocket_handler(websocket):
                         await broadcast_ws({"type": "item_deleted", "id": item_id})
 
                 elif action == "get_recently_pasted":
-                    limit = data.get("limit", 100)
+                    limit = data.get("limit", 20)
+                    offset = data.get("offset", 0)
 
                     # Get recently pasted items with JOIN
                     with db_lock:
-                        items = db.get_recently_pasted(limit=limit)
+                        items = db.get_recently_pasted(limit=limit, offset=offset)
+                        total_count = db.get_pasted_count()
 
                     # Convert to UI format
                     ui_items = [prepare_item_for_ui(item) for item in items]
@@ -302,7 +306,7 @@ async def websocket_handler(websocket):
                     for i, item in enumerate(items):
                         ui_items[i]["pasted_timestamp"] = item["pasted_timestamp"]
 
-                    response = {"type": "recently_pasted", "items": ui_items}
+                    response = {"type": "recently_pasted", "items": ui_items, "total_count": total_count, "offset": offset}
                     await websocket.send(json.dumps(response))
 
                 elif action == "record_paste":

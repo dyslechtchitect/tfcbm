@@ -464,6 +464,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Set window properties
         self.set_default_size(350, 800)
 
+        # Pagination state
+        self.copied_offset = 0
+        self.copied_total = 0
+        self.copied_has_more = True
+        self.copied_loading = False
+
+        self.pasted_offset = 0
+        self.pasted_total = 0
+        self.pasted_has_more = True
+        self.pasted_loading = False
+
+        self.page_size = 20
+
         # Window icon is set through the desktop file and application
         # GTK4/Adwaita doesn't use set_icon() anymore
 
@@ -512,12 +525,33 @@ class ClipboardWindow(Adw.ApplicationWindow):
         copied_scrolled = Gtk.ScrolledWindow()
         copied_scrolled.set_vexpand(True)
         copied_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.copied_scrolled = copied_scrolled
+
+        copied_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+        # Status label for copied items
+        self.copied_status_label = Gtk.Label()
+        self.copied_status_label.add_css_class("dim-label")
+        self.copied_status_label.add_css_class("caption")
+        self.copied_status_label.set_margin_top(8)
+        self.copied_status_label.set_margin_bottom(4)
+        copied_box.append(self.copied_status_label)
 
         self.copied_listbox = Gtk.ListBox()
         self.copied_listbox.add_css_class("boxed-list")
         self.copied_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        copied_box.append(self.copied_listbox)
 
-        copied_scrolled.set_child(self.copied_listbox)
+        # Loader for copied items
+        self.copied_loader = self._create_loader()
+        self.copied_loader.set_visible(False)
+        copied_box.append(self.copied_loader)
+
+        copied_scrolled.set_child(copied_box)
+
+        # Connect scroll event for infinite scroll
+        copied_vadj = copied_scrolled.get_vadjustment()
+        copied_vadj.connect("value-changed", lambda adj: self._on_scroll_changed(adj, "copied"))
 
         copied_page = self.tab_view.append(copied_scrolled)
         copied_page.set_title("Recently Copied")
@@ -527,12 +561,33 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_scrolled = Gtk.ScrolledWindow()
         pasted_scrolled.set_vexpand(True)
         pasted_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.pasted_scrolled = pasted_scrolled
+
+        pasted_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+        # Status label for pasted items
+        self.pasted_status_label = Gtk.Label()
+        self.pasted_status_label.add_css_class("dim-label")
+        self.pasted_status_label.add_css_class("caption")
+        self.pasted_status_label.set_margin_top(8)
+        self.pasted_status_label.set_margin_bottom(4)
+        pasted_box.append(self.pasted_status_label)
 
         self.pasted_listbox = Gtk.ListBox()
         self.pasted_listbox.add_css_class("boxed-list")
         self.pasted_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        pasted_box.append(self.pasted_listbox)
 
-        pasted_scrolled.set_child(self.pasted_listbox)
+        # Loader for pasted items
+        self.pasted_loader = self._create_loader()
+        self.pasted_loader.set_visible(False)
+        pasted_box.append(self.pasted_loader)
+
+        pasted_scrolled.set_child(pasted_box)
+
+        # Connect scroll event for infinite scroll
+        pasted_vadj = pasted_scrolled.get_vadjustment()
+        pasted_vadj.connect("value-changed", lambda adj: self._on_scroll_changed(adj, "pasted"))
 
         pasted_page = self.tab_view.append(pasted_scrolled)
         pasted_page.set_title("Recently Pasted")

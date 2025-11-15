@@ -272,6 +272,20 @@ class ClipboardDB:
         row = cursor.fetchone()
         return row["max_id"] if row["max_id"] is not None else None
 
+    def get_total_count(self) -> int:
+        """Get total count of clipboard items"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM clipboard_items")
+        row = cursor.fetchone()
+        return row["count"] if row else 0
+
+    def get_pasted_count(self) -> int:
+        """Get total count of pasted items"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM recently_pasted")
+        row = cursor.fetchone()
+        return row["count"] if row else 0
+
     def add_pasted_item(self, clipboard_item_id: int, pasted_timestamp: str = None) -> int:
         """
         Record when a clipboard item was pasted

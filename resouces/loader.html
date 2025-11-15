@@ -1,0 +1,106 @@
+<!-- TFCBM Punk Loader SVG
+     Usage: open this file or embed the SVG markup directly in your HTML.
+     It's intentionally loud, punky, and animated. Adjust size with the `width`/`height` attributes.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 256 256" preserveAspectRatio="xMidYMid meet" role="img" aria-label="TFCBM punk loader">
+  <style>
+    .spin { transform-origin: 50% 50%; animation: spin 1.4s linear infinite; }
+    .bob { animation: bob 1s ease-in-out infinite; }
+    .eye { animation: blink 3s infinite; transform-origin: center; }
+    .tongue { animation: wag 0.6s ease-in-out infinite; }
+    .spark { transform-origin: center; animation: spark 0.9s linear infinite; }
+
+    @keyframes spin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+    @keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+    @keyframes blink { 0%,92%,100% { transform: scaleY(1) } 94% { transform: scaleY(0.06) } }
+    @keyframes wag { 0% { transform: translateX(0) } 50% { transform: translateX(4px) } 100% { transform: translateX(0) } }
+    @keyframes spark { 0% { transform: scale(1); opacity: 1 } 50% { transform: scale(0.7); opacity: 0.4 } 100% { transform: scale(1); opacity: 1 } }
+
+    /* Punky colors */
+    .bg { fill: #0b0b0b; }
+    .neon { fill: #ffef3a; }
+    .acid { fill: #8aff6b; }
+    .pink { fill: #ff55a3; }
+    .white { fill: #ffffff; }
+    .black { fill: #111111; }
+    .metal { fill: #cfd8dc; }
+  </style>
+
+  <!-- background circle (for contrast when used on various backgrounds) -->
+  <rect width="100%" height="100%" fill="transparent" />
+
+  <!-- Spiky punk hair ring (rotates) -->
+  <g class="spin" transform="translate(128,128)">
+    <g>
+      <!-- spikes: repeat of small triangles around circle -->
+      <g>
+        <!-- generate 12 spikes by hand for portability -->
+        <g transform="rotate(0)"><polygon points="0,-78 10,-58 -10,-58" class="pink"/></g>
+        <g transform="rotate(30)"><polygon points="0,-78 10,-58 -10,-58" class="neon"/></g>
+        <g transform="rotate(60)"><polygon points="0,-78 10,-58 -10,-58" class="acid"/></g>
+        <g transform="rotate(90)"><polygon points="0,-78 10,-58 -10,-58" class="pink"/></g>
+        <g transform="rotate(120)"><polygon points="0,-78 10,-58 -10,-58" class="neon"/></g>
+        <g transform="rotate(150)"><polygon points="0,-78 10,-58 -10,-58" class="acid"/></g>
+        <g transform="rotate(180)"><polygon points="0,-78 10,-58 -10,-58" class="pink"/></g>
+        <g transform="rotate(210)"><polygon points="0,-78 10,-58 -10,-58" class="neon"/></g>
+        <g transform="rotate(240)"><polygon points="0,-78 10,-58 -10,-58" class="acid"/></g>
+        <g transform="rotate(270)"><polygon points="0,-78 10,-58 -10,-58" class="pink"/></g>
+        <g transform="rotate(300)"><polygon points="0,-78 10,-58 -10,-58" class="neon"/></g>
+        <g transform="rotate(330)"><polygon points="0,-78 10,-58 -10,-58" class="acid"/></g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Central angry circular face (bobs up and down) -->
+  <g class="bob" transform="translate(128,128)">
+    <circle r="56" class="black" stroke="#222" stroke-width="3"/>
+    <circle r="50" class="pink"/>
+
+    <!-- eyes -->
+    <g transform="translate(-18,-8)">
+      <ellipse rx="9" ry="6" class="white"/>
+      <ellipse rx="4" ry="4" cx="-1" class="black"/>
+      <rect x="-13" y="-12" width="26" height="24" rx="6" fill="transparent"/>
+    </g>
+    <g transform="translate(18,-8)">
+      <ellipse rx="9" ry="6" class="white"/>
+      <ellipse rx="4" ry="4" cx="1" class="black"/>
+      <rect x="-13" y="-12" width="26" height="24" rx="6" fill="transparent"/>
+    </g>
+
+    <!-- squint/angry brows (sparkle animation subtle) -->
+    <path d="M-30,-20 q18 -8 30 0" stroke="#111" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M30,-20 q-18 -8 -30 0" stroke="#111" stroke-width="4" fill="none" stroke-linecap="round"/>
+
+    <!-- mouth with tongue wagging -->
+    <g transform="translate(0,18)">
+      <path d="M-22,0 q22,26 44,0" fill="#111"/>
+      <rect x="-12" y="2" width="24" height="18" rx="8" class="pink"/>
+      <ellipse cx="0" cy="20" rx="8" ry="6" class="white"/>
+      <g class="tongue">
+        <path d="M-6,6 q6,10 12,0 q-6,6 -12,0" class="acid"/>
+      </g>
+    </g>
+
+    <!-- small cheek studs -->
+    <circle cx="-38" cy="6" r="3" class="metal"/>
+    <circle cx="38" cy="6" r="3" class="metal"/>
+  </g>
+
+  <!-- tiny ring of sparks that pulse (gives loader 'funny' jitter) -->
+  <g transform="translate(128,128)">
+    <circle cx="-86" cy="0" r="4" class="neon spark"/>
+    <circle cx="86" cy="0" r="4" class="acid spark"/>
+    <circle cx="0" cy="-86" r="4" class="pink spark"/>
+    <circle cx="0" cy="86" r="4" class="metal spark"/>
+  </g>
+
+  <!-- cheeky label text below -->
+  <g transform="translate(128,200)">
+    <text x="0" text-anchor="middle" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#ffffff">loading — being punks about it</text>
+  </g>
+
+  <!-- Accessibility: hidden control description -->
+  <desc>An animated punk face loader: rotating spiky hair, bobbing angry face, blinking eyes and wagging tongue — fun and sarcastic.</desc>
+</svg>
+
