@@ -5,19 +5,20 @@ Serves clipboard items from SQLite database
 """
 
 import asyncio
-import websockets
-import json
 import base64
+import json
 import threading
 import time
-from datetime import datetime
+
+import websockets
+
 from database import ClipboardDB
 
 
 class ClipboardBackend:
     """WebSocket backend for clipboard UI"""
 
-    def __init__(self, host='localhost', port=8765):
+    def __init__(self, host="localhost", port=8765):
         self.host = host
         self.port = port
         self.db = ClipboardDB()
@@ -35,28 +36,23 @@ class ClipboardBackend:
         Returns:
             Dict ready to send to UI
         """
-        item_type = item['type']
-        data = item['data']
+        item_type = item["type"]
+        data = item["data"]
 
-        if item_type == 'text':
+        if item_type == "text":
             # Text data stored as bytes, convert to string
-            content = data.decode('utf-8') if isinstance(data, bytes) else data
-        elif item_type.startswith('image/') or item_type == 'screenshot':
+            content = data.decode("utf-8") if isinstance(data, bytes) else data
+        elif item_type.startswith("image/") or item_type == "screenshot":
             # Image data already in bytes, convert to base64
-            content = base64.b64encode(data).decode('utf-8') if isinstance(data, bytes) else data
+            content = base64.b64encode(data).decode("utf-8") if isinstance(data, bytes) else data
         else:
             # Unknown type, try to decode as text
             try:
-                content = data.decode('utf-8') if isinstance(data, bytes) else data
-            except:
-                content = base64.b64encode(data).decode('utf-8') if isinstance(data, bytes) else data
+                content = data.decode("utf-8") if isinstance(data, bytes) else data
+            except BaseException:
+                content = base64.b64encode(data).decode("utf-8") if isinstance(data, bytes) else data
 
-        return {
-            'id': item['id'],
-            'type': item_type,
-            'content': content,
-            'timestamp': item['timestamp']
-        }
+        return {"id": item["id"], "type": item_type, "content": content, "timestamp": item["timestamp"]}
 
     async def handle_client(self, websocket, path):
         """Handle WebSocket client connection"""
@@ -66,31 +62,25 @@ class ClipboardBackend:
         try:
             async for message in websocket:
                 data = json.loads(message)
-                action = data.get('action')
+                action = data.get("action")
 
-                if action == 'get_history':
+                if action == "get_history":
                     # Send all items
-                    limit = data.get('limit', 100)
+                    limit = data.get("limit", 100)
                     items = self.db.get_items(limit=limit)
 
                     # Convert to UI format
                     ui_items = [self.prepare_item_for_ui(item) for item in items]
 
-                    response = {
-                        'type': 'history',
-                        'items': ui_items
-                    }
+                    response = {"type": "history", "items": ui_items}
                     await websocket.send(json.dumps(response))
 
-                elif action == 'delete_item':
-                    item_id = data.get('id')
+                elif action == "delete_item":
+                    item_id = data.get("id")
                     if item_id:
                         self.db.delete_item(item_id)
                         # Notify all clients
-                        await self.broadcast({
-                            'type': 'item_deleted',
-                            'id': item_id
-                        })
+                        await self.broadcast({"type": "item_deleted", "id": item_id})
 
         except websockets.exceptions.ConnectionClosed:
             pass
@@ -102,10 +92,7 @@ class ClipboardBackend:
         """Broadcast message to all connected clients"""
         if self.clients:
             message_json = json.dumps(message)
-            await asyncio.gather(
-                *[client.send(message_json) for client in self.clients],
-                return_exceptions=True
-            )
+            await asyncio.gather(*[client.send(message_json) for client in self.clients], return_exceptions=True)
 
     def watch_for_new_items(self):
         """Background thread to watch for new database items"""
@@ -123,16 +110,10 @@ class ClipboardBackend:
                             ui_item = self.prepare_item_for_ui(item)
 
                             # Broadcast to all clients
-                            message = {
-                                'type': 'new_item',
-                                'item': ui_item
-                            }
+                            message = {"type": "new_item", "item": ui_item}
 
                             # Schedule broadcast in async loop
-                            asyncio.run_coroutine_threadsafe(
-                                self.broadcast(message),
-                                self.loop
-                            )
+                            asyncio.run_coroutine_threadsafe(self.broadcast(message), self.loop)
 
                     self.last_known_id = latest_id
 
@@ -169,5 +150,5 @@ async def main():
         backend.stop()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

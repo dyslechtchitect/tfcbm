@@ -3,12 +3,13 @@
 Test script for screenshot capture functionality
 """
 
-import subprocess
 import base64
 import os
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+
 
 def test_screenshot_capture():
     """Test that we can capture a screenshot"""
@@ -19,11 +20,7 @@ def test_screenshot_capture():
 
     try:
         # Capture screenshot using grim (Wayland)
-        result = subprocess.run(
-            ['grim', temp_file],
-            capture_output=True,
-            timeout=5
-        )
+        result = subprocess.run(["grim", temp_file], capture_output=True, timeout=5)
 
         if result.returncode == 0 and os.path.exists(temp_file):
             file_size = os.path.getsize(temp_file)
@@ -32,8 +29,8 @@ def test_screenshot_capture():
             print(f"  Size: {file_size:,} bytes")
 
             # Test base64 encoding
-            with open(temp_file, 'rb') as f:
-                image_data = base64.b64encode(f.read()).decode('utf-8')
+            with open(temp_file, "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
 
             print(f"  Base64 size: {len(image_data):,} characters")
 
@@ -54,6 +51,7 @@ def test_screenshot_capture():
         print(f"✗ Error: {e}")
         return False
 
+
 def test_screenshot_save():
     """Test saving screenshot to disk"""
     print("\nTesting screenshot save to disk...")
@@ -69,18 +67,14 @@ def test_screenshot_save():
 
     try:
         # Capture using grim (Wayland)
-        result = subprocess.run(
-            ['grim', temp_file],
-            capture_output=True,
-            timeout=5
-        )
+        result = subprocess.run(["grim", temp_file], capture_output=True, timeout=5)
 
         if result.returncode == 0:
             # Read, encode, decode, and save
-            with open(temp_file, 'rb') as f:
-                image_data = base64.b64encode(f.read()).decode('utf-8')
+            with open(temp_file, "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
 
-            with open(filepath, 'wb') as f:
+            with open(filepath, "wb") as f:
                 f.write(base64.b64decode(image_data))
 
             print(f"✓ Screenshot saved: {filepath}")
@@ -95,7 +89,8 @@ def test_screenshot_save():
         print(f"✗ Error: {e}")
         return False
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     print("TFCBM Screenshot Capture Test\n")
     print("=" * 50)
 

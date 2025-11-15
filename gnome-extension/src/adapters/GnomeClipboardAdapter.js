@@ -19,7 +19,15 @@ export class GnomeClipboardAdapter extends ClipboardPort {
     async getImage() {
         log('[TFCBM] getImage called');
         // Try common image mime types
-        const mimeTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/bmp', 'image/webp', 'image/avif'];
+        const mimeTypes = [
+            'image/png',
+            'image/jpeg',
+            'image/jpg',
+            'image/gif',
+            'image/bmp',
+            'image/webp',
+            'image/avif',
+        ];
 
         for (const mimeType of mimeTypes) {
             try {
@@ -27,7 +35,7 @@ export class GnomeClipboardAdapter extends ClipboardPort {
                 if (imageData) {
                     return {
                         mimeType: mimeType,
-                        data: imageData
+                        data: imageData,
                     };
                 }
             } catch (e) {
@@ -62,7 +70,9 @@ export class GnomeClipboardAdapter extends ClipboardPort {
                 // Convert bytes to base64
                 const data = bytes.get_data();
                 const base64 = GLib.base64_encode(data);
-                log(`[TFCBM] Successfully got content for mime type: ${mimeType}, size: ${data.length}`);
+                log(
+                    `[TFCBM] Successfully got content for mime type: ${mimeType}, size: ${data.length}`
+                );
                 resolve(base64);
             });
         });

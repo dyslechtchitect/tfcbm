@@ -1,6 +1,9 @@
+import os
+
 import gi
+from gi.repository import Gdk, Gtk
+
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk
 
 print("Testing clipboard access...")
 
@@ -17,10 +20,10 @@ text_primary = primary.wait_for_text()
 print(f"  Text: {text_primary}")
 
 print("\nDisplay server:", end=" ")
-import os
-if os.environ.get('WAYLAND_DISPLAY'):
+
+if os.environ.get("WAYLAND_DISPLAY"):
     print("Wayland")
-elif os.environ.get('DISPLAY'):
+elif os.environ.get("DISPLAY"):
     print("X11")
 else:
     print("Unknown")

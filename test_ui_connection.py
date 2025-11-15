@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Test UI connection to server"""
 
-import socket
 import json
 import os
+import socket
 
-socket_path = os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/tmp'), 'simple-clipboard.sock')
+socket_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "simple-clipboard.sock")
 
 print(f"Connecting to {socket_path}...")
 
@@ -15,10 +15,10 @@ try:
 
     print("Connected! Requesting history...")
 
-    request = json.dumps({'action': 'get_history'}) + '\n'
-    client.sendall(request.encode('utf-8'))
+    request = json.dumps({"action": "get_history"}) + "\n"
+    client.sendall(request.encode("utf-8"))
 
-    response_data = b''
+    response_data = b""
     while True:
         chunk = client.recv(4096)
         if not chunk:
@@ -27,18 +27,18 @@ try:
 
     client.close()
 
-    response = json.loads(response_data.decode('utf-8').strip())
-    history = response.get('history', [])
+    response = json.loads(response_data.decode("utf-8").strip())
+    history = response.get("history", [])
 
     print(f"\nReceived {len(history)} items:")
     for i, item in enumerate(history[-5:]):  # Show last 5
-        item_type = item.get('type', 'unknown')
-        timestamp = item.get('timestamp', '')
-        if item_type == 'text':
-            content = item.get('content', '')[:50]
-            print(f"  {i+1}. [{timestamp}] Text: {content}...")
+        item_type = item.get("type", "unknown")
+        timestamp = item.get("timestamp", "")
+        if item_type == "text":
+            content = item.get("content", "")[:50]
+            print(f"  {i + 1}. [{timestamp}] Text: {content}...")
         else:
-            print(f"  {i+1}. [{timestamp}] {item_type}")
+            print(f"  {i + 1}. [{timestamp}] {item_type}")
 
     print("\n✓ Connection test successful!")
 

@@ -21,8 +21,12 @@ class TestSocketServer {
 
                 this.server = Gio.SocketListener.new();
                 const address = Gio.UnixSocketAddress.new(this.socketPath);
-                this.server.add_address(address, Gio.SocketType.STREAM,
-                    Gio.SocketProtocol.DEFAULT, null);
+                this.server.add_address(
+                    address,
+                    Gio.SocketType.STREAM,
+                    Gio.SocketProtocol.DEFAULT,
+                    null
+                );
 
                 this.listenForConnections();
                 resolve();
@@ -56,8 +60,7 @@ class TestSocketServer {
             this.server.close();
             try {
                 GLib.unlink(this.socketPath);
-            } catch (e) {
-            }
+            } catch (e) {}
         }
     }
 }
@@ -67,25 +70,33 @@ const server = new TestSocketServer(socketPath);
 
 print('Starting socket integration test...\n');
 
-server.start().then(() => {
-    const notifier = new UnixSocketNotifier(socketPath);
-    const event = new ClipboardEvent('text', 'integration test');
+server
+    .start()
+    .then(() => {
+        const notifier = new UnixSocketNotifier(socketPath);
+        const event = new ClipboardEvent('text', 'integration test');
 
-    return notifier.send(event);
-}).then((sent) => {
-    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-        const success = server.receivedMessages.length === 1 &&
-                       server.receivedMessages[0].type === 'text' &&
-                       server.receivedMessages[0].content === 'integration test';
+        return notifier.send(event);
+    })
+    .then((sent) => {
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+            const success =
+                server.receivedMessages.length === 1 &&
+                server.receivedMessages[0].type === 'text' &&
+                server.receivedMessages[0].content === 'integration test';
 
-        print(success ? '✓ Socket integration test passed\n' : '✗ Socket integration test failed\n');
+            print(
+                success
+                    ? '✓ Socket integration test passed\n'
+                    : '✗ Socket integration test failed\n'
+            );
 
-        server.stop();
+            server.stop();
+            return GLib.SOURCE_REMOVE;
+        });
+
         return GLib.SOURCE_REMOVE;
     });
-
-    return GLib.SOURCE_REMOVE;
-});
 
 const loop = GLib.MainLoop.new(null, false);
 GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {

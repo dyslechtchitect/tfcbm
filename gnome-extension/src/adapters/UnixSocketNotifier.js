@@ -5,7 +5,8 @@ import { NotificationPort } from '../domain/NotificationPort.js';
 export class UnixSocketNotifier extends NotificationPort {
     constructor(socketPath = null) {
         super();
-        this.socketPath = socketPath ||
+        this.socketPath =
+            socketPath ||
             GLib.build_filenamev([GLib.get_user_runtime_dir(), 'simple-clipboard.sock']);
     }
 

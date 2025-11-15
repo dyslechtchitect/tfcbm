@@ -6,15 +6,13 @@ export class ClipboardEvent {
     }
 
     equals(other) {
-        return other &&
-               this.type === other.type &&
-               this.content === other.content;
+        return other && this.type === other.type && this.content === other.content;
     }
 
     toJSON() {
         return {
             type: this.type,
-            content: this.content
+            content: this.content,
         };
     }
 }

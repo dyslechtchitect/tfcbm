@@ -2,6 +2,7 @@
 """Test thumbnail generation"""
 
 import base64
+
 from database import ClipboardDB
 from tfcbm_server import generate_thumbnail
 
@@ -27,11 +28,11 @@ else:
 print("\nTesting database with thumbnail...")
 db = ClipboardDB()
 
-item_id = db.add_item('image/png', image_data, thumbnail=thumbnail)
+item_id = db.add_item("image/png", image_data, thumbnail=thumbnail)
 print(f"Added item {item_id} with thumbnail")
 
 item = db.get_item(item_id)
-if item and item['thumbnail']:
+if item and item["thumbnail"]:
     print(f"✓ Thumbnail stored: {len(item['thumbnail'])} bytes")
 else:
     print("✗ Thumbnail not stored")

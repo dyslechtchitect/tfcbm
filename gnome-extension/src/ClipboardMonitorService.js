@@ -32,8 +32,8 @@ export class ClipboardMonitorService {
             } else if (mimeTypes.includes('text/html')) {
                 imageType = 'image/web';
             } else if (mimeTypes.includes('image/png') || mimeTypes.includes('image/jpeg')) {
-                const hasOtherRelevantMimeTypes = mimeTypes.some(m =>
-                    m.startsWith('text/') || m.includes('uri-list') || m.includes('html')
+                const hasOtherRelevantMimeTypes = mimeTypes.some(
+                    (m) => m.startsWith('text/') || m.includes('uri-list') || m.includes('html')
                 );
                 if (!hasOtherRelevantMimeTypes) {
                     imageType = 'image/screenshot';
@@ -51,8 +51,18 @@ export class ClipboardMonitorService {
                 if (uri.startsWith('file://')) {
                     // Check if it's an image file
                     const imagePath = uri.substring(7); // Remove 'file://'
-                    const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.avif'];
-                    const isImage = imageExtensions.some(ext => imagePath.toLowerCase().endsWith(ext));
+                    const imageExtensions = [
+                        '.png',
+                        '.jpg',
+                        '.jpeg',
+                        '.gif',
+                        '.bmp',
+                        '.webp',
+                        '.avif',
+                    ];
+                    const isImage = imageExtensions.some((ext) =>
+                        imagePath.toLowerCase().endsWith(ext)
+                    );
 
                     if (isImage) {
                         // Read image file and send as image event
@@ -99,21 +109,23 @@ export class ClipboardMonitorService {
             // Determine mime type from file extension
             const extension = filePath.toLowerCase().split('.').pop();
             const mimeTypeMap = {
-                'png': 'image/png',
-                'jpg': 'image/jpeg',
-                'jpeg': 'image/jpeg',
-                'gif': 'image/gif',
-                'bmp': 'image/bmp',
-                'webp': 'image/webp',
-                'avif': 'image/avif'
+                png: 'image/png',
+                jpg: 'image/jpeg',
+                jpeg: 'image/jpeg',
+                gif: 'image/gif',
+                bmp: 'image/bmp',
+                webp: 'image/webp',
+                avif: 'image/avif',
             };
             const mimeType = mimeTypeMap[extension] || 'image/png';
 
-            log(`[TFCBM] Successfully read image file: ${filePath}, size: ${contents.length} bytes, mime: ${mimeType}`);
+            log(
+                `[TFCBM] Successfully read image file: ${filePath}, size: ${contents.length} bytes, mime: ${mimeType}`
+            );
 
             return {
                 mimeType: mimeType,
-                data: base64
+                data: base64,
             };
         } catch (e) {
             log(`[TFCBM] Error reading image file: ${e}`);

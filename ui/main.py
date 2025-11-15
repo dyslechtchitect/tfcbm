@@ -3,19 +3,20 @@
 TFCBM UI - GTK4 clipboard manager interface
 """
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-
-from gi.repository import Gtk, Adw, GLib, Gdk, GdkPixbuf, Gio
-import json
+import asyncio
 import base64
-import threading
+import json
 import signal
 import sys
-import asyncio
-import websockets
+import threading
 from pathlib import Path
+
+import gi
+import websockets
+from gi.repository import Adw, Gdk, GdkPixbuf, GLib, Gtk
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
 
 
 class ClipboardItemRow(Gtk.ListBoxRow):
@@ -28,7 +29,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Make row activatable (clickable)
         self.set_activatable(True)
-        self.connect('activate', self._on_row_clicked)
+        self.connect("activate", self._on_row_clicked)
 
         # Main box for the row
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -41,11 +42,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
         # Timestamp label
-        timestamp = item.get('timestamp', '')
+        timestamp = item.get("timestamp", "")
         if timestamp:
             time_label = Gtk.Label(label=self._format_timestamp(timestamp))
-            time_label.add_css_class('dim-label')
-            time_label.add_css_class('caption')
+            time_label.add_css_class("dim-label")
+            time_label.add_css_class("caption")
             time_label.set_halign(Gtk.Align.START)
             time_label.set_hexpand(True)
             header_box.append(time_label)
@@ -55,26 +56,26 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Save button (with event controller to stop propagation)
         save_button = Gtk.Button()
-        save_button.set_icon_name('document-save-symbolic')
-        save_button.add_css_class('flat')
-        save_button.set_tooltip_text('Save to file')
+        save_button.set_icon_name("document-save-symbolic")
+        save_button.add_css_class("flat")
+        save_button.set_tooltip_text("Save to file")
 
         # Use click gesture to stop propagation
         save_gesture = Gtk.GestureClick.new()
-        save_gesture.connect('released', lambda g, n, x, y: self._do_save())
+        save_gesture.connect("released", lambda g, n, x, y: self._do_save())
         save_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         save_button.add_controller(save_gesture)
         button_box.append(save_button)
 
         # Delete button (with event controller to stop propagation)
         delete_button = Gtk.Button()
-        delete_button.set_icon_name('user-trash-symbolic')
-        delete_button.add_css_class('flat')
-        delete_button.set_tooltip_text('Delete item')
+        delete_button.set_icon_name("user-trash-symbolic")
+        delete_button.add_css_class("flat")
+        delete_button.set_tooltip_text("Delete item")
 
         # Use click gesture to stop propagation
         delete_gesture = Gtk.GestureClick.new()
-        delete_gesture.connect('released', lambda g, n, x, y: self._on_delete_clicked(delete_button))
+        delete_gesture.connect("released", lambda g, n, x, y: self._on_delete_clicked(delete_button))
         delete_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         delete_button.add_controller(delete_gesture)
         button_box.append(delete_button)
@@ -87,12 +88,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Make content box clickable to copy (works on background, not on selectable text)
         content_gesture = Gtk.GestureClick.new()
-        content_gesture.connect('released', lambda g, n, x, y: self._on_row_clicked(self))
+        content_gesture.connect("released", lambda g, n, x, y: self._on_row_clicked(self))
         box.add_controller(content_gesture)
 
         # Content based on type
-        if item['type'] == 'text':
-            content_label = Gtk.Label(label=item['content'])
+        if item["type"] == "text":
+            content_label = Gtk.Label(label=item["content"])
             content_label.set_wrap(True)
             content_label.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
             content_label.set_halign(Gtk.Align.START)
@@ -108,14 +109,18 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             box.append(content_label)
 
-        elif item['type'].startswith('image/') or item['type'] == 'screenshot':
+        elif item["type"].startswith("image/") or item["type"] == "screenshot":
             try:
                 # Use thumbnail if available, otherwise use full image
-                thumbnail_data = item.get('thumbnail')
-                image_data_b64 = thumbnail_data if thumbnail_data else item['content']
+                thumbnail_data = item.get("thumbnail")
+                image_data_b64 = thumbnail_data if thumbnail_data else item["content"]
 
                 print(f"[UI] Loading image item {item.get('id')}, type: {item['type']}")
-                print(f"[UI] Has thumbnail: {bool(thumbnail_data)}, data length: {len(image_data_b64) if image_data_b64 else 0}")
+                print(
+                    f"[UI] Has thumbnail: {
+                        bool(thumbnail_data)}, data length: {
+                        len(image_data_b64) if image_data_b64 else 0}"
+                )
 
                 if not image_data_b64:
                     raise Exception("No image data available")
@@ -141,7 +146,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 # Make image clickable to copy
                 image_gesture = Gtk.GestureClick.new()
-                image_gesture.connect('released', lambda g, n, x, y: self._on_row_clicked(self))
+                image_gesture.connect("released", lambda g, n, x, y: self._on_row_clicked(self))
                 picture.add_controller(image_gesture)
 
                 # Add cursor to indicate clickable
@@ -152,14 +157,14 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 # Add image type label
                 type_label = Gtk.Label(label=f"[{item['type']}]")
-                type_label.add_css_class('dim-label')
-                type_label.add_css_class('caption')
+                type_label.add_css_class("dim-label")
+                type_label.add_css_class("caption")
                 type_label.set_halign(Gtk.Align.START)
                 box.append(type_label)
 
             except Exception as e:
                 error_label = Gtk.Label(label=f"Failed to load image: {str(e)}")
-                error_label.add_css_class('error')
+                error_label.add_css_class("error")
                 error_label.set_selectable(True)  # Make error copyable
                 error_label.set_wrap(True)
                 box.append(error_label)
@@ -170,51 +175,54 @@ class ClipboardItemRow(Gtk.ListBoxRow):
     def _format_timestamp(self, timestamp_str):
         """Format ISO timestamp to readable format"""
         from datetime import datetime
+
         try:
             dt = datetime.fromisoformat(timestamp_str)
-            return dt.strftime('%H:%M:%S')
-        except:
+            return dt.strftime("%H:%M:%S")
+        except BaseException:
             return timestamp_str
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked"""
-        item_type = self.item['type']
+        item_type = self.item["type"]
 
         clipboard = Gdk.Display.get_default().get_clipboard()
 
-        if item_type == 'text':
-            content = self.item['content']
+        if item_type == "text":
+            content = self.item["content"]
             clipboard.set(content)
             print(f"Copied text to clipboard: {content[:50]}")
             # Show toast notification
             self.window.show_toast("Text copied to clipboard")
 
-        elif item_type.startswith('image/') or item_type == 'screenshot':
+        elif item_type.startswith("image/") or item_type == "screenshot":
             # For images, fetch full image from server then copy to clipboard
-            item_id = self.item['id']
+            item_id = self.item["id"]
             self.window.show_toast("Loading full image...")
             self._copy_full_image_to_clipboard(item_id, clipboard)
 
     def _copy_full_image_to_clipboard(self, item_id, clipboard):
         """Request and copy full image from server to clipboard"""
+
         def fetch_and_copy():
             try:
                 import asyncio
+
                 import websockets
 
                 async def get_full_image():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
                         # Request full image
-                        request = {'action': 'get_full_image', 'id': item_id}
+                        request = {"action": "get_full_image", "id": item_id}
                         await websocket.send(json.dumps(request))
 
                         # Wait for response
                         response = await websocket.recv()
                         data = json.loads(response)
 
-                        if data.get('type') == 'full_image' and data.get('id') == item_id:
-                            image_b64 = data.get('content')
+                        if data.get("type") == "full_image" and data.get("id") == item_id:
+                            image_b64 = data.get("content")
                             image_data = base64.b64decode(image_b64)
 
                             # Load image into pixbuf
@@ -230,11 +238,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                     # This is the most compatible way for applications like GIMP
                                     clipboard.set(pixbuf)
 
-                                    print(f"Copied full image to clipboard ({pixbuf.get_width()}x{pixbuf.get_height()})")
-                                    self.window.show_toast(f"📷 Full image copied ({pixbuf.get_width()}x{pixbuf.get_height()})")
+                                    print(
+                                        f"Copied full image to clipboard ({pixbuf.get_width()}x{pixbuf.get_height()})"
+                                    )
+                                    self.window.show_toast(
+                                        f"📷 Full image copied ({pixbuf.get_width()}x{pixbuf.get_height()})"
+                                    )
                                 except Exception as e:
                                     print(f"Error copying to clipboard: {e}")
                                     import traceback
+
                                     traceback.print_exc()
                                     self.window.show_toast(f"Error copying: {str(e)}")
                                 return False
@@ -248,11 +261,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             except Exception as e:
                 print(f"Error fetching full image: {e}")
                 import traceback
+
                 traceback.print_exc()
                 GLib.idle_add(lambda: self.window.show_toast(f"Error: {str(e)}") or False)
 
         # Run in background thread
         import threading
+
         thread = threading.Thread(target=fetch_and_copy, daemon=True)
         thread.start()
 
@@ -263,19 +278,19 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _do_save(self):
         """Actually perform the save"""
-        item_type = self.item['type']
-        item_id = self.item['id']
+        item_type = self.item["type"]
+        item_id = self.item["id"]
 
         # Create file chooser dialog
         dialog = Gtk.FileDialog()
 
-        if item_type == 'text':
-            dialog.set_initial_name('clipboard.txt')
-        elif item_type.startswith('image/'):
-            ext = item_type.split('/')[-1]
-            dialog.set_initial_name(f'clipboard.{ext}')
-        elif item_type == 'screenshot':
-            dialog.set_initial_name('screenshot.png')
+        if item_type == "text":
+            dialog.set_initial_name("clipboard.txt")
+        elif item_type.startswith("image/"):
+            ext = item_type.split("/")[-1]
+            dialog.set_initial_name(f"clipboard.{ext}")
+        elif item_type == "screenshot":
+            dialog.set_initial_name("screenshot.png")
 
         # Get the window
         window = self.get_root()
@@ -286,12 +301,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 if file:
                     path = file.get_path()
 
-                    if item_type == 'text':
-                        content = self.item['content']
-                        with open(path, 'w') as f:
+                    if item_type == "text":
+                        content = self.item["content"]
+                        with open(path, "w") as f:
                             f.write(content)
                         print(f"Saved text to {path}")
-                    elif item_type.startswith('image/') or item_type == 'screenshot':
+                    elif item_type.startswith("image/") or item_type == "screenshot":
                         # For images, request full image from server
                         self._save_full_image(item_id, path)
 
@@ -302,28 +317,30 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _save_full_image(self, item_id, path):
         """Request and save full image from server"""
+
         def fetch_and_save():
             try:
                 import asyncio
+
                 import websockets
 
                 async def get_full_image():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
                         # Request full image
-                        request = {'action': 'get_full_image', 'id': item_id}
+                        request = {"action": "get_full_image", "id": item_id}
                         await websocket.send(json.dumps(request))
 
                         # Wait for response
                         response = await websocket.recv()
                         data = json.loads(response)
 
-                        if data.get('type') == 'full_image' and data.get('id') == item_id:
-                            image_b64 = data.get('content')
+                        if data.get("type") == "full_image" and data.get("id") == item_id:
+                            image_b64 = data.get("content")
                             image_data = base64.b64decode(image_b64)
 
                             # Save to file
-                            with open(path, 'wb') as f:
+                            with open(path, "wb") as f:
                                 f.write(image_data)
 
                             print(f"Saved full image to {path}")
@@ -337,6 +354,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Run in background thread
         import threading
+
         thread = threading.Thread(target=fetch_and_save, daemon=True)
         thread.start()
 
@@ -346,8 +364,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Create confirmation dialog
         dialog = Adw.AlertDialog.new(
-            "Delete this item?",
-            "This item will be permanently removed from your clipboard history."
+            "Delete this item?", "This item will be permanently removed from your clipboard history."
         )
 
         dialog.add_response("cancel", "Nah")
@@ -359,23 +376,25 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         def on_response(dialog, response):
             if response == "delete":
                 # Send delete request via WebSocket
-                self._delete_item_from_server(self.item['id'])
+                self._delete_item_from_server(self.item["id"])
 
         dialog.connect("response", on_response)
         dialog.present(window)
 
     def _delete_item_from_server(self, item_id):
         """Send delete request to server via WebSocket"""
+
         def send_delete():
             try:
                 import asyncio
+
                 import websockets
 
                 async def delete_item():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
                         # Send delete request
-                        request = {'action': 'delete_item', 'id': item_id}
+                        request = {"action": "delete_item", "id": item_id}
                         await websocket.send(json.dumps(request))
                         print(f"Deleted item {item_id}")
 
@@ -388,6 +407,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Run in background thread
         import threading
+
         thread = threading.Thread(target=send_delete, daemon=True)
         thread.start()
 
@@ -401,7 +421,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.server_pid = server_pid
 
         # Connect close request handler
-        self.connect('close-request', self._on_close_request)
+        self.connect("close-request", self._on_close_request)
 
         # Set window properties
         self.set_default_size(350, 800)
@@ -420,7 +440,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add small logo to header (left side)
         try:
-            icon_path = Path(__file__).parent.parent / 'resouces' / 'tfcbm-256.png'
+            icon_path = Path(__file__).parent.parent / "resouces" / "tfcbm-256.png"
             if icon_path.exists():
                 # Create image from PNG
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 24, 24, True)
@@ -435,8 +455,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Settings button (placeholder for now)
         settings_button = Gtk.Button()
-        settings_button.set_icon_name('emblem-system-symbolic')
-        settings_button.add_css_class('flat')
+        settings_button.set_icon_name("emblem-system-symbolic")
+        settings_button.add_css_class("flat")
         header.pack_end(settings_button)
 
         main_box.append(header)
@@ -448,7 +468,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # ListBox for items
         self.listbox = Gtk.ListBox()
-        self.listbox.add_css_class('boxed-list')
+        self.listbox.add_css_class("boxed-list")
         self.listbox.set_selection_mode(Gtk.SelectionMode.NONE)
 
         scrolled.set_child(self.listbox)
@@ -475,6 +495,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def load_history(self):
         """Load clipboard history and listen for updates via WebSocket"""
+
         def run_websocket():
             # Create new event loop for this thread
             loop = asyncio.new_event_loop()
@@ -495,37 +516,38 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 print("Connected to WebSocket server")
 
                 # Request history
-                request = {'action': 'get_history', 'limit': 100}
+                request = {"action": "get_history", "limit": 100}
                 await websocket.send(json.dumps(request))
                 print("Requested history")
 
                 # Listen for messages
                 async for message in websocket:
                     data = json.loads(message)
-                    msg_type = data.get('type')
+                    msg_type = data.get("type")
 
-                    if msg_type == 'history':
+                    if msg_type == "history":
                         # Initial history load
-                        items = data.get('items', [])
+                        items = data.get("items", [])
                         print(f"Received {len(items)} items from history")
                         GLib.idle_add(self.update_history, items)
 
-                    elif msg_type == 'new_item':
+                    elif msg_type == "new_item":
                         # New item added
-                        item = data.get('item')
+                        item = data.get("item")
                         if item:
                             print(f"New item received: {item['type']}")
                             GLib.idle_add(self.add_item, item)
 
-                    elif msg_type == 'item_deleted':
+                    elif msg_type == "item_deleted":
                         # Item deleted
-                        item_id = data.get('id')
+                        item_id = data.get("id")
                         if item_id:
                             GLib.idle_add(self.remove_item, item_id)
 
         except Exception as e:
             print(f"WebSocket error: {e}")
             import traceback
+
             traceback.print_exc()
             GLib.idle_add(self.show_error, str(e))
 
@@ -565,7 +587,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             row = self.listbox.get_row_at_index(index)
             if row is None:
                 break
-            if hasattr(row, 'item') and row.item.get('id') == item_id:
+            if hasattr(row, "item") and row.item.get("id") == item_id:
                 self.listbox.remove(row)
                 break
             index += 1
@@ -574,7 +596,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
     def show_error(self, error_msg):
         """Show error message"""
         error_label = Gtk.Label(label=f"Error: {error_msg}")
-        error_label.add_css_class('error')
+        error_label.add_css_class("error")
         error_label.set_selectable(True)  # Make error copyable
         error_label.set_wrap(True)
         self.listbox.append(error_label)
@@ -586,13 +608,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
             try:
                 import os
                 import signal
+
                 print(f"\nKilling server (PID: {self.server_pid})...")
                 os.kill(self.server_pid, signal.SIGTERM)
 
                 # Also kill the tee process if it exists
                 import subprocess
-                subprocess.run(['pkill', '-P', str(self.server_pid)],
-                             stderr=subprocess.DEVNULL)
+
+                subprocess.run(["pkill", "-P", str(self.server_pid)], stderr=subprocess.DEVNULL)
             except Exception as e:
                 print(f"Error killing server: {e}")
 
@@ -604,7 +627,7 @@ class ClipboardApp(Adw.Application):
     """Main application"""
 
     def __init__(self, server_pid=None):
-        super().__init__(application_id='org.tfcbm.ClipboardManager')
+        super().__init__(application_id="org.tfcbm.ClipboardManager")
         self.server_pid = server_pid
 
     def do_startup(self):
@@ -613,12 +636,12 @@ class ClipboardApp(Adw.Application):
 
         # Set default window icon list for the application
         try:
-            icon_path = Path(__file__).parent.parent / 'resouces' / 'icon.svg'
+            icon_path = Path(__file__).parent.parent / "resouces" / "icon.svg"
             if icon_path.exists():
                 # Load icon as pixbuf and set as default
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(icon_path))
                 # GTK4 uses textures, convert pixbuf to texture
-                texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+                Gdk.Texture.new_for_pixbuf(pixbuf)
                 # Set icon for the display
                 display = Gdk.Display.get_default()
                 if display:
@@ -641,8 +664,8 @@ def main():
     import argparse
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='TFCBM UI')
-    parser.add_argument('--server-pid', type=int, help='Server process ID to kill on exit')
+    parser = argparse.ArgumentParser(description="TFCBM UI")
+    parser.add_argument("--server-pid", type=int, help="Server process ID to kill on exit")
     args = parser.parse_args()
 
     # Handle Ctrl+C gracefully
@@ -650,13 +673,14 @@ def main():
         if args.server_pid:
             try:
                 import os
+
                 print(f"\n\nKilling server (PID: {args.server_pid})...")
                 os.kill(args.server_pid, signal.SIGTERM)
 
                 # Also kill child processes
                 import subprocess
-                subprocess.run(['pkill', '-P', str(args.server_pid)],
-                             stderr=subprocess.DEVNULL)
+
+                subprocess.run(["pkill", "-P", str(args.server_pid)], stderr=subprocess.DEVNULL)
             except Exception as e:
                 print(f"Error killing server: {e}")
         print("Shutting down UI...")
@@ -671,6 +695,7 @@ def main():
         if args.server_pid:
             try:
                 import os
+
                 print(f"\n\nKilling server (PID: {args.server_pid})...")
                 os.kill(args.server_pid, signal.SIGTERM)
             except Exception as e:
@@ -679,5 +704,5 @@ def main():
         sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -23,8 +23,7 @@ class E2ETestServer {
 
         this.server = Gio.SocketListener.new();
         const address = Gio.UnixSocketAddress.new(this.socketPath);
-        this.server.add_address(address, Gio.SocketType.STREAM,
-            Gio.SocketProtocol.DEFAULT, null);
+        this.server.add_address(address, Gio.SocketType.STREAM, Gio.SocketProtocol.DEFAULT, null);
 
         this.listen();
     }
@@ -38,8 +37,7 @@ class E2ETestServer {
                 const message = new TextDecoder().decode(data);
                 this.messages.push(JSON.parse(message.trim()));
                 connection.close(null);
-            } catch (e) {
-            }
+            } catch (e) {}
             this.listen();
         });
     }
@@ -49,8 +47,7 @@ class E2ETestServer {
             this.server.close();
             try {
                 GLib.unlink(this.socketPath);
-            } catch (e) {
-            }
+            } catch (e) {}
         }
     }
 }
@@ -71,9 +68,10 @@ clipboard.set_text(St.ClipboardType.CLIPBOARD, 'e2e test message');
 GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
     service.checkAndNotify().then(() => {
         GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
-            const passed = server.messages.length === 1 &&
-                          server.messages[0].type === 'text' &&
-                          server.messages[0].content === 'e2e test message';
+            const passed =
+                server.messages.length === 1 &&
+                server.messages[0].type === 'text' &&
+                server.messages[0].content === 'e2e test message';
 
             print(passed ? '✓ E2E test passed\n' : '✗ E2E test failed\n');
             if (!passed) {

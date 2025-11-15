@@ -3,25 +3,27 @@
 TFCBM Server - Receives clipboard data from GNOME Shell extension
 """
 
-import socket
-import os
+import asyncio
+import base64
 import json
+import logging
+import os
+import socket
+import subprocess
 import threading
 import time
-import subprocess
-import base64
-import asyncio
-import websockets
-import logging
-from datetime import datetime
-from pathlib import Path
-from io import BytesIO
-from PIL import Image
-from database import ClipboardDB
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+
+import websockets
+from PIL import Image
+
+from database import ClipboardDB
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Initialize database
 db = ClipboardDB()
@@ -35,7 +37,8 @@ last_known_id = db.get_latest_id() or 0
 db_lock = threading.Lock()  # Lock for thread-safe database access
 
 # Thread pool for thumbnail generation
-thumbnail_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='thumbnail')
+thumbnail_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumbnail")
+
 
 def generate_thumbnail(image_data: bytes, max_size: int = 250) -> bytes:
     """
@@ -53,11 +56,11 @@ def generate_thumbnail(image_data: bytes, max_size: int = 250) -> bytes:
         image = Image.open(BytesIO(image_data))
 
         # Convert RGBA to RGB if needed (for JPEG compatibility)
-        if image.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', image.size, (255, 255, 255))
-            if image.mode == 'P':
-                image = image.convert('RGBA')
-            background.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+        if image.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", image.size, (255, 255, 255))
+            if image.mode == "P":
+                image = image.convert("RGBA")
+            background.paste(image, mask=image.split()[-1] if image.mode in ("RGBA", "LA") else None)
             image = background
 
         # Calculate thumbnail size maintaining aspect ratio
@@ -65,7 +68,7 @@ def generate_thumbnail(image_data: bytes, max_size: int = 250) -> bytes:
 
         # Save to bytes
         thumbnail_io = BytesIO()
-        image.save(thumbnail_io, format='PNG', optimize=True)
+        image.save(thumbnail_io, format="PNG", optimize=True)
         thumbnail_bytes = thumbnail_io.getvalue()
 
         logging.info(f"Generated thumbnail: {image.size} -> {len(thumbnail_bytes)} bytes")
@@ -84,6 +87,7 @@ def process_thumbnail_async(item_id: int, image_data: bytes):
         item_id: Database item ID
         image_data: Original image bytes
     """
+
     def worker():
         try:
             thumbnail = generate_thumbnail(image_data)
@@ -97,10 +101,12 @@ def process_thumbnail_async(item_id: int, image_data: bytes):
     # Submit to thread pool
     thumbnail_executor.submit(worker)
 
+
 # Screenshot configuration
 SCREENSHOT_INTERVAL = 30  # seconds between screenshots
 SCREENSHOT_ENABLED = False  # Set to False to disable automatic screenshots
 SCREENSHOT_SAVE_DIR = None  # Set to a directory path to save screenshots to disk (e.g., './screenshots')
+
 
 def capture_screenshot():
     """Capture a full-screen screenshot using grim (Wayland screenshot tool)"""
@@ -109,23 +115,21 @@ def capture_screenshot():
         temp_file = f"/tmp/tfcbm_screenshot_{int(time.time())}.png"
 
         # Capture screenshot using grim (Wayland-native tool)
-        result = subprocess.run(
-            ['grim', temp_file],
-            capture_output=True,
-            timeout=5
-        )
+        result = subprocess.run(["grim", temp_file], capture_output=True, timeout=5)
 
         if result.returncode == 0 and os.path.exists(temp_file):
             # Read screenshot and encode as base64
-            with open(temp_file, 'rb') as f:
-                image_data = base64.b64encode(f.read()).decode('utf-8')
+            with open(temp_file, "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
 
             # Clean up temp file
             os.remove(temp_file)
 
             return image_data
         else:
-            logging.warning(f"Screenshot capture failed: {result.stderr.decode() if result.stderr else 'Unknown error'}")
+            logging.warning(
+                f"Screenshot capture failed: {result.stderr.decode() if result.stderr else 'Unknown error'}"
+            )
             return None
 
     except subprocess.TimeoutExpired:
@@ -134,6 +138,7 @@ def capture_screenshot():
     except Exception as e:
         logging.error(f"Screenshot error: {e}")
         return None
+
 
 def screenshot_worker():
     """Background thread that captures screenshots at regular intervals"""
@@ -156,16 +161,18 @@ def screenshot_worker():
                 timestamp_str = timestamp.isoformat()
 
                 # Add to history (in-memory)
-                history.append({
-                    'type': 'screenshot',
-                    'content': image_data,
-                    'timestamp': timestamp_str,
-                })
+                history.append(
+                    {
+                        "type": "screenshot",
+                        "content": image_data,
+                        "timestamp": timestamp_str,
+                    }
+                )
 
                 # Save to database (thread-safe)
                 image_bytes = base64.b64decode(image_data)
                 with db_lock:
-                    item_id = db.add_item('screenshot', image_bytes, timestamp_str)
+                    item_id = db.add_item("screenshot", image_bytes, timestamp_str)
 
                 # Generate thumbnail asynchronously
                 process_thumbnail_async(item_id, image_bytes)
@@ -176,7 +183,7 @@ def screenshot_worker():
                     filepath = Path(SCREENSHOT_SAVE_DIR) / filename
 
                     # Decode base64 and save
-                    with open(filepath, 'wb') as f:
+                    with open(filepath, "wb") as f:
                         f.write(base64.b64decode(image_data))
 
                     logging.info(f"📸 Screenshot captured and saved: {filename}")
@@ -188,49 +195,50 @@ def screenshot_worker():
         except Exception as e:
             logging.error(f"⚠ Screenshot worker error: {e}")
 
+
 def prepare_item_for_ui(item: dict) -> dict:
     """Convert database item to UI-renderable format"""
-    item_type = item['type']
-    data = item['data']
-    thumbnail = item.get('thumbnail')
+    item_type = item["type"]
+    data = item["data"]
+    thumbnail = item.get("thumbnail")
 
-    if item_type == 'text':
-        content = data.decode('utf-8') if isinstance(data, bytes) else data
+    if item_type == "text":
+        content = data.decode("utf-8") if isinstance(data, bytes) else data
         thumbnail_b64 = None
-    elif item_type.startswith('image/') or item_type == 'screenshot':
+    elif item_type.startswith("image/") or item_type == "screenshot":
         # DON'T send full image in WebSocket messages - too large!
         # Only send item ID and thumbnail
         content = None  # Client will request full image only when saving
         # Use thumbnail if available, generate one if not
         if thumbnail:
-            thumbnail_b64 = base64.b64encode(thumbnail).decode('utf-8')
+            thumbnail_b64 = base64.b64encode(thumbnail).decode("utf-8")
         else:
             # No thumbnail yet - generate a placeholder or small version
             try:
                 # Try to generate thumbnail on-the-fly for old items
                 thumb = generate_thumbnail(data, max_size=250)
                 if thumb:
-                    thumbnail_b64 = base64.b64encode(thumb).decode('utf-8')
+                    thumbnail_b64 = base64.b64encode(thumb).decode("utf-8")
                     # Update database with generated thumbnail
                     with db_lock:
-                        db.update_thumbnail(item['id'], thumb)
+                        db.update_thumbnail(item["id"], thumb)
                 else:
                     thumbnail_b64 = None
-            except:
+            except BaseException:
                 thumbnail_b64 = None
     else:
         try:
-            content = data.decode('utf-8') if isinstance(data, bytes) else data
-        except:
-            content = base64.b64encode(data).decode('utf-8') if isinstance(data, bytes) else data
+            content = data.decode("utf-8") if isinstance(data, bytes) else data
+        except BaseException:
+            content = base64.b64encode(data).decode("utf-8") if isinstance(data, bytes) else data
         thumbnail_b64 = None
 
     return {
-        'id': item['id'],
-        'type': item_type,
-        'content': content,  # None for images
-        'thumbnail': thumbnail_b64,
-        'timestamp': item['timestamp']
+        "id": item["id"],
+        "type": item_type,
+        "content": content,  # None for images
+        "thumbnail": thumbnail_b64,
+        "timestamp": item["timestamp"],
     }
 
 
@@ -245,10 +253,10 @@ async def websocket_handler(websocket):
         async for message in websocket:
             try:
                 data = json.loads(message)
-                action = data.get('action')
+                action = data.get("action")
 
-                if action == 'get_history':
-                    limit = data.get('limit', 100)
+                if action == "get_history":
+                    limit = data.get("limit", 100)
 
                     # Use lock for thread-safe database access
                     with db_lock:
@@ -257,41 +265,32 @@ async def websocket_handler(websocket):
                     # Convert to UI format
                     ui_items = [prepare_item_for_ui(item) for item in items]
 
-                    response = {
-                        'type': 'history',
-                        'items': ui_items
-                    }
+                    response = {"type": "history", "items": ui_items}
                     await websocket.send(json.dumps(response))
 
-                elif action == 'get_full_image':
+                elif action == "get_full_image":
                     # Get full image data for saving
-                    item_id = data.get('id')
+                    item_id = data.get("id")
                     if item_id:
                         with db_lock:
                             item = db.get_item(item_id)
-                        if item and (item['type'].startswith('image/') or item['type'] == 'screenshot'):
-                            full_image_b64 = base64.b64encode(item['data']).decode('utf-8')
-                            response = {
-                                'type': 'full_image',
-                                'id': item_id,
-                                'content': full_image_b64
-                            }
+                        if item and (item["type"].startswith("image/") or item["type"] == "screenshot"):
+                            full_image_b64 = base64.b64encode(item["data"]).decode("utf-8")
+                            response = {"type": "full_image", "id": item_id, "content": full_image_b64}
                             await websocket.send(json.dumps(response))
 
-                elif action == 'delete_item':
-                    item_id = data.get('id')
+                elif action == "delete_item":
+                    item_id = data.get("id")
                     if item_id:
                         with db_lock:
                             db.delete_item(item_id)
                         # Notify all clients
-                        await broadcast_ws({
-                            'type': 'item_deleted',
-                            'id': item_id
-                        })
+                        await broadcast_ws({"type": "item_deleted", "id": item_id})
 
             except Exception as e:
                 logging.error(f"Error handling WebSocket message: {e}")
                 import traceback
+
                 traceback.print_exc()
 
     except websockets.exceptions.ConnectionClosed:
@@ -299,6 +298,7 @@ async def websocket_handler(websocket):
     except Exception as e:
         logging.error(f"WebSocket handler error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         ws_clients.remove(websocket)
@@ -309,10 +309,7 @@ async def broadcast_ws(message: dict):
     """Broadcast message to all WebSocket clients"""
     if ws_clients:
         message_json = json.dumps(message)
-        await asyncio.gather(
-            *[client.send(message_json) for client in ws_clients],
-            return_exceptions=True
-        )
+        await asyncio.gather(*[client.send(message_json) for client in ws_clients], return_exceptions=True)
 
 
 def watch_for_new_items(loop):
@@ -335,16 +332,10 @@ def watch_for_new_items(loop):
                         ui_item = prepare_item_for_ui(item)
 
                         # Broadcast to all clients
-                        message = {
-                            'type': 'new_item',
-                            'item': ui_item
-                        }
+                        message = {"type": "new_item", "item": ui_item}
 
                         # Schedule broadcast in async loop
-                        asyncio.run_coroutine_threadsafe(
-                            broadcast_ws(message),
-                            loop
-                        )
+                        asyncio.run_coroutine_threadsafe(broadcast_ws(message), loop)
 
                 last_known_id = latest_id
 
@@ -357,13 +348,13 @@ def watch_for_new_items(loop):
 async def start_websocket_server():
     """Start WebSocket server for UI"""
     logging.info("Starting WebSocket server on ws://localhost:8765")
-    async with websockets.serve(websocket_handler, 'localhost', 8765):
+    async with websockets.serve(websocket_handler, "localhost", 8765):
         await asyncio.Future()  # Run forever
 
 
 def start_server():
     """Start UNIX socket server to receive clipboard data"""
-    socket_path = os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/tmp'), 'simple-clipboard.sock')
+    socket_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "simple-clipboard.sock")
 
     # Remove existing socket if it exists
     try:
@@ -405,34 +396,35 @@ def start_server():
             conn, _ = server.accept()
             try:
                 # Read data until we get a newline (for JSON messages)
-                full_data = b''
-                while b'\n' not in full_data:
+                full_data = b""
+                while b"\n" not in full_data:
                     data = conn.recv(4096)
                     if not data:
                         break
                     full_data += data
 
                 if full_data:
-                    message = json.loads(full_data.decode('utf-8').strip())
+                    message = json.loads(full_data.decode("utf-8").strip())
 
                     # Handle UI requests
-                    if 'action' in message:
-                        if message['action'] == 'get_history':
+                    if "action" in message:
+                        if message["action"] == "get_history":
                             try:
-                                response = json.dumps({'history': history}) + '\n'
-                                conn.sendall(response.encode('utf-8'))
+                                response = json.dumps({"history": history}) + "\n"
+                                conn.sendall(response.encode("utf-8"))
                             except BrokenPipeError:
                                 pass  # Client disconnected
                         # Don't close connection yet - let client close it
                         continue
 
                     # Handle clipboard events from extension
-                    if message['type'] == 'text':
-                        text = message['content']
-                        text_bytes = text.encode('utf-8')
+                    if message["type"] == "text":
+                        text = message["content"]
+                        text_bytes = text.encode("utf-8")
 
                         # Calculate hash for deduplication
                         from database import ClipboardDB
+
                         text_hash = ClipboardDB.calculate_hash(text_bytes)
 
                         # Check if hash already exists in database
@@ -444,15 +436,17 @@ def start_server():
                         else:
                             timestamp = datetime.now().isoformat()
 
-                            history.append({
-                                'type': 'text',
-                                'content': text,
-                                'timestamp': timestamp,
-                            })
+                            history.append(
+                                {
+                                    "type": "text",
+                                    "content": text,
+                                    "timestamp": timestamp,
+                                }
+                            )
 
                             # Save to database with hash (thread-safe)
                             with db_lock:
-                                db.add_item('text', text_bytes, timestamp, data_hash=text_hash)
+                                db.add_item("text", text_bytes, timestamp, data_hash=text_hash)
 
                             # Print what was copied
                             if len(text) > 100:
@@ -461,14 +455,15 @@ def start_server():
                                 logging.info(f"✓ Copied: {text}")
                             logging.info(f"  (History: {len(history)} items)\n")
 
-                    elif message['type'].startswith('image/'):
+                    elif message["type"].startswith("image/"):
                         # Handle image data (base64 encoded)
-                        image_content = json.loads(message['content'])
-                        image_data = image_content['data']
+                        image_content = json.loads(message["content"])
+                        image_data = image_content["data"]
                         image_bytes = base64.b64decode(image_data)
 
                         # Calculate hash for deduplication
                         from database import ClipboardDB
+
                         image_hash = ClipboardDB.calculate_hash(image_bytes)
 
                         # Check if hash already exists in database
@@ -476,24 +471,30 @@ def start_server():
                             hash_exists = db.hash_exists(image_hash)
 
                         if hash_exists:
-                            logging.info(f"⊘ Skipping duplicate image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)\n")
+                            logging.info(
+                                f"⊘ Skipping duplicate image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)\n"
+                            )
                         else:
                             timestamp = datetime.now().isoformat()
 
-                            history.append({
-                                'type': message['type'],
-                                'content': image_data,
-                                'timestamp': timestamp,
-                            })
+                            history.append(
+                                {
+                                    "type": message["type"],
+                                    "content": image_data,
+                                    "timestamp": timestamp,
+                                }
+                            )
 
                             # Save to database with hash (thread-safe)
                             with db_lock:
-                                item_id = db.add_item(message['type'], image_bytes, timestamp, data_hash=image_hash)
+                                item_id = db.add_item(message["type"], image_bytes, timestamp, data_hash=image_hash)
 
                             # Generate thumbnail asynchronously
                             process_thumbnail_async(item_id, image_bytes)
 
-                            logging.info(f"✓ Copied image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)")
+                            logging.info(
+                                f"✓ Copied image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)"
+                            )
                             logging.info(f"  (History: {len(history)} items)\n")
 
             except json.JSONDecodeError:
@@ -513,5 +514,6 @@ def start_server():
         except OSError as e:
             logging.error(f"Error unlinking socket: {e}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     start_server()

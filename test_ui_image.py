@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Test if UI can render images"""
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-
-from gi.repository import Gtk, Adw, GdkPixbuf, Gdk
 import base64
+
+import gi
+from gi.repository import GdkPixbuf
+
 from database import ClipboardDB
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
 
 def test_image_rendering():
     db = ClipboardDB()
@@ -17,13 +20,13 @@ def test_image_rendering():
     print(f"Type: {item['type']}")
     print(f"Type starts with 'image/': {item['type'].startswith('image/')}")
 
-    thumbnail = item.get('thumbnail')
+    thumbnail = item.get("thumbnail")
     if thumbnail:
         print(f"Thumbnail size: {len(thumbnail)} bytes")
 
         try:
             # Encode to base64 (as the UI receives it)
-            thumbnail_b64 = base64.b64encode(thumbnail).decode('utf-8')
+            thumbnail_b64 = base64.b64encode(thumbnail).decode("utf-8")
             print(f"Base64 thumbnail size: {len(thumbnail_b64)}")
 
             # Decode base64 (as the UI does)
@@ -46,9 +49,11 @@ def test_image_rendering():
         except Exception as e:
             print(f"✗ Error: {e}")
             import traceback
+
             traceback.print_exc()
     else:
         print("✗ No thumbnail data")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     test_image_rendering()

@@ -1,0 +1,24 @@
+{
+  "env": {
+    "es6": true,
+    "node": true
+  },
+  "extends": ["eslint:recommended", "prettier"],
+  "plugins": ["prettier"],
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "rules": {
+    "prettier/prettier": "warn",
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "no-undef": "warn"
+  },
+  "globals": {
+    "imports": "readonly",
+    "global": "readonly",
+    "log": "readonly",
+    "logError": "readonly"
+  }
+}
