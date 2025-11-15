@@ -3,17 +3,23 @@
 TFCBM UI - GTK4 clipboard manager interface
 """
 
+import argparse
 import asyncio
 import base64
 import json
+import os
 import signal
+import subprocess
 import sys
 import threading
+import time
+import traceback
+from datetime import datetime
 from pathlib import Path
 
 import gi
 import websockets
-from gi.repository import Adw, Gdk, GdkPixbuf, GLib, Gtk
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -22,10 +28,12 @@ gi.require_version("Adw", "1")
 class ClipboardItemRow(Gtk.ListBoxRow):
     """A row displaying a single clipboard item (text or image)"""
 
-    def __init__(self, item, window):
+    def __init__(self, item, window, show_pasted_time=False):
         super().__init__()
         self.item = item
         self.window = window
+        self.show_pasted_time = show_pasted_time
+        self._last_paste_time = 0  # Track last paste to prevent duplicates
 
         # Make row activatable (clickable)
         self.set_activatable(True)
@@ -41,10 +49,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Header box with timestamp and buttons
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
-        # Timestamp label
-        timestamp = item.get("timestamp", "")
+        # Timestamp label (show pasted time if in pasted tab, otherwise copied time)
+        if show_pasted_time and "pasted_timestamp" in item:
+            timestamp = item.get("pasted_timestamp", "")
+            time_label_text = f"Pasted: {self._format_timestamp(timestamp)}"
+        else:
+            timestamp = item.get("timestamp", "")
+            time_label_text = self._format_timestamp(timestamp)
+
         if timestamp:
-            time_label = Gtk.Label(label=self._format_timestamp(timestamp))
+            time_label = Gtk.Label(label=time_label_text)
             time_label.add_css_class("dim-label")
             time_label.add_css_class("caption")
             time_label.set_halign(Gtk.Align.START)
@@ -174,7 +188,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _format_timestamp(self, timestamp_str):
         """Format ISO timestamp to readable format"""
-        from datetime import datetime
 
         try:
             dt = datetime.fromisoformat(timestamp_str)
@@ -185,6 +198,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked"""
         item_type = self.item["type"]
+        item_id = self.item["id"]
 
         clipboard = Gdk.Display.get_default().get_clipboard()
 
@@ -194,10 +208,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             print(f"Copied text to clipboard: {content[:50]}")
             # Show toast notification
             self.window.show_toast("Text copied to clipboard")
+            # Record paste event
+            self._record_paste(item_id)
 
         elif item_type.startswith("image/") or item_type == "screenshot":
             # For images, fetch full image from server then copy to clipboard
-            item_id = self.item["id"]
             self.window.show_toast("Loading full image...")
             self._copy_full_image_to_clipboard(item_id, clipboard)
 
@@ -206,9 +221,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         def fetch_and_copy():
             try:
-                import asyncio
-
-                import websockets
 
                 async def get_full_image():
                     uri = "ws://localhost:8765"
@@ -244,9 +256,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                     self.window.show_toast(
                                         f"📷 Full image copied ({pixbuf.get_width()}x{pixbuf.get_height()})"
                                     )
+
+                                    # Record paste event
+                                    self._record_paste(item_id)
                                 except Exception as e:
                                     print(f"Error copying to clipboard: {e}")
-                                    import traceback
 
                                     traceback.print_exc()
                                     self.window.show_toast(f"Error copying: {str(e)}")
@@ -259,14 +273,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 loop.run_until_complete(get_full_image())
 
             except Exception as e:
-                print(f"Error fetching full image: {e}")
-                import traceback
+                error_msg = str(e)
+                print(f"Error fetching full image: {error_msg}")
 
                 traceback.print_exc()
-                GLib.idle_add(lambda: self.window.show_toast(f"Error: {str(e)}") or False)
+                GLib.idle_add(lambda: self.window.show_toast(f"Error: {error_msg}") or False)
 
         # Run in background thread
-        import threading
 
         thread = threading.Thread(target=fetch_and_copy, daemon=True)
         thread.start()
@@ -320,9 +333,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         def fetch_and_save():
             try:
-                import asyncio
-
-                import websockets
 
                 async def get_full_image():
                     uri = "ws://localhost:8765"
@@ -353,7 +363,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 print(f"Error fetching full image: {e}")
 
         # Run in background thread
-        import threading
 
         thread = threading.Thread(target=fetch_and_save, daemon=True)
         thread.start()
@@ -386,9 +395,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         def send_delete():
             try:
-                import asyncio
-
-                import websockets
 
                 async def delete_item():
                     uri = "ws://localhost:8765"
@@ -406,9 +412,40 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 print(f"Error deleting item: {e}")
 
         # Run in background thread
-        import threading
 
         thread = threading.Thread(target=send_delete, daemon=True)
+        thread.start()
+
+    def _record_paste(self, item_id):
+        """Record that this item was pasted (with debouncing to prevent duplicates)"""
+
+        # Debounce: Only record if at least 500ms has passed since last paste
+        current_time = time.time()
+        if current_time - self._last_paste_time < 0.5:
+            print(f"Debouncing duplicate paste for item {item_id}")
+            return
+        self._last_paste_time = current_time
+
+        def send_record():
+            try:
+
+                async def record():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {"action": "record_paste", "id": item_id}
+                        await websocket.send(json.dumps(request))
+                        print(f"Recorded paste for item {item_id}")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(record())
+
+            except Exception as e:
+                print(f"Error recording paste: {e}")
+
+        # Run in background thread
+
+        thread = threading.Thread(target=send_record, daemon=True)
         thread.start()
 
 
@@ -461,18 +498,49 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         main_box.append(header)
 
-        # Scrolled window for clipboard items
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        # Create TabView for Recently Copied and Recently Pasted
+        self.tab_view = Adw.TabView()
+        self.tab_view.set_vexpand(True)
 
-        # ListBox for items
-        self.listbox = Gtk.ListBox()
-        self.listbox.add_css_class("boxed-list")
-        self.listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        # Tab bar
+        tab_bar = Adw.TabBar()
+        tab_bar.set_view(self.tab_view)
+        main_box.append(tab_bar)
 
-        scrolled.set_child(self.listbox)
-        main_box.append(scrolled)
+        # Tab 1: Recently Copied
+        copied_scrolled = Gtk.ScrolledWindow()
+        copied_scrolled.set_vexpand(True)
+        copied_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        self.copied_listbox = Gtk.ListBox()
+        self.copied_listbox.add_css_class("boxed-list")
+        self.copied_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+
+        copied_scrolled.set_child(self.copied_listbox)
+
+        copied_page = self.tab_view.append(copied_scrolled)
+        copied_page.set_title("Recently Copied")
+        copied_page.set_icon(Gio.ThemedIcon.new("edit-copy-symbolic"))
+
+        # Tab 2: Recently Pasted
+        pasted_scrolled = Gtk.ScrolledWindow()
+        pasted_scrolled.set_vexpand(True)
+        pasted_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        self.pasted_listbox = Gtk.ListBox()
+        self.pasted_listbox.add_css_class("boxed-list")
+        self.pasted_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+
+        pasted_scrolled.set_child(self.pasted_listbox)
+
+        pasted_page = self.tab_view.append(pasted_scrolled)
+        pasted_page.set_title("Recently Pasted")
+        pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
+
+        # Connect tab switch event
+        self.tab_view.connect("notify::selected-page", self._on_tab_switched)
+
+        main_box.append(self.tab_view)
 
         # Set up toast overlay
         self.toast_overlay.set_child(main_box)
@@ -480,6 +548,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Load clipboard history
         GLib.idle_add(self.load_history)
+
+        # Store current tab state
+        self.current_tab = "copied"
 
         # Position window to the left
         self.position_window_left()
@@ -546,10 +617,42 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         except Exception as e:
             print(f"WebSocket error: {e}")
-            import traceback
 
             traceback.print_exc()
             GLib.idle_add(self.show_error, str(e))
+
+    def load_pasted_history(self):
+        """Load recently pasted items via WebSocket"""
+
+        def run_websocket():
+            try:
+
+                async def get_pasted():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        # Request pasted history
+                        request = {"action": "get_recently_pasted", "limit": 100}
+                        await websocket.send(json.dumps(request))
+
+                        # Wait for response
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "recently_pasted":
+                            items = data.get("items", [])
+                            print(f"Received {len(items)} pasted items")
+                            GLib.idle_add(self.update_pasted_history, items)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(get_pasted())
+
+            except Exception as e:
+                print(f"Error loading pasted history: {e}")
+
+        # Run in background thread
+        thread = threading.Thread(target=run_websocket, daemon=True)
+        thread.start()
 
     def show_toast(self, message):
         """Show a toast notification"""
@@ -558,39 +661,67 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.toast_overlay.add_toast(toast)
 
     def update_history(self, history):
-        """Update the listbox with history items"""
+        """Update the copied listbox with history items"""
         # Clear existing items
         while True:
-            row = self.listbox.get_row_at_index(0)
+            row = self.copied_listbox.get_row_at_index(0)
             if row is None:
                 break
-            self.listbox.remove(row)
+            self.copied_listbox.remove(row)
 
         # Add items (already in reverse order from backend)
         for item in history:
             row = ClipboardItemRow(item, self)
-            self.listbox.prepend(row)  # Add to top
+            self.copied_listbox.prepend(row)  # Add to top
+
+        return False  # Don't repeat
+
+    def update_pasted_history(self, history):
+        """Update the pasted listbox with pasted items"""
+        # Clear existing items
+        while True:
+            row = self.pasted_listbox.get_row_at_index(0)
+            if row is None:
+                break
+            self.pasted_listbox.remove(row)
+
+        # Add items (already in reverse order from backend)
+        for item in history:
+            row = ClipboardItemRow(item, self, show_pasted_time=True)
+            self.pasted_listbox.prepend(row)  # Add to top
 
         return False  # Don't repeat
 
     def add_item(self, item):
-        """Add a single new item to the top of the list"""
+        """Add a single new item to the top of the copied list"""
         row = ClipboardItemRow(item, self)
-        self.listbox.prepend(row)
+        self.copied_listbox.prepend(row)
         return False
 
     def remove_item(self, item_id):
-        """Remove an item from the list by ID"""
-        # Find and remove the row with matching ID
+        """Remove an item from both lists by ID"""
+        # Remove from copied list
         index = 0
         while True:
-            row = self.listbox.get_row_at_index(index)
+            row = self.copied_listbox.get_row_at_index(index)
             if row is None:
                 break
             if hasattr(row, "item") and row.item.get("id") == item_id:
-                self.listbox.remove(row)
+                self.copied_listbox.remove(row)
                 break
             index += 1
+
+        # Remove from pasted list
+        index = 0
+        while True:
+            row = self.pasted_listbox.get_row_at_index(index)
+            if row is None:
+                break
+            if hasattr(row, "item") and row.item.get("id") == item_id:
+                self.pasted_listbox.remove(row)
+                break
+            index += 1
+
         return False
 
     def show_error(self, error_msg):
@@ -599,21 +730,30 @@ class ClipboardWindow(Adw.ApplicationWindow):
         error_label.add_css_class("error")
         error_label.set_selectable(True)  # Make error copyable
         error_label.set_wrap(True)
-        self.listbox.append(error_label)
+        self.copied_listbox.append(error_label)
         return False
+
+    def _on_tab_switched(self, tab_view, param):
+        """Handle tab switching"""
+        selected_page = tab_view.get_selected_page()
+        if selected_page:
+            title = selected_page.get_title()
+            if title == "Recently Pasted":
+                self.current_tab = "pasted"
+                # Load pasted items when switching to pasted tab
+                GLib.idle_add(self.load_pasted_history)
+            else:
+                self.current_tab = "copied"
 
     def _on_close_request(self, window):
         """Handle window close request - kill server before exiting"""
         if self.server_pid:
             try:
-                import os
-                import signal
 
                 print(f"\nKilling server (PID: {self.server_pid})...")
                 os.kill(self.server_pid, signal.SIGTERM)
 
                 # Also kill the tee process if it exists
-                import subprocess
 
                 subprocess.run(["pkill", "-P", str(self.server_pid)], stderr=subprocess.DEVNULL)
             except Exception as e:
@@ -661,7 +801,6 @@ class ClipboardApp(Adw.Application):
 
 def main():
     """Entry point"""
-    import argparse
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="TFCBM UI")
@@ -672,13 +811,11 @@ def main():
     def signal_handler(sig, frame):
         if args.server_pid:
             try:
-                import os
 
                 print(f"\n\nKilling server (PID: {args.server_pid})...")
                 os.kill(args.server_pid, signal.SIGTERM)
 
                 # Also kill child processes
-                import subprocess
 
                 subprocess.run(["pkill", "-P", str(args.server_pid)], stderr=subprocess.DEVNULL)
             except Exception as e:
@@ -694,7 +831,6 @@ def main():
     except KeyboardInterrupt:
         if args.server_pid:
             try:
-                import os
 
                 print(f"\n\nKilling server (PID: {args.server_pid})...")
                 os.kill(args.server_pid, signal.SIGTERM)

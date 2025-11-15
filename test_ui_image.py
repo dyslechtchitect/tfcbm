@@ -2,6 +2,7 @@
 """Test if UI can render images"""
 
 import base64
+import traceback
 
 import gi
 from gi.repository import GdkPixbuf
@@ -48,7 +49,6 @@ def test_image_rendering():
 
         except Exception as e:
             print(f"✗ Error: {e}")
-            import traceback
 
             traceback.print_exc()
     else:

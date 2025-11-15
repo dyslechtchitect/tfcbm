@@ -39,11 +39,12 @@ source .venv/bin/activate
 echo "Installing Python linting tools..."
 pip install -q black isort flake8 autopep8 autoflake 2>/dev/null || true
 
-# Find all Python files (excluding venv and node_modules)
+# Find all Python files (excluding venv, node_modules, and the import removal script)
 PYTHON_FILES=$(find . -name "*.py" \
     -not -path "./.venv/*" \
     -not -path "./node_modules/*" \
-    -not -path "./.git/*")
+    -not -path "./.git/*" \
+    -not -name "remove_inline_imports.py")
 
 if [ -z "$PYTHON_FILES" ]; then
     echo -e "${YELLOW}No Python files found.${NC}"
@@ -51,6 +52,16 @@ else
     echo -e "${GREEN}Found Python files:${NC}"
     echo "$PYTHON_FILES" | sed 's/^/  /'
     echo ""
+
+    # 0. Remove inline imports (move to top level)
+    echo "Running inline import removal..."
+    if [ -f "remove_inline_imports.py" ]; then
+        for file in $PYTHON_FILES; do
+            python3 remove_inline_imports.py "$file" 2>/dev/null || true
+        done
+    else
+        echo -e "${YELLOW}⚠ remove_inline_imports.py not found, skipping${NC}"
+    fi
 
     # 1. autoflake - Remove unused imports and variables
     echo "Running autoflake (removing unused imports)..."
@@ -68,7 +79,7 @@ else
     echo "Running autopep8 (PEP 8 fixes)..."
     echo "$PYTHON_FILES" | xargs autopep8 --in-place --aggressive --aggressive --max-line-length 120
 
-    # 4. flake8 - Linting (report only, no auto-fix)
+    # 5. flake8 - Linting (report only, no auto-fix)
     echo ""
     echo -e "${YELLOW}Running flake8 (linting report):${NC}"
     echo "$PYTHON_FILES" | xargs flake8 --max-line-length 120 --ignore=E203,E266,E501,W503 --extend-ignore=E402 || {
@@ -189,6 +200,7 @@ echo "Linting Complete!"
 echo -e "==========================================${NC}"
 echo ""
 echo "Summary:"
+echo "  ✓ Inline imports moved to top level"
 echo "  ✓ Python files formatted with black, isort, autopep8"
 echo "  ✓ JavaScript files formatted with prettier, eslint"
 echo ""

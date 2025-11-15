@@ -68,6 +68,35 @@ class ClipboardDB:
         """
         )
 
+        # Create recently_pasted table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recently_pasted (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clipboard_item_id INTEGER NOT NULL,
+                pasted_timestamp TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (clipboard_item_id) REFERENCES clipboard_items(id) ON DELETE CASCADE
+            )
+        """
+        )
+
+        # Create index on pasted_timestamp for fast queries
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_pasted_timestamp
+            ON recently_pasted(pasted_timestamp DESC)
+        """
+        )
+
+        # Create index on clipboard_item_id for JOIN performance
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_clipboard_item_id
+            ON recently_pasted(clipboard_item_id)
+        """
+        )
+
         self.conn.commit()
         logging.info(f"Database initialized or already exists at: {self.db_path}")
 
@@ -242,6 +271,80 @@ class ClipboardDB:
         cursor.execute("SELECT MAX(id) as max_id FROM clipboard_items")
         row = cursor.fetchone()
         return row["max_id"] if row["max_id"] is not None else None
+
+    def add_pasted_item(self, clipboard_item_id: int, pasted_timestamp: str = None) -> int:
+        """
+        Record when a clipboard item was pasted
+
+        Args:
+            clipboard_item_id: ID of the clipboard item that was pasted
+            pasted_timestamp: ISO format timestamp (defaults to now)
+
+        Returns:
+            The ID of the pasted record
+        """
+        if pasted_timestamp is None:
+            pasted_timestamp = datetime.now().isoformat()
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO recently_pasted (clipboard_item_id, pasted_timestamp)
+            VALUES (?, ?)
+        """,
+            (clipboard_item_id, pasted_timestamp),
+        )
+        self.conn.commit()
+        pasted_id = cursor.lastrowid
+        logging.info(
+            f"Recorded paste: Item ID={clipboard_item_id}, Pasted ID={pasted_id}, Timestamp={pasted_timestamp}"
+        )
+        return pasted_id
+
+    def get_recently_pasted(self, limit: int = 100, offset: int = 0) -> List[Dict]:
+        """
+        Get recently pasted items (newest first) with JOIN to clipboard_items
+
+        Args:
+            limit: Maximum number of items to return
+            offset: Number of items to skip
+
+        Returns:
+            List of pasted items with full clipboard item data
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                rp.id as paste_id,
+                rp.pasted_timestamp,
+                ci.id,
+                ci.timestamp,
+                ci.type,
+                ci.data,
+                ci.thumbnail
+            FROM recently_pasted rp
+            INNER JOIN clipboard_items ci ON rp.clipboard_item_id = ci.id
+            ORDER BY rp.pasted_timestamp DESC
+            LIMIT ? OFFSET ?
+        """,
+            (limit, offset),
+        )
+
+        items = []
+        for row in cursor.fetchall():
+            items.append(
+                {
+                    "paste_id": row["paste_id"],
+                    "pasted_timestamp": row["pasted_timestamp"],
+                    "id": row["id"],
+                    "timestamp": row["timestamp"],
+                    "type": row["type"],
+                    "data": row["data"],
+                    "thumbnail": row["thumbnail"],
+                }
+            )
+        return items
 
     def close(self):
         """Close database connection"""

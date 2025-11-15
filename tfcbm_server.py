@@ -12,6 +12,7 @@ import socket
 import subprocess
 import threading
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
@@ -287,9 +288,32 @@ async def websocket_handler(websocket):
                         # Notify all clients
                         await broadcast_ws({"type": "item_deleted", "id": item_id})
 
+                elif action == "get_recently_pasted":
+                    limit = data.get("limit", 100)
+
+                    # Get recently pasted items with JOIN
+                    with db_lock:
+                        items = db.get_recently_pasted(limit=limit)
+
+                    # Convert to UI format
+                    ui_items = [prepare_item_for_ui(item) for item in items]
+
+                    # Add pasted_timestamp to each item
+                    for i, item in enumerate(items):
+                        ui_items[i]["pasted_timestamp"] = item["pasted_timestamp"]
+
+                    response = {"type": "recently_pasted", "items": ui_items}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "record_paste":
+                    item_id = data.get("id")
+                    if item_id:
+                        with db_lock:
+                            paste_id = db.add_pasted_item(item_id)
+                        logging.info(f"Recorded paste for item {item_id} (paste_id={paste_id})")
+
             except Exception as e:
                 logging.error(f"Error handling WebSocket message: {e}")
-                import traceback
 
                 traceback.print_exc()
 
@@ -297,7 +321,6 @@ async def websocket_handler(websocket):
         pass
     except Exception as e:
         logging.error(f"WebSocket handler error: {e}")
-        import traceback
 
         traceback.print_exc()
     finally:
