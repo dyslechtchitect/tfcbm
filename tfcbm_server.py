@@ -22,9 +22,13 @@ import websockets
 from PIL import Image
 
 from database import ClipboardDB
+from settings import get_settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Initialize settings
+settings = get_settings()
 
 # Initialize database
 db = ClipboardDB()
@@ -213,6 +217,10 @@ def prepare_item_for_ui(item: dict) -> dict:
         # Use thumbnail if available, generate one if not
         if thumbnail:
             thumbnail_b64 = base64.b64encode(thumbnail).decode("utf-8")
+            # Defensive check: if thumbnail is still too large, don't send it
+            if len(thumbnail_b64) > 500 * 1024: # 500KB limit for base64 thumbnail
+                logging.warning(f"Thumbnail for item {item['id']} is too large ({len(thumbnail_b64)} bytes), sending None.")
+                thumbnail_b64 = None
         else:
             # No thumbnail yet - generate a placeholder or small version
             try:
@@ -220,19 +228,23 @@ def prepare_item_for_ui(item: dict) -> dict:
                 thumb = generate_thumbnail(data, max_size=250)
                 if thumb:
                     thumbnail_b64 = base64.b64encode(thumb).decode("utf-8")
-                    # Update database with generated thumbnail
-                    with db_lock:
-                        db.update_thumbnail(item["id"], thumb)
+                    if len(thumbnail_b64) > 500 * 1024: # 500KB limit for base64 thumbnail
+                        logging.warning(f"Generated thumbnail for item {item['id']} is too large ({len(thumbnail_b64)} bytes), sending None.")
+                        thumbnail_b64 = None
+                    else:
+                        # Update database with generated thumbnail
+                        with db_lock:
+                            db.update_thumbnail(item["id"], thumb)
                 else:
                     thumbnail_b64 = None
             except BaseException:
                 thumbnail_b64 = None
     else:
-        try:
-            content = data.decode("utf-8") if isinstance(data, bytes) else data
-        except BaseException:
-            content = base64.b64encode(data).decode("utf-8") if isinstance(data, bytes) else data
+        # For any other non-text type, ensure content is None to prevent large binary data
+        content = None
         thumbnail_b64 = None
+
+    logging.debug(f"Item {item['id']} ({item_type}): content_size={len(content) if content else 0}, thumbnail_size={len(thumbnail_b64) if thumbnail_b64 else 0}")
 
     return {
         "id": item["id"],
@@ -257,7 +269,7 @@ async def websocket_handler(websocket):
                 action = data.get("action")
 
                 if action == "get_history":
-                    limit = data.get("limit", 20)
+                    limit = data.get("limit", settings.max_page_length)
                     offset = data.get("offset", 0)
 
                     # Use lock for thread-safe database access
@@ -291,7 +303,7 @@ async def websocket_handler(websocket):
                         await broadcast_ws({"type": "item_deleted", "id": item_id})
 
                 elif action == "get_recently_pasted":
-                    limit = data.get("limit", 20)
+                    limit = data.get("limit", settings.max_page_length)
                     offset = data.get("offset", 0)
 
                     # Get recently pasted items with JOIN
@@ -312,6 +324,7 @@ async def websocket_handler(websocket):
                 elif action == "record_paste":
                     item_id = data.get("id")
                     if item_id:
+                        logging.info(f"Received record_paste request for item {item_id}")
                         with db_lock:
                             paste_id = db.add_pasted_item(item_id)
                         logging.info(f"Recorded paste for item {item_id} (paste_id={paste_id})")
@@ -375,7 +388,9 @@ def watch_for_new_items(loop):
 async def start_websocket_server():
     """Start WebSocket server for UI"""
     logging.info("Starting WebSocket server on ws://localhost:8765")
-    async with websockets.serve(websocket_handler, "localhost", 8765):
+    configured_max_size = 5 * 1024 * 1024 # 5MB
+    logging.info(f"WebSocket server configured with max_size: {configured_max_size} bytes")
+    async with websockets.serve(websocket_handler, "localhost", 8765, max_size=configured_max_size):
         await asyncio.Future()  # Run forever
 
 

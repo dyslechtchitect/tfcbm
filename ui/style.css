@@ -1,0 +1,72 @@
+/* ui/style.css */
+
+.clipboard-item-card {
+    background-color: @theme_bg_color; /* Use theme background color */
+    border-radius: 12px; /* Rounded corners */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+    margin: 8px; /* Space between cards */
+    padding: 12px; /* Inner padding */
+    /* Sizing will be handled by Gtk.Frame.set_size_request() */
+    /* Overflow will be handled by Gtk.Label.set_ellipsize() and Gtk.Picture scaling */
+    transition: background-color 0.2s ease-in-out; /* Smooth transition for hover */
+}
+
+.clipboard-item-card:hover {
+    background-color: rgba(128, 128, 128, 0.1); /* Light grey flash on hover */
+}
+
+/* Content box will use Gtk.Box properties for layout */
+/* .clipboard-item-content {
+    flex-grow: 1;
+    overflow: hidden;
+} */
+
+/* Text truncation will be handled by Gtk.Label.set_ellipsize() */
+/* .clipboard-item-text {
+    white-space: normal;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-height: 120px;
+} */
+
+/* Image sizing will be handled by Gtk.Picture and its parent container */
+/* .clipboard-item-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+} */
+
+.full-item-dialog {
+    min-width: 400px;
+    min-height: 300px;
+}
+
+.full-item-text {
+    white-space: pre-wrap; /* Preserve whitespace and allow wrapping */
+    /* text-wrap: wrap; This is not a standard CSS property for GTK */
+}
+
+.full-item-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+.typewriter-text {
+    font-family: 'monospace'; /* Use a generic monospace font */
+    font-size: 1.1em; /* Slightly larger font size */
+}
+
+.big-quote {
+    font-family: 'Times New Roman', 'Liberation Serif', 'DejaVu Serif', Georgia, 'Noto Serif', serif; /* Classic serif fonts */
+    font-size: 2em; /* Much bigger than text */
+    font-weight: bold; /* Bold */
+    color: @theme_fg_color; /* Use theme foreground color */
+}

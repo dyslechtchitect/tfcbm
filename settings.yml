@@ -1,0 +1,5 @@
+# TFCBM Configuration File
+# This file is validated using Pydantic models
+
+display:
+  max_page_length: 20  # Number of items to load per page

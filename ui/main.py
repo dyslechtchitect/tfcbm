@@ -3,6 +3,8 @@
 TFCBM UI - GTK4 clipboard manager interface
 """
 
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
+import websockets
 import argparse
 import asyncio
 import base64
@@ -17,13 +19,15 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+# Add parent directory to path for imports
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from settings import get_settings
+
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-
-import websockets
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 
 class ClipboardItemRow(Gtk.ListBoxRow):
@@ -42,13 +46,19 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Main box for the row
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        main_box.set_margin_start(12)
-        main_box.set_margin_end(12)
-        main_box.set_margin_top(8)
-        main_box.set_margin_bottom(8)
+        main_box.set_hexpand(False)  # Prevent horizontal expansion
+
+        # Card frame for styling
+        card_frame = Gtk.Frame()
+        card_frame.set_vexpand(False)
+        card_frame.set_hexpand(False)
+        card_frame.set_size_request(200, 200)  # Enforce fixed size
+        card_frame.add_css_class("clipboard-item-card")
+        card_frame.set_child(main_box)
 
         # Header box with timestamp and buttons
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        header_box.set_hexpand(False)  # Prevent horizontal expansion
 
         # Timestamp label (show pasted time if in pasted tab, otherwise copied time)
         if show_pasted_time and "pasted_timestamp" in item:
@@ -63,11 +73,23 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             time_label.add_css_class("dim-label")
             time_label.add_css_class("caption")
             time_label.set_halign(Gtk.Align.START)
-            time_label.set_hexpand(True)
+            # Removed time_label.set_hexpand(True)
             header_box.append(time_label)
 
         # Button box
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        button_box.set_halign(Gtk.Align.END)  # Align buttons to the end (right)
+
+        # View Full Item button
+        view_button = Gtk.Button()
+        view_button.set_icon_name("zoom-in-symbolic")
+        view_button.add_css_class("flat")
+        view_button.set_tooltip_text("View full item")
+        view_gesture = Gtk.GestureClick.new()
+        view_gesture.connect("released", lambda g, n, x, y: self._do_view_full_item())
+        view_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        view_button.add_controller(view_gesture)
+        button_box.append(view_button)
 
         # Save button (with event controller to stop propagation)
         save_button = Gtk.Button()
@@ -100,6 +122,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Content box
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_hexpand(False)  # Prevent horizontal expansion
+        box.add_css_class("clipboard-item-content")  # Add class for content styling
 
         # Make content box clickable to copy (works on background, not on selectable text)
         content_gesture = Gtk.GestureClick.new()
@@ -108,21 +132,33 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Content based on type
         if item["type"] == "text":
-            content_label = Gtk.Label(label=item["content"])
+            # Create box for text with big bold quotes
+            text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            text_box.set_halign(Gtk.Align.START)
+
+            # Opening quote - bigger and bold
+            open_quote = Gtk.Label(label="\u201c")  # Left double quotation mark
+            open_quote.add_css_class("big-quote")
+            text_box.append(open_quote)
+
+            # Actual content
+            content_label = Gtk.Label(label=item['content'])
             content_label.set_wrap(True)
-            content_label.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+            content_label.set_ellipsize(Pango.EllipsizeMode.END)
             content_label.set_halign(Gtk.Align.START)
-            content_label.set_xalign(0)
-            content_label.set_max_width_chars(40)
+            content_label.add_css_class("clipboard-item-text")
+            content_label.add_css_class("typewriter-text")
             content_label.set_selectable(True)
+            content_label.set_max_width_chars(40)
+            content_label.set_lines(5)
+            text_box.append(content_label)
 
-            # Add some padding around text to make background more clickable
-            content_label.set_margin_start(8)
-            content_label.set_margin_end(8)
-            content_label.set_margin_top(4)
-            content_label.set_margin_bottom(4)
+            # Closing quote - bigger and bold
+            close_quote = Gtk.Label(label="\u201d")  # Right double quotation mark
+            close_quote.add_css_class("big-quote")
+            text_box.append(close_quote)
 
-            box.append(content_label)
+            box.append(text_box)
 
         elif item["type"].startswith("image/") or item["type"] == "screenshot":
             try:
@@ -154,9 +190,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 # Create image widget (thumbnail is already sized correctly)
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 picture = Gtk.Picture.new_for_paintable(texture)
-                picture.set_halign(Gtk.Align.START)
-                # Ensure image is displayed at its natural size
-                picture.set_can_shrink(False)
+                picture.set_halign(Gtk.Align.CENTER)  # Center image
+                picture.set_valign(Gtk.Align.CENTER)  # Center image
+                picture.add_css_class("clipboard-item-image")  # Apply image styling
                 picture.set_content_fit(Gtk.ContentFit.CONTAIN)
 
                 # Make image clickable to copy
@@ -185,7 +221,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 box.append(error_label)
 
         main_box.append(box)
-        self.set_child(main_box)
+        self.set_child(card_frame)  # Set the card_frame as the child of the row
 
     def _format_timestamp(self, timestamp_str):
         """Format ISO timestamp to readable format"""
@@ -198,24 +234,42 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked"""
-        item_type = self.item["type"]
-        item_id = self.item["id"]
+        self._perform_copy_to_clipboard(self.item["type"], self.item["id"], self.item["content"])
 
+    def _perform_copy_to_clipboard(self, item_type, item_id, content=None):
+        """Performs the actual copy to clipboard, shows toast, and records paste."""
         clipboard = Gdk.Display.get_default().get_clipboard()
+        if not clipboard:
+            print("Error: Could not get default clipboard.")
+            self.window.show_toast("Error: Could not access clipboard.")
+            return
 
-        if item_type == "text":
-            content = self.item["content"]
-            clipboard.set(content)
-            print(f"Copied text to clipboard: {content[:50]}")
-            # Show toast notification
-            self.window.show_toast("Text copied to clipboard")
-            # Record paste event
-            self._record_paste(item_id)
+        print(f"[UI] _perform_copy_to_clipboard called for item_id: {item_id}, type: {item_type}")
+        print(f"[UI] Clipboard object: {clipboard}")
 
-        elif item_type.startswith("image/") or item_type == "screenshot":
-            # For images, fetch full image from server then copy to clipboard
-            self.window.show_toast("Loading full image...")
-            self._copy_full_image_to_clipboard(item_id, clipboard)
+        try:
+            if item_type == "text":
+                if content is not None:
+                    print(f"[UI] Attempting to copy text: {content[:50]}...")
+                    try:
+                        clipboard.set(content)
+                        print(f"[UI] Successfully set text to clipboard: {content[:50]}")
+                        self.window.show_toast("Text copied to clipboard")
+                        self._record_paste(item_id)
+                    except Exception as clipboard_e:
+                        print(f"Error: Failed to set text to clipboard for item {item_id}: {clipboard_e}")
+                        traceback.print_exc()
+                        self.window.show_toast(f"Error setting clipboard: {str(clipboard_e)}")
+                else:
+                    print(f"Error: Text content is None for copy operation for item {item_id}.")
+                    self.window.show_toast("Error copying text: content is empty.")
+            elif item_type.startswith("image/") or item_type == "screenshot":
+                self.window.show_toast("Loading full image...")
+                self._copy_full_image_to_clipboard(item_id, clipboard)
+        except Exception as e:
+            print(f"Error setting clipboard content for item {item_id}: {e}")
+            traceback.print_exc()
+            self.window.show_toast(f"Error copying: {str(e)}")
 
     def _copy_full_image_to_clipboard(self, item_id, clipboard):
         """Request and copy full image from server to clipboard"""
@@ -225,7 +279,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 async def get_full_image():
                     uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    max_size = 5 * 1024 * 1024  # 5MB
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
                         # Request full image
                         request = {"action": "get_full_image", "id": item_id}
                         await websocket.send(json.dumps(request))
@@ -245,11 +300,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                             pixbuf = loader.get_pixbuf()
 
                             # Copy to clipboard on main thread
-                            def copy_to_clipboard():
+                            def copy_to_clipboard_on_main_thread():
                                 try:
-                                    # Set the pixbuf directly on clipboard
-                                    # This is the most compatible way for applications like GIMP
-                                    clipboard.set(pixbuf)
+                                    if not clipboard:
+                                        print("Error: Clipboard object is None in copy_to_clipboard_on_main_thread.")
+                                        self.window.show_toast("Error: Could not access clipboard.")
+                                        return False
+
+                                    # Convert pixbuf to texture for GTK4 clipboard
+                                    texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+                                    clipboard.set_texture(texture)
 
                                     print(
                                         f"Copied full image to clipboard ({pixbuf.get_width()}x{pixbuf.get_height()})"
@@ -261,13 +321,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                     # Record paste event
                                     self._record_paste(item_id)
                                 except Exception as e:
-                                    print(f"Error copying to clipboard: {e}")
+                                    print(f"Error copying to clipboard in main thread: {e}")
 
                                     traceback.print_exc()
                                     self.window.show_toast(f"Error copying: {str(e)}")
                                 return False
 
-                            GLib.idle_add(copy_to_clipboard)
+                            GLib.idle_add(copy_to_clipboard_on_main_thread)
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -320,14 +380,163 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                         with open(path, "w") as f:
                             f.write(content)
                         print(f"Saved text to {path}")
+                        self.window.show_toast(f"Saved text to {path}")
                     elif item_type.startswith("image/") or item_type == "screenshot":
                         # For images, request full image from server
                         self._save_full_image(item_id, path)
 
             except Exception as e:
                 print(f"Error saving file: {e}")
+                self.window.show_toast(f"Error saving file: {str(e)}")
 
         dialog.save(window, None, on_save_finish)
+
+    def _do_view_full_item(self):
+        """Display the full content of the item in a new dialog."""
+        item_type = self.item["type"]
+        item_id = self.item["id"]
+        window = self.get_root()
+
+        dialog = Adw.Window(modal=True, transient_for=window)
+        dialog.set_title("Full Clipboard Item")
+        dialog.set_default_size(600, 400)
+        dialog.add_css_class("full-item-dialog")
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        main_box.set_margin_start(18)
+        main_box.set_margin_end(18)
+        main_box.set_margin_top(12)
+        main_box.set_margin_bottom(12)
+
+        # Header with timestamp
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        timestamp = self.item.get("timestamp", "")
+        time_label = Gtk.Label(label=self._format_timestamp(timestamp))
+        time_label.add_css_class("dim-label")
+        time_label.add_css_class("caption")
+        time_label.set_halign(Gtk.Align.START)
+        time_label.set_hexpand(True)
+        header_box.append(time_label)
+
+        # Button box for save, delete, and close
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+
+        save_button = Gtk.Button()
+        save_button.set_icon_name("document-save-symbolic")
+        save_button.set_tooltip_text("Save to file")
+        save_button.connect("clicked", lambda btn: self._do_save())
+        button_box.append(save_button)
+
+        delete_button = Gtk.Button()
+        delete_button.set_icon_name("user-trash-symbolic")
+        delete_button.set_tooltip_text("Delete item")
+        delete_button.connect("clicked", lambda btn: self._on_delete_clicked(btn, dialog))
+        button_box.append(delete_button)
+
+        # Close button
+        close_button = Gtk.Button()
+        close_button.set_icon_name("window-close-symbolic")
+        close_button.set_tooltip_text("Close")
+        close_button.connect("clicked", lambda btn: dialog.close())
+        button_box.append(close_button)
+
+        header_box.append(button_box)
+        main_box.append(header_box)
+
+        # Content area
+        content_scrolled_window = Gtk.ScrolledWindow()
+        content_scrolled_window.set_vexpand(True)
+        content_scrolled_window.set_hexpand(True)
+
+        if item_type == "text":
+            content_label = Gtk.Label(label=self.item["content"])
+            content_label.set_wrap(True)
+            content_label.set_selectable(True)
+            content_label.set_halign(Gtk.Align.START)
+            content_label.set_valign(Gtk.Align.START)
+            content_label.add_css_class("full-item-text")
+            content_scrolled_window.set_child(content_label)
+
+            # Make text clickable to copy
+            text_copy_gesture = Gtk.GestureClick.new()
+            text_copy_gesture.connect("released", lambda g, n, x, y: self._perform_copy_to_clipboard(item_type, item_id, self.item["content"]))
+            content_label.add_controller(text_copy_gesture)
+            content_label.set_cursor(Gdk.Cursor.new_from_name("pointer"))
+
+        elif item_type.startswith("image/") or item_type == "screenshot":
+            image_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            image_container.set_halign(Gtk.Align.CENTER)
+            image_container.set_valign(Gtk.Align.CENTER)
+
+            spinner = Gtk.Spinner()
+            spinner.set_size_request(48, 48)
+            spinner.start()
+            image_container.append(spinner)
+
+            # Placeholder for image
+            picture = Gtk.Picture()
+            picture.set_halign(Gtk.Align.CENTER)
+            picture.set_valign(Gtk.Align.CENTER)
+            picture.add_css_class("full-item-image")
+            picture.set_can_shrink(False)
+            picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+            image_container.append(picture)
+
+            content_scrolled_window.set_child(image_container)
+
+            # Make image clickable to copy
+            image_copy_gesture = Gtk.GestureClick.new()
+            image_copy_gesture.connect("released", lambda g, n, x, y: self._perform_copy_to_clipboard(item_type, item_id))
+            picture.add_controller(image_copy_gesture)
+            picture.set_cursor(Gdk.Cursor.new_from_name("pointer"))
+
+            # Fetch full image in background
+            def fetch_and_display_full_image():
+                try:
+
+                    async def get_full_image_data():
+                        uri = "ws://localhost:8765"
+                        async with websockets.connect(uri) as websocket:
+                            request = {"action": "get_full_image", "id": item_id}
+                            await websocket.send(json.dumps(request))
+                            response = await websocket.recv()
+                            data = json.loads(response)
+
+                            if data.get("type") == "full_image" and data.get("id") == item_id:
+                                image_b64 = data.get("content")
+                                image_data = base64.b64decode(image_b64)
+
+                                def update_image_on_ui():
+                                    loader = GdkPixbuf.PixbufLoader()
+                                    loader.write(image_data)
+                                    loader.close()
+                                    pixbuf = loader.get_pixbuf()
+                                    texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+                                    picture.set_paintable(texture)
+                                    spinner.stop()
+                                    spinner.set_visible(False)
+                                    print(f"Displayed full image {pixbuf.get_width()}x{pixbuf.get_height()}")
+                                    return False
+
+                                GLib.idle_add(update_image_on_ui)
+                            else:
+                                GLib.idle_add(lambda: self.window.show_toast("Failed to get full image data") or False)
+
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(get_full_image_data())
+                except Exception as e:
+                    print(f"Error fetching full image for dialog: {e}")
+                    GLib.idle_add(lambda: self.window.show_toast(f"Error loading image: {str(e)}") or False)
+                    GLib.idle_add(spinner.stop)
+                    GLib.idle_add(lambda: spinner.set_visible(False))
+
+            threading.Thread(target=fetch_and_display_full_image, daemon=True).start()
+
+        main_box.append(content_scrolled_window)
+
+        dialog.set_content(main_box)
+        dialog.present()
 
     def _save_full_image(self, item_id, path):
         """Request and save full image from server"""
@@ -337,7 +546,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 async def get_full_image():
                     uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    max_size = 5 * 1024 * 1024  # 5MB
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
                         # Request full image
                         request = {"action": "get_full_image", "id": item_id}
                         await websocket.send(json.dumps(request))
@@ -368,7 +578,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         thread = threading.Thread(target=fetch_and_save, daemon=True)
         thread.start()
 
-    def _on_delete_clicked(self, button):
+    def _on_delete_clicked(self, button, full_item_dialog=None):
         """Delete item with confirmation"""
         window = self.get_root()
 
@@ -386,12 +596,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         def on_response(dialog, response):
             if response == "delete":
                 # Send delete request via WebSocket
-                self._delete_item_from_server(self.item["id"])
+                self._delete_item_from_server(self.item["id"], full_item_dialog)
 
         dialog.connect("response", on_response)
         dialog.present(window)
 
-    def _delete_item_from_server(self, item_id):
+    def _delete_item_from_server(self, item_id, full_item_dialog=None):
         """Send delete request to server via WebSocket"""
 
         def send_delete():
@@ -399,11 +609,15 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 async def delete_item():
                     uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    max_size = 5 * 1024 * 1024  # 5MB
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
                         # Send delete request
                         request = {"action": "delete_item", "id": item_id}
                         await websocket.send(json.dumps(request))
                         print(f"Deleted item {item_id}")
+                        GLib.idle_add(lambda: self.window.show_toast(f"Item {item_id} deleted") or False)
+                        if full_item_dialog:
+                            GLib.idle_add(full_item_dialog.close)
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -411,6 +625,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             except Exception as e:
                 print(f"Error deleting item: {e}")
+                GLib.idle_add(lambda: self.window.show_toast(f"Error deleting item: {str(e)}") or False)
 
         # Run in background thread
 
@@ -419,11 +634,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _record_paste(self, item_id):
         """Record that this item was pasted (with debouncing to prevent duplicates)"""
+        print(f"[UI] _record_paste called for item_id: {item_id}")
 
         # Debounce: Only record if at least 500ms has passed since last paste
         current_time = time.time()
         if current_time - self._last_paste_time < 0.5:
-            print(f"Debouncing duplicate paste for item {item_id}")
+            print(f"[UI] Debouncing duplicate paste for item {item_id}")
             return
         self._last_paste_time = current_time
 
@@ -432,17 +648,19 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 async def record():
                     uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    max_size = 5 * 1024 * 1024  # 5MB
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
                         request = {"action": "record_paste", "id": item_id}
+                        print(f"[UI] Sending record_paste request for item {item_id}")
                         await websocket.send(json.dumps(request))
-                        print(f"Recorded paste for item {item_id}")
+                        print(f"[UI] Recorded paste for item {item_id}")
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(record())
 
             except Exception as e:
-                print(f"Error recording paste: {e}")
+                print(f"[UI] Error recording paste for item {item_id}: {e}")
 
         # Run in background thread
 
@@ -455,14 +673,17 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def __init__(self, app, server_pid=None):
         super().__init__(application=app, title="TFCBM")
-
         self.server_pid = server_pid
+
+        # Load settings
+        self.settings = get_settings()
 
         # Connect close request handler
         self.connect("close-request", self._on_close_request)
 
         # Set window properties
         self.set_default_size(350, 800)
+        self.set_resizable(True)
 
         # Pagination state
         self.copied_offset = 0
@@ -475,7 +696,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.pasted_has_more = True
         self.pasted_loading = False
 
-        self.page_size = 20
+        self.page_size = self.settings.max_page_length
 
         # Window icon is set through the desktop file and application
         # GTK4/Adwaita doesn't use set_icon() anymore
@@ -491,7 +712,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add small logo to header (left side)
         try:
-            icon_path = Path(__file__).parent.parent / "resouces" / "icon-256.png"
+            icon_path = Path(__file__).parent.parent / "resouces" / "tfcbm.svg"
             if icon_path.exists():
                 # Create image from PNG
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 24, 24, True)
@@ -529,13 +750,30 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         copied_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
+        # Header bar with status and jump to top button
+        copied_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        copied_header.set_margin_top(8)
+        copied_header.set_margin_bottom(4)
+        copied_header.set_margin_start(8)
+        copied_header.set_margin_end(8)
+
         # Status label for copied items
         self.copied_status_label = Gtk.Label()
         self.copied_status_label.add_css_class("dim-label")
         self.copied_status_label.add_css_class("caption")
-        self.copied_status_label.set_margin_top(8)
-        self.copied_status_label.set_margin_bottom(4)
-        copied_box.append(self.copied_status_label)
+        self.copied_status_label.set_hexpand(True)
+        self.copied_status_label.set_halign(Gtk.Align.START)
+        copied_header.append(self.copied_status_label)
+
+        # Jump to top button for copied items
+        copied_jump_btn = Gtk.Button()
+        copied_jump_btn.set_icon_name("go-top-symbolic")
+        copied_jump_btn.set_tooltip_text("Jump to top")
+        copied_jump_btn.add_css_class("flat")
+        copied_jump_btn.connect("clicked", lambda btn: self._jump_to_top("copied"))
+        copied_header.append(copied_jump_btn)
+
+        copied_box.append(copied_header)
 
         self.copied_listbox = Gtk.ListBox()
         self.copied_listbox.add_css_class("boxed-list")
@@ -565,13 +803,30 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         pasted_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
+        # Header bar with status and jump to top button
+        pasted_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pasted_header.set_margin_top(8)
+        pasted_header.set_margin_bottom(4)
+        pasted_header.set_margin_start(8)
+        pasted_header.set_margin_end(8)
+
         # Status label for pasted items
         self.pasted_status_label = Gtk.Label()
         self.pasted_status_label.add_css_class("dim-label")
         self.pasted_status_label.add_css_class("caption")
-        self.pasted_status_label.set_margin_top(8)
-        self.pasted_status_label.set_margin_bottom(4)
-        pasted_box.append(self.pasted_status_label)
+        self.pasted_status_label.set_hexpand(True)
+        self.pasted_status_label.set_halign(Gtk.Align.START)
+        pasted_header.append(self.pasted_status_label)
+
+        # Jump to top button for pasted items
+        pasted_jump_btn = Gtk.Button()
+        pasted_jump_btn.set_icon_name("go-top-symbolic")
+        pasted_jump_btn.set_tooltip_text("Jump to top")
+        pasted_jump_btn.add_css_class("flat")
+        pasted_jump_btn.connect("clicked", lambda btn: self._jump_to_top("pasted"))
+        pasted_header.append(pasted_jump_btn)
+
+        pasted_box.append(pasted_header)
 
         self.pasted_listbox = Gtk.ListBox()
         self.pasted_listbox.add_css_class("boxed-list")
@@ -636,14 +891,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
     async def websocket_client(self):
         """WebSocket client to connect to backend"""
         uri = "ws://localhost:8765"
+        max_size = 5 * 1024 * 1024  # 5MB to match server
         print(f"Connecting to WebSocket server at {uri}...")
 
         try:
-            async with websockets.connect(uri) as websocket:
+            async with websockets.connect(uri, max_size=max_size) as websocket:
                 print("Connected to WebSocket server")
 
                 # Request history
-                request = {"action": "get_history", "limit": 100}
+                request = {"action": "get_history", "limit": self.page_size}
                 await websocket.send(json.dumps(request))
                 print("Requested history")
 
@@ -655,8 +911,18 @@ class ClipboardWindow(Adw.ApplicationWindow):
                     if msg_type == "history":
                         # Initial history load
                         items = data.get("items", [])
-                        print(f"Received {len(items)} items from history")
-                        GLib.idle_add(self.update_history, items)
+                        total_count = data.get("total_count", 0)
+                        offset = data.get("offset", 0)
+                        print(f"Received {len(items)} items from history (total: {total_count})")
+                        GLib.idle_add(self._initial_history_load, items, total_count, offset)
+
+                    elif msg_type == "recently_pasted":
+                        # Pasted history load
+                        items = data.get("items", [])
+                        total_count = data.get("total_count", 0)
+                        offset = data.get("offset", 0)
+                        print(f"Received {len(items)} pasted items (total: {total_count})")
+                        GLib.idle_add(self._initial_pasted_load, items, total_count, offset)
 
                     elif msg_type == "new_item":
                         # New item added
@@ -679,15 +945,17 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def load_pasted_history(self):
         """Load recently pasted items via WebSocket"""
+        page_size = self.page_size  # Capture for closure
 
         def run_websocket():
             try:
 
                 async def get_pasted():
                     uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    max_size = 5 * 1024 * 1024  # 5MB
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
                         # Request pasted history
-                        request = {"action": "get_recently_pasted", "limit": 100}
+                        request = {"action": "get_recently_pasted", "limit": page_size}
                         await websocket.send(json.dumps(request))
 
                         # Wait for response
@@ -709,6 +977,28 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Run in background thread
         thread = threading.Thread(target=run_websocket, daemon=True)
         thread.start()
+
+    def _create_loader(self):
+        """Create an animated loader using the TFCBM loader.svg"""
+        # Load the animated SVG loader
+        loader_path = Path(__file__).parent.parent / "resouces" / "loader.svg"
+
+        if loader_path.exists():
+            # Create a Picture widget to display the SVG
+            picture = Gtk.Picture.new_for_filename(str(loader_path))
+            picture.set_size_request(120, 120)  # SVG is 120x120
+            picture.set_halign(Gtk.Align.CENTER)
+            picture.set_valign(Gtk.Align.CENTER)
+            picture.set_can_shrink(False)
+            return picture
+        else:
+            # Fallback to spinner if SVG not found
+            spinner = Gtk.Spinner()
+            spinner.set_size_request(24, 24)
+            spinner.set_halign(Gtk.Align.CENTER)
+            spinner.set_valign(Gtk.Align.CENTER)
+            spinner.start()
+            return spinner
 
     def show_toast(self, message):
         """Show a toast notification"""
@@ -745,6 +1035,64 @@ class ClipboardWindow(Adw.ApplicationWindow):
         for item in history:
             row = ClipboardItemRow(item, self, show_pasted_time=True)
             self.pasted_listbox.append(row)  # Append to maintain DESC order
+
+        return False  # Don't repeat
+
+    def _initial_history_load(self, items, total_count, offset):
+        """Initial load of copied history with pagination data"""
+        # Update pagination state
+        self.copied_offset = offset
+        self.copied_total = total_count
+        self.copied_has_more = (offset + len(items)) < total_count
+
+        # Clear existing items
+        while True:
+            row = self.copied_listbox.get_row_at_index(0)
+            if row is None:
+                break
+            self.copied_listbox.remove(row)
+
+        # Add items (already in reverse order from backend)
+        for item in items:
+            row = ClipboardItemRow(item, self)
+            self.copied_listbox.prepend(row)  # Add to top
+
+        # Update status label
+        current_count = len(items)
+        self.copied_status_label.set_label(f"Showing {current_count} of {total_count} items")
+
+        # Kill standalone splash screen and show main window
+        subprocess.run(["pkill", "-f", "ui/splash.py"], stderr=subprocess.DEVNULL)
+        self.present()
+
+        return False  # Don't repeat
+
+    def _initial_pasted_load(self, items, total_count, offset):
+        """Initial load of pasted history with pagination data"""
+        # Update pagination state
+        self.pasted_offset = offset
+        self.pasted_total = total_count
+        self.pasted_has_more = (offset + len(items)) < total_count
+
+        # Clear existing items
+        while True:
+            row = self.pasted_listbox.get_row_at_index(0)
+            if row is None:
+                break
+            self.pasted_listbox.remove(row)
+
+        # Add items (database returns DESC order, append to maintain it)
+        for item in items:
+            row = ClipboardItemRow(item, self, show_pasted_time=True)
+            self.pasted_listbox.append(row)  # Append to maintain DESC order
+
+        # Update status label
+        current_count = len(items)
+        self.pasted_status_label.set_label(f"Showing {current_count} of {total_count} items")
+
+        # Scroll to top
+        vadj = self.pasted_scrolled.get_vadjustment()
+        vadj.set_value(0)
 
         return False  # Don't repeat
 
@@ -796,10 +1144,131 @@ class ClipboardWindow(Adw.ApplicationWindow):
             title = selected_page.get_title()
             if title == "Recently Pasted":
                 self.current_tab = "pasted"
+                # Reset pagination and reload pasted items from the beginning
+                self.pasted_offset = 0
+                self.pasted_has_more = True
                 # Load pasted items when switching to pasted tab
                 GLib.idle_add(self.load_pasted_history)
             else:
                 self.current_tab = "copied"
+
+    def _jump_to_top(self, list_type):
+        """Scroll to the top of the specified list"""
+        if list_type == "copied":
+            vadj = self.copied_scrolled.get_vadjustment()
+            vadj.set_value(0)
+        elif list_type == "pasted":
+            vadj = self.pasted_scrolled.get_vadjustment()
+            vadj.set_value(0)
+
+    def _on_scroll_changed(self, adjustment, list_type):
+        """Handle scroll events for infinite scrolling"""
+        if adjustment.get_upper() - adjustment.get_page_size() - adjustment.get_value() < 50: # 50 pixels from bottom
+            if list_type == "copied" and self.copied_has_more and not self.copied_loading:
+                print("[UI] Scrolled to bottom of copied list, loading more...")
+                self.copied_loading = True
+                self.copied_loader.set_visible(True)
+                GLib.idle_add(self._load_more_copied_items)
+            elif list_type == "pasted" and self.pasted_has_more and not self.pasted_loading:
+                print("[UI] Scrolled to bottom of pasted list, loading more...")
+                self.pasted_loading = True
+                self.pasted_loader.set_visible(True)
+                GLib.idle_add(self._load_more_pasted_items)
+
+    def _load_more_copied_items(self):
+        """Load more copied items via WebSocket"""
+        def run_websocket():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._fetch_more_items("copied"))
+        threading.Thread(target=run_websocket, daemon=True).start()
+        return False
+
+    def _load_more_pasted_items(self):
+        """Load more pasted items via WebSocket"""
+        def run_websocket():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._fetch_more_items("pasted"))
+        threading.Thread(target=run_websocket, daemon=True).start()
+        return False
+
+    async def _fetch_more_items(self, list_type):
+        """Fetch more items from backend via WebSocket"""
+        uri = "ws://localhost:8765"
+        max_size = 5 * 1024 * 1024  # 5MB
+        try:
+            async with websockets.connect(uri, max_size=max_size) as websocket:
+                if list_type == "copied":
+                    request = {"action": "get_history", "offset": self.copied_offset + self.page_size, "limit": self.page_size}
+                else: # pasted
+                    request = {"action": "get_recently_pasted", "offset": self.pasted_offset + self.page_size, "limit": self.page_size}
+                
+                await websocket.send(json.dumps(request))
+                response = await websocket.recv()
+                data = json.loads(response)
+
+                if data.get("type") == "history" and list_type == "copied":
+                    items = data.get("items", [])
+                    total_count = data.get("total_count", 0)
+                    offset = data.get("offset", 0)
+                    GLib.idle_add(self._append_items_to_listbox, items, total_count, offset, "copied")
+                elif data.get("type") == "recently_pasted" and list_type == "pasted":
+                    items = data.get("items", [])
+                    total_count = data.get("total_count", 0)
+                    offset = data.get("offset", 0)
+                    GLib.idle_add(self._append_items_to_listbox, items, total_count, offset, "pasted")
+
+        except Exception as e:
+            print(f"WebSocket error fetching more {list_type} items: {e}")
+            traceback.print_exc()
+            GLib.idle_add(lambda: self.show_toast(f"Error loading more items: {str(e)}") or False)
+        finally:
+            if list_type == "copied":
+                GLib.idle_add(lambda: self.copied_loader.set_visible(False))
+                self.copied_loading = False
+            else:
+                GLib.idle_add(lambda: self.pasted_loader.set_visible(False))
+                self.pasted_loading = False
+
+    def _append_items_to_listbox(self, items, total_count, offset, list_type):
+        """Append new items to the respective listbox"""
+        if list_type == "copied":
+            listbox = self.copied_listbox
+            self.copied_offset = offset
+            self.copied_total = total_count
+            self.copied_has_more = (self.copied_offset + len(items)) < self.copied_total
+            self.copied_loader.set_visible(False)
+            self.copied_loading = False
+        else: # pasted
+            listbox = self.pasted_listbox
+            self.pasted_offset = offset
+            self.pasted_total = total_count
+            self.pasted_has_more = (self.pasted_offset + len(items)) < self.pasted_total
+            self.pasted_loader.set_visible(False)
+            self.pasted_loading = False
+
+        for item in items:
+            row = ClipboardItemRow(item, self, show_pasted_time=(list_type == "pasted"))
+            listbox.append(row)
+
+        # Count current rows in listbox
+        current_count = 0
+        index = 0
+        while True:
+            row = listbox.get_row_at_index(index)
+            if row is None:
+                break
+            current_count += 1
+            index += 1
+
+        # Update status label
+        if list_type == "copied":
+            self.copied_status_label.set_label(f"Showing {current_count} of {self.copied_total} items")
+        else:
+            self.pasted_status_label.set_label(f"Showing {current_count} of {self.pasted_total} items")
+
+        return False # Don't repeat
 
     def _on_close_request(self, window):
         """Handle window close request - kill server before exiting"""
@@ -847,12 +1316,28 @@ class ClipboardApp(Adw.Application):
         except Exception as e:
             print(f"Warning: Could not set up application icon: {e}")
 
+        # Load custom CSS
+        try:
+            css_path = Path(__file__).parent / "style.css"
+            if css_path.exists():
+                provider = Gtk.CssProvider()
+                provider.load_from_path(str(css_path))
+                Gtk.StyleContext.add_provider_for_display(
+                    Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+                )
+                print(f"Loaded custom CSS from {css_path}")
+        except Exception as e:
+            print(f"Warning: Could not load custom CSS: {e}")
+
     def do_activate(self):
         """Activate the application"""
         win = self.props.active_window
         if not win:
+            # Create main window (splash.py is already running from load.sh)
             win = ClipboardWindow(self, self.server_pid)
-        win.present()
+            # Window will be shown after history loads and kills the standalone splash
+        else:
+            win.present()
 
 
 def main():

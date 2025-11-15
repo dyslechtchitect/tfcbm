@@ -68,6 +68,13 @@ fi
 echo "Installing Python dependencies..."
 .venv/bin/pip install -r requirements.txt
 
+# --- 4.5. Show splash screen early ---
+echo ""
+echo "--> Starting splash screen..."
+.venv/bin/python3 ui/splash.py &
+SPLASH_PID=$!
+echo "Splash screen started with PID $SPLASH_PID"
+
 # --- 5. Start the Python Server (UNIX socket + WebSocket + Database) ---
 echo ""
 echo "--> Starting the TFCBM server..."
@@ -105,6 +112,9 @@ echo ""
 cleanup() {
     echo ""
     echo "Shutting down..."
+    # Kill splash screen if still running
+    kill $SPLASH_PID 2>/dev/null || true
+    # Kill server
     pkill -P $SERVER_PID 2>/dev/null || true
     kill $SERVER_PID 2>/dev/null || true
     exit 0
