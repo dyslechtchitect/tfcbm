@@ -190,32 +190,71 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             self.window.show_toast("Text copied to clipboard")
 
         elif item_type.startswith('image/') or item_type == 'screenshot':
-            # For images, use thumbnail for copying (it's already in memory)
-            thumbnail_data = self.item.get('thumbnail')
-            if thumbnail_data:
-                try:
-                    # Decode base64 thumbnail
-                    image_data = base64.b64decode(thumbnail_data)
-                    loader = GdkPixbuf.PixbufLoader()
-                    loader.write(image_data)
-                    loader.close()
-                    pixbuf = loader.get_pixbuf()
+            # For images, fetch full image from server then copy to clipboard
+            item_id = self.item['id']
+            self.window.show_toast("Loading full image...")
+            self._copy_full_image_to_clipboard(item_id, clipboard)
 
-                    # Use texture with ContentProvider for GTK4/Wayland
-                    texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-                    content = Gdk.ContentProvider.new_for_value(texture)
-                    clipboard.set_content(content)
-                    print(f"Copied image to clipboard")
-                    # Show toast notification with image icon
-                    self.window.show_toast("📷 Image copied to clipboard")
-                except Exception as e:
-                    print(f"Error copying image: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    self.window.show_toast(f"Error: {str(e)}")
-            else:
-                print("No thumbnail available to copy")
-                self.window.show_toast("No image available")
+    def _copy_full_image_to_clipboard(self, item_id, clipboard):
+        """Request and copy full image from server to clipboard"""
+        def fetch_and_copy():
+            try:
+                import asyncio
+                import websockets
+
+                async def get_full_image():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        # Request full image
+                        request = {'action': 'get_full_image', 'id': item_id}
+                        await websocket.send(json.dumps(request))
+
+                        # Wait for response
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get('type') == 'full_image' and data.get('id') == item_id:
+                            image_b64 = data.get('content')
+                            image_data = base64.b64decode(image_b64)
+
+                            # Load image into pixbuf
+                            loader = GdkPixbuf.PixbufLoader()
+                            loader.write(image_data)
+                            loader.close()
+                            pixbuf = loader.get_pixbuf()
+
+                            # Copy to clipboard on main thread
+                            def copy_to_clipboard():
+                                try:
+                                    # Set the pixbuf directly on clipboard
+                                    # This is the most compatible way for applications like GIMP
+                                    clipboard.set(pixbuf)
+
+                                    print(f"Copied full image to clipboard ({pixbuf.get_width()}x{pixbuf.get_height()})")
+                                    self.window.show_toast(f"📷 Full image copied ({pixbuf.get_width()}x{pixbuf.get_height()})")
+                                except Exception as e:
+                                    print(f"Error copying to clipboard: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+                                    self.window.show_toast(f"Error copying: {str(e)}")
+                                return False
+
+                            GLib.idle_add(copy_to_clipboard)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(get_full_image())
+
+            except Exception as e:
+                print(f"Error fetching full image: {e}")
+                import traceback
+                traceback.print_exc()
+                GLib.idle_add(lambda: self.window.show_toast(f"Error: {str(e)}") or False)
+
+        # Run in background thread
+        import threading
+        thread = threading.Thread(target=fetch_and_copy, daemon=True)
+        thread.start()
 
     def _on_save_clicked(self, button):
         """Save item to file - stop event propagation"""

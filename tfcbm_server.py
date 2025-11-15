@@ -429,11 +429,19 @@ def start_server():
                     # Handle clipboard events from extension
                     if message['type'] == 'text':
                         text = message['content']
+                        text_bytes = text.encode('utf-8')
 
-                        # Check if it's new
-                        is_new = not history or history[-1].get('content') != text
+                        # Calculate hash for deduplication
+                        from database import ClipboardDB
+                        text_hash = ClipboardDB.calculate_hash(text_bytes)
 
-                        if is_new:
+                        # Check if hash already exists in database
+                        with db_lock:
+                            hash_exists = db.hash_exists(text_hash)
+
+                        if hash_exists:
+                            logging.info(f"⊘ Skipping duplicate text - Hash: {text_hash[:16]}...\n")
+                        else:
                             timestamp = datetime.now().isoformat()
 
                             history.append({
@@ -442,9 +450,9 @@ def start_server():
                                 'timestamp': timestamp,
                             })
 
-                            # Save to database (thread-safe)
+                            # Save to database with hash (thread-safe)
                             with db_lock:
-                                db.add_item('text', text.encode('utf-8'), timestamp)
+                                db.add_item('text', text_bytes, timestamp, data_hash=text_hash)
 
                             # Print what was copied
                             if len(text) > 100:
@@ -457,24 +465,36 @@ def start_server():
                         # Handle image data (base64 encoded)
                         image_content = json.loads(message['content'])
                         image_data = image_content['data']
-                        timestamp = datetime.now().isoformat()
-
-                        history.append({
-                            'type': message['type'],
-                            'content': image_data,
-                            'timestamp': timestamp,
-                        })
-
-                        # Save to database (thread-safe)
                         image_bytes = base64.b64decode(image_data)
+
+                        # Calculate hash for deduplication
+                        from database import ClipboardDB
+                        image_hash = ClipboardDB.calculate_hash(image_bytes)
+
+                        # Check if hash already exists in database
                         with db_lock:
-                            item_id = db.add_item(message['type'], image_bytes, timestamp)
+                            hash_exists = db.hash_exists(image_hash)
 
-                        # Generate thumbnail asynchronously
-                        process_thumbnail_async(item_id, image_bytes)
+                        if hash_exists:
+                            logging.info(f"⊘ Skipping duplicate image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)\n")
+                        else:
+                            timestamp = datetime.now().isoformat()
 
-                        logging.info(f"✓ Copied image ({message['type']}) ({len(image_data)} bytes)")
-                        logging.info(f"  (History: {len(history)} items)\n")
+                            history.append({
+                                'type': message['type'],
+                                'content': image_data,
+                                'timestamp': timestamp,
+                            })
+
+                            # Save to database with hash (thread-safe)
+                            with db_lock:
+                                item_id = db.add_item(message['type'], image_bytes, timestamp, data_hash=image_hash)
+
+                            # Generate thumbnail asynchronously
+                            process_thumbnail_async(item_id, image_bytes)
+
+                            logging.info(f"✓ Copied image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)")
+                            logging.info(f"  (History: {len(history)} items)\n")
 
             except json.JSONDecodeError:
                 logging.warning("Received malformed JSON message on UNIX socket.")
