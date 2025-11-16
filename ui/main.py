@@ -307,9 +307,18 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                         self.window.show_toast("Error: Could not access clipboard.")
                                         return False
 
-                                    # Convert pixbuf to texture for GTK4 clipboard
-                                    texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-                                    clipboard.set_texture(texture)
+                                    # Convert pixbuf to PNG bytes for clipboard
+                                    # Save pixbuf to PNG in memory
+                                    success, png_bytes = pixbuf.save_to_bufferv("png", [], [])
+                                    if not success:
+                                        raise Exception("Failed to convert image to PNG")
+
+                                    # Create GBytes from PNG data
+                                    gbytes = GLib.Bytes.new(png_bytes)
+
+                                    # Create content provider for PNG image
+                                    content = Gdk.ContentProvider.new_for_bytes("image/png", gbytes)
+                                    clipboard.set_content(content)
 
                                     print(
                                         f"Copied full image to clipboard ({pixbuf.get_width()}x{pixbuf.get_height()})"
@@ -773,8 +782,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         copied_jump_btn.connect("clicked", lambda btn: self._jump_to_top("copied"))
         copied_header.append(copied_jump_btn)
 
-        copied_box.append(copied_header)
-
         self.copied_listbox = Gtk.ListBox()
         self.copied_listbox.add_css_class("boxed-list")
         self.copied_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -784,6 +791,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.copied_loader = self._create_loader()
         self.copied_loader.set_visible(False)
         copied_box.append(self.copied_loader)
+
+        # Footer with status and jump to top (moved to bottom)
+        copied_box.append(copied_header)
 
         copied_scrolled.set_child(copied_box)
 
@@ -826,8 +836,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_jump_btn.connect("clicked", lambda btn: self._jump_to_top("pasted"))
         pasted_header.append(pasted_jump_btn)
 
-        pasted_box.append(pasted_header)
-
         self.pasted_listbox = Gtk.ListBox()
         self.pasted_listbox.add_css_class("boxed-list")
         self.pasted_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -837,6 +845,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.pasted_loader = self._create_loader()
         self.pasted_loader.set_visible(False)
         pasted_box.append(self.pasted_loader)
+
+        # Footer with status and jump to top (moved to bottom)
+        pasted_box.append(pasted_header)
 
         pasted_scrolled.set_child(pasted_box)
 
