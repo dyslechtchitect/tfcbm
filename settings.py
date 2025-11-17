@@ -18,6 +18,18 @@ class DisplaySettings(BaseModel):
         le=100,
         description="Maximum number of items to load per page (1-100)"
     )
+    item_width: int = Field(
+        default=200,
+        ge=50,
+        le=1000,
+        description="Width of clipboard item cards in pixels (50-1000)"
+    )
+    item_height: int = Field(
+        default=200,
+        ge=50,
+        le=1000,
+        description="Height of clipboard item cards in pixels (50-1000)"
+    )
 
     @field_validator('max_page_length')
     @classmethod
@@ -27,6 +39,16 @@ class DisplaySettings(BaseModel):
             raise ValueError("max_page_length must be at least 1")
         if v > 100:
             raise ValueError("max_page_length cannot exceed 100")
+        return v
+
+    @field_validator('item_width', 'item_height')
+    @classmethod
+    def validate_item_size(cls, v: int) -> int:
+        """Ensure item size is at least 50x50"""
+        if v < 50:
+            return 50
+        if v > 1000:
+            raise ValueError("item dimensions cannot exceed 1000")
         return v
 
 
@@ -88,6 +110,40 @@ class SettingsManager:
     def max_page_length(self) -> int:
         """Get the maximum page length setting"""
         return self.settings.display.max_page_length
+
+    @property
+    def item_width(self) -> int:
+        """Get the item width setting"""
+        return self.settings.display.item_width
+
+    @property
+    def item_height(self) -> int:
+        """Get the item height setting"""
+        return self.settings.display.item_height
+
+    def update_settings(self, **kwargs):
+        """Update settings and save to file"""
+        # Update the settings object
+        for key, value in kwargs.items():
+            if '.' in key:
+                # Handle nested settings like 'display.item_width'
+                parts = key.split('.')
+                obj = self.settings
+                for part in parts[:-1]:
+                    obj = getattr(obj, part)
+                setattr(obj, parts[-1], value)
+            else:
+                setattr(self.settings, key, value)
+
+        # Save to file
+        self._save_settings()
+
+    def _save_settings(self):
+        """Save current settings to YAML file"""
+        import yaml
+        config_data = self.settings.model_dump()
+        with open(self.config_path, 'w') as f:
+            yaml.dump(config_data, f, default_flow_style=False)
 
 
 # Global settings instance

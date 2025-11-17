@@ -365,6 +365,7 @@ def watch_for_new_items(loop):
 
             if latest_id and latest_id > last_known_id:
                 # New items detected
+                logging.info(f"📢 Broadcasting new items {last_known_id + 1} to {latest_id}")
                 for item_id in range(last_known_id + 1, latest_id + 1):
                     with db_lock:
                         item = db.get_item(item_id)
@@ -376,6 +377,7 @@ def watch_for_new_items(loop):
 
                         # Schedule broadcast in async loop
                         asyncio.run_coroutine_threadsafe(broadcast_ws(message), loop)
+                        logging.info(f"  → Broadcast item {item_id} ({item['type']}) to {len(ws_clients)} clients")
 
                 last_known_id = latest_id
 

@@ -40,9 +40,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.show_pasted_time = show_pasted_time
         self._last_paste_time = 0  # Track last paste to prevent duplicates
 
-        # Make row activatable (clickable)
-        self.set_activatable(True)
-        self.connect("activate", self._on_row_clicked)
+        # Get item dimensions from settings
+        item_width = self.window.settings.item_width
+        item_height = self.window.settings.item_height
+
+        # Make row non-activatable (we'll handle clicks manually)
+        self.set_activatable(False)
 
         # Main box for the row
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -52,9 +55,15 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         card_frame = Gtk.Frame()
         card_frame.set_vexpand(False)
         card_frame.set_hexpand(False)
-        card_frame.set_size_request(200, 200)  # Enforce fixed size
+        card_frame.set_size_request(item_width, item_height)  # Use settings for size
         card_frame.add_css_class("clipboard-item-card")
         card_frame.set_child(main_box)
+        self.card_frame = card_frame
+
+        # Add click gesture for single click (copy) and double click (open full view)
+        click_gesture = Gtk.GestureClick.new()
+        click_gesture.connect("released", self._on_card_clicked)
+        card_frame.add_controller(click_gesture)
 
         # Header box with timestamp and buttons
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -79,6 +88,17 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Button box
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         button_box.set_halign(Gtk.Align.END)  # Align buttons to the end (right)
+
+        # Copy button
+        copy_button = Gtk.Button()
+        copy_button.set_icon_name("edit-copy-symbolic")
+        copy_button.add_css_class("flat")
+        copy_button.set_tooltip_text("Copy to clipboard")
+        copy_gesture = Gtk.GestureClick.new()
+        copy_gesture.connect("released", lambda g, n, x, y: self._on_row_clicked(self))
+        copy_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        copy_button.add_controller(copy_gesture)
+        button_box.append(copy_button)
 
         # View Full Item button
         view_button = Gtk.Button()
@@ -120,42 +140,45 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         header_box.append(button_box)
         main_box.append(header_box)
 
-        # Content box
+        # Content box - set to expand and fill the card
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        box.set_hexpand(False)  # Prevent horizontal expansion
+        box.set_hexpand(True)
+        box.set_vexpand(True)
         box.add_css_class("clipboard-item-content")  # Add class for content styling
-
-        # Make content box clickable to copy (works on background, not on selectable text)
-        content_gesture = Gtk.GestureClick.new()
-        content_gesture.connect("released", lambda g, n, x, y: self._on_row_clicked(self))
-        box.add_controller(content_gesture)
 
         # Content based on type
         if item["type"] == "text":
             # Create box for text with big bold quotes
             text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
             text_box.set_halign(Gtk.Align.START)
+            text_box.set_valign(Gtk.Align.START)
 
             # Opening quote - bigger and bold
             open_quote = Gtk.Label(label="\u201c")  # Left double quotation mark
             open_quote.add_css_class("big-quote")
+            open_quote.set_valign(Gtk.Align.START)
             text_box.append(open_quote)
 
-            # Actual content
+            # Actual content - truncate with ellipsis
             content_label = Gtk.Label(label=item['content'])
             content_label.set_wrap(True)
             content_label.set_ellipsize(Pango.EllipsizeMode.END)
             content_label.set_halign(Gtk.Align.START)
+            content_label.set_valign(Gtk.Align.START)
             content_label.add_css_class("clipboard-item-text")
             content_label.add_css_class("typewriter-text")
-            content_label.set_selectable(True)
-            content_label.set_max_width_chars(40)
-            content_label.set_lines(5)
+            content_label.set_selectable(False)  # Make text non-selectable
+            content_label.set_xalign(0)  # Left align text
+            content_label.set_yalign(0)  # Top align text
+            # Let the label fill available space but truncate if needed
+            content_label.set_hexpand(True)
+            content_label.set_vexpand(True)
             text_box.append(content_label)
 
             # Closing quote - bigger and bold
             close_quote = Gtk.Label(label="\u201d")  # Right double quotation mark
             close_quote.add_css_class("big-quote")
+            close_quote.set_valign(Gtk.Align.START)
             text_box.append(close_quote)
 
             box.append(text_box)
@@ -187,31 +210,38 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 print(f"[UI] Pixbuf loaded: {pixbuf.get_width()}x{pixbuf.get_height()}")
 
-                # Create image widget (thumbnail is already sized correctly)
+                # Scale image to fit within card size while maintaining aspect ratio
+                # Account for some padding/margin
+                max_width = item_width - 20
+                max_height = item_height - 60  # Account for header
+
+                img_width = pixbuf.get_width()
+                img_height = pixbuf.get_height()
+
+                # Calculate scaling factor based on the longest dimension
+                width_scale = max_width / img_width
+                height_scale = max_height / img_height
+                scale = min(width_scale, height_scale)
+
+                # Scale the pixbuf
+                new_width = int(img_width * scale)
+                new_height = int(img_height * scale)
+
+                if scale < 1.0:  # Only scale down if image is larger
+                    pixbuf = pixbuf.scale_simple(new_width, new_height, GdkPixbuf.InterpType.BILINEAR)
+                    print(f"[UI] Scaled image to: {new_width}x{new_height}")
+
+                # Create image widget
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 picture = Gtk.Picture.new_for_paintable(texture)
-                picture.set_halign(Gtk.Align.CENTER)  # Center image
-                picture.set_valign(Gtk.Align.CENTER)  # Center image
+                picture.set_halign(Gtk.Align.CENTER)  # Center image horizontally
+                picture.set_valign(Gtk.Align.CENTER)  # Center image vertically
                 picture.add_css_class("clipboard-item-image")  # Apply image styling
                 picture.set_content_fit(Gtk.ContentFit.CONTAIN)
-
-                # Make image clickable to copy
-                image_gesture = Gtk.GestureClick.new()
-                image_gesture.connect("released", lambda g, n, x, y: self._on_row_clicked(self))
-                picture.add_controller(image_gesture)
-
-                # Add cursor to indicate clickable
-                picture.set_cursor(Gdk.Cursor.new_from_name("pointer"))
+                picture.set_can_shrink(False)  # Don't shrink below pixbuf size
 
                 box.append(picture)
                 print(f"[UI] ✓ Image widget added to UI")
-
-                # Add image type label
-                type_label = Gtk.Label(label=f"[{item['type']}]")
-                type_label.add_css_class("dim-label")
-                type_label.add_css_class("caption")
-                type_label.set_halign(Gtk.Align.START)
-                box.append(type_label)
 
             except Exception as e:
                 error_label = Gtk.Label(label=f"Failed to load image: {str(e)}")
@@ -231,6 +261,15 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             return dt.strftime("%H:%M:%S")
         except BaseException:
             return timestamp_str
+
+    def _on_card_clicked(self, gesture, n_press, x, y):
+        """Handle card clicks - single click copies, double click opens full view"""
+        if n_press == 1:
+            # Single click - copy to clipboard
+            self._on_row_clicked(self)
+        elif n_press == 2:
+            # Double click - open full view
+            self._do_view_full_item()
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked"""
@@ -1111,6 +1150,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Add a single new item to the top of the copied list"""
         row = ClipboardItemRow(item, self)
         self.copied_listbox.prepend(row)
+        # Force the listbox to redraw
+        self.copied_listbox.queue_draw()
+        # Update the total count
+        self.copied_total_count = self.copied_total_count + 1 if hasattr(self, 'copied_total_count') else 1
+        self._update_copied_status()
         return False
 
     def remove_item(self, item_id):
