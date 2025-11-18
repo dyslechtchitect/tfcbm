@@ -44,8 +44,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         item_width = self.window.settings.item_width
         item_height = self.window.settings.item_height
 
-        # Make row non-activatable (we'll handle clicks manually)
-        self.set_activatable(False)
+        # Make row activatable for keyboard navigation (Enter/Space)
+        self.set_activatable(True)
+        # Connect activate signal to copy the item
+        self.connect("activate", lambda row: self._on_row_clicked(self))
 
         # Main box for the row - FIXED HEIGHT, fills width
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -976,6 +978,44 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         settings_page.add(display_group)
 
+        # Shortcuts Settings Group
+        shortcuts_group = Adw.PreferencesGroup()
+        shortcuts_group.set_title("Keyboard Shortcuts")
+        shortcuts_group.set_description("Configure global keyboard shortcuts")
+
+        # Show Window shortcut
+        shortcut_row = Adw.ActionRow()
+        shortcut_row.set_title("Show Window")
+        # Escape the shortcut text to prevent markup parsing errors
+        escaped_shortcut = GLib.markup_escape_text(self.settings.show_window_shortcut)
+        shortcut_row.set_subtitle(f"Current: {escaped_shortcut}")
+
+        # Button to record shortcut
+        record_button = Gtk.Button()
+        record_button.set_label("Record Shortcut")
+        record_button.set_valign(Gtk.Align.CENTER)
+        record_button.connect("clicked", self._on_record_shortcut, shortcut_row)
+        shortcut_row.add_suffix(record_button)
+        self.shortcut_subtitle = shortcut_row  # Store for updating
+
+        shortcuts_group.add(shortcut_row)
+
+        # Reset shortcuts to defaults
+        reset_row = Adw.ActionRow()
+        reset_row.set_title("Reset Shortcuts")
+        reset_row.set_subtitle("Restore default keyboard shortcuts")
+
+        reset_button = Gtk.Button()
+        reset_button.set_label("Reset to Defaults")
+        reset_button.add_css_class("destructive-action")
+        reset_button.set_valign(Gtk.Align.CENTER)
+        reset_button.connect("clicked", self._on_reset_shortcuts)
+        reset_row.add_suffix(reset_button)
+
+        shortcuts_group.add(reset_row)
+
+        settings_page.add(shortcuts_group)
+
         # Actions Group (for Save button)
         actions_group = Adw.PreferencesGroup()
         actions_group.set_title("Actions")
@@ -1018,6 +1058,32 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Position window to the left
         self.position_window_left()
+
+        # Set up global keyboard shortcut
+        self.setup_global_shortcut()
+
+    def setup_global_shortcut(self):
+        """Set up global keyboard shortcut to show/focus window"""
+        try:
+            # Create action to show/focus window
+            show_action = Gio.SimpleAction.new("show-window", None)
+            show_action.connect("activate", self._on_show_window_activated)
+            self.add_action(show_action)
+
+            # Get application and set accelerator
+            app = self.get_application()
+            if app:
+                shortcut = self.settings.show_window_shortcut
+                app.set_accels_for_action("win.show-window", [shortcut])
+                print(f"Global shortcut set: {shortcut} -> show window")
+        except Exception as e:
+            print(f"Error setting up global shortcut: {e}")
+
+    def _on_show_window_activated(self, action, parameter):
+        """Callback when show window shortcut is activated"""
+        # Present the window (brings to front and focuses)
+        self.present()
+        print("Window presented via global shortcut")
 
     def position_window_left(self):
         """Position window to the left side of the screen"""
@@ -1430,6 +1496,64 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         return False # Don't repeat
 
+    def _on_record_shortcut(self, button, shortcut_row):
+        """Record a new keyboard shortcut"""
+        button.set_label("Press keys...")
+        button.set_sensitive(False)
+
+        # Create event controller to capture key press
+        key_controller = Gtk.EventControllerKey.new()
+
+        def on_key_pressed(controller, keyval, keycode, state):
+            # Get modifier keys
+            modifiers = []
+            if state & Gdk.ModifierType.CONTROL_MASK:
+                modifiers.append("Control")
+            if state & Gdk.ModifierType.ALT_MASK:
+                modifiers.append("Alt")
+            if state & Gdk.ModifierType.SHIFT_MASK:
+                modifiers.append("Shift")
+            if state & Gdk.ModifierType.SUPER_MASK:
+                modifiers.append("Super")
+
+            # Get key name
+            key_name = Gdk.keyval_name(keyval)
+
+            # Build accelerator string
+            if modifiers and key_name:
+                accel = "<" + "><".join(modifiers) + ">" + key_name
+                # Escape the shortcut text to prevent markup parsing errors
+                escaped_accel = GLib.markup_escape_text(accel)
+                shortcut_row.set_subtitle(f"Current: {escaped_accel}")
+                self.new_shortcut = accel
+
+                # Show toast (escaped for display)
+                toast = Adw.Toast.new(f"Shortcut set to: {escaped_accel}")
+                toast.set_timeout(2)
+                self.toast_overlay.add_toast(toast)
+
+            # Cleanup
+            button.set_label("Record Shortcut")
+            button.set_sensitive(True)
+            self.remove_controller(controller)
+            return True
+
+        key_controller.connect("key-pressed", on_key_pressed)
+        self.add_controller(key_controller)
+
+    def _on_reset_shortcuts(self, button):
+        """Reset shortcuts to defaults"""
+        default_shortcut = "<Alt>grave"
+        # Escape the shortcut text to prevent markup parsing errors
+        escaped_default = GLib.markup_escape_text(default_shortcut)
+        self.shortcut_subtitle.set_subtitle(f"Current: {escaped_default}")
+        self.new_shortcut = default_shortcut
+
+        # Show toast
+        toast = Adw.Toast.new("Shortcuts reset to defaults")
+        toast.set_timeout(2)
+        self.toast_overlay.add_toast(toast)
+
     def _on_save_settings(self, button):
         """Save settings changes to YAML file and apply them"""
         try:
@@ -1438,14 +1562,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
             new_item_height = int(self.item_height_spin.get_value())
             new_page_length = int(self.page_length_spin.get_value())
 
+            # Prepare settings update dictionary
+            settings_update = {
+                'display.item_width': new_item_width,
+                'display.item_height': new_item_height,
+                'display.max_page_length': new_page_length
+            }
+
+            # Add shortcut if it was changed
+            if hasattr(self, 'new_shortcut'):
+                settings_update['shortcuts.show_window'] = self.new_shortcut
+
             # Update settings using the settings manager
-            self.settings.update_settings(
-                **{
-                    'display.item_width': new_item_width,
-                    'display.item_height': new_item_height,
-                    'display.max_page_length': new_page_length
-                }
-            )
+            self.settings.update_settings(**settings_update)
 
             # Show success toast
             toast = Adw.Toast.new("Settings saved successfully! Restart the app to apply changes.")
