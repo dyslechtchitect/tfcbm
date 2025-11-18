@@ -6,8 +6,6 @@
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow */
     margin: 8px; /* Space between cards */
     padding: 12px; /* Inner padding */
-    /* Sizing will be handled by Gtk.Frame.set_size_request() */
-    /* Overflow will be handled by Gtk.Label.set_ellipsize() and Gtk.Picture scaling */
     transition: background-color 0.2s ease-in-out; /* Smooth transition for hover */
 }
 

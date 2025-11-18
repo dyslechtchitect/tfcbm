@@ -47,18 +47,31 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Make row non-activatable (we'll handle clicks manually)
         self.set_activatable(False)
 
-        # Main box for the row
+        # Main box for the row - FIXED HEIGHT, fills width
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        main_box.set_hexpand(False)  # Prevent horizontal expansion
+        main_box.set_hexpand(True)  # Fill available width
+        main_box.set_vexpand(False)  # Fixed height only - CRITICAL
+        main_box.set_size_request(-1, item_height)  # Force fixed height, natural width
+
+        # Create size group to enforce exact height
+        main_box.set_valign(Gtk.Align.FILL)
+
+        # Prevent natural height from exceeding requested height
+        main_box.set_overflow(Gtk.Overflow.HIDDEN)
 
         # Card frame for styling
         card_frame = Gtk.Frame()
         card_frame.set_vexpand(False)
-        card_frame.set_hexpand(False)
-        card_frame.set_size_request(item_width, item_height)  # Use settings for size
+        card_frame.set_hexpand(True)  # Fill available width
+        card_frame.set_size_request(-1, item_height)  # Fixed height, natural width
         card_frame.add_css_class("clipboard-item-card")
         card_frame.set_child(main_box)
         self.card_frame = card_frame
+
+        # Row should fill width but maintain fixed height
+        self.set_size_request(-1, item_height)
+        self.set_vexpand(False)
+        self.set_hexpand(True)
 
         # Add click gesture for single click (copy) and double click (open full view)
         click_gesture = Gtk.GestureClick.new()
@@ -140,29 +153,39 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         header_box.append(button_box)
         main_box.append(header_box)
 
-        # Content box - set to expand and fill the card
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        box.set_hexpand(True)
-        box.set_vexpand(True)
-        box.add_css_class("clipboard-item-content")  # Add class for content styling
+        # Content box - CONSTRAINED to not expand beyond card
+        # Calculate available content space
+        max_content_height = item_height - 50  # Account for header
+
+        # Create a clipping container that fills width but fixed height
+        content_clamp = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        content_clamp.set_size_request(-1, max_content_height)  # Fill width, fixed height
+        content_clamp.set_overflow(Gtk.Overflow.HIDDEN)  # Clip content that exceeds bounds
+        content_clamp.set_hexpand(True)  # Fill available width
+        content_clamp.set_vexpand(False)
 
         # Content based on type
         if item["type"] == "text":
-            # Create box for text with big bold quotes
+            # Create overlay to position opening quote at top-left and closing quote at bottom-right
+            overlay = Gtk.Overlay()
+
+            # Main text content box with opening quote
             text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
             text_box.set_halign(Gtk.Align.START)
             text_box.set_valign(Gtk.Align.START)
 
-            # Opening quote - bigger and bold
+            # Opening quote - bigger and bold at top-left
             open_quote = Gtk.Label(label="\u201c")  # Left double quotation mark
             open_quote.add_css_class("big-quote")
             open_quote.set_valign(Gtk.Align.START)
             text_box.append(open_quote)
 
-            # Actual content - truncate with ellipsis
+            # Actual content with proper width constraint
             content_label = Gtk.Label(label=item['content'])
             content_label.set_wrap(True)
-            content_label.set_ellipsize(Pango.EllipsizeMode.END)
+            content_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            content_label.set_ellipsize(Pango.EllipsizeMode.END)  # Show ... at end
+            content_label.set_lines(5)  # Maximum 5 lines - ellipsis will show on last line
             content_label.set_halign(Gtk.Align.START)
             content_label.set_valign(Gtk.Align.START)
             content_label.add_css_class("clipboard-item-text")
@@ -170,18 +193,23 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             content_label.set_selectable(False)  # Make text non-selectable
             content_label.set_xalign(0)  # Left align text
             content_label.set_yalign(0)  # Top align text
-            # Let the label fill available space but truncate if needed
+            # Fill available width with ellipsization
             content_label.set_hexpand(True)
-            content_label.set_vexpand(True)
+            content_label.set_vexpand(False)
+            content_label.set_max_width_chars(-1)  # Disable character-based width (use natural width)
             text_box.append(content_label)
 
-            # Closing quote - bigger and bold
+            # Set text_box as base of overlay
+            overlay.set_child(text_box)
+
+            # Closing quote - bigger and bold at BOTTOM-RIGHT
             close_quote = Gtk.Label(label="\u201d")  # Right double quotation mark
             close_quote.add_css_class("big-quote")
-            close_quote.set_valign(Gtk.Align.START)
-            text_box.append(close_quote)
+            close_quote.set_halign(Gtk.Align.END)  # Right align
+            close_quote.set_valign(Gtk.Align.END)  # Bottom align
+            overlay.add_overlay(close_quote)
 
-            box.append(text_box)
+            content_clamp.append(overlay)
 
         elif item["type"].startswith("image/") or item["type"] == "screenshot":
             try:
@@ -210,48 +238,29 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 print(f"[UI] Pixbuf loaded: {pixbuf.get_width()}x{pixbuf.get_height()}")
 
-                # Scale image to fit within card size while maintaining aspect ratio
-                # Account for some padding/margin
-                max_width = item_width - 20
-                max_height = item_height - 60  # Account for header
-
-                img_width = pixbuf.get_width()
-                img_height = pixbuf.get_height()
-
-                # Calculate scaling factor based on the longest dimension
-                width_scale = max_width / img_width
-                height_scale = max_height / img_height
-                scale = min(width_scale, height_scale)
-
-                # Scale the pixbuf
-                new_width = int(img_width * scale)
-                new_height = int(img_height * scale)
-
-                if scale < 1.0:  # Only scale down if image is larger
-                    pixbuf = pixbuf.scale_simple(new_width, new_height, GdkPixbuf.InterpType.BILINEAR)
-                    print(f"[UI] Scaled image to: {new_width}x{new_height}")
-
-                # Create image widget
+                # Create image widget and let GTK handle scaling with COVER mode
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 picture = Gtk.Picture.new_for_paintable(texture)
                 picture.set_halign(Gtk.Align.CENTER)  # Center image horizontally
                 picture.set_valign(Gtk.Align.CENTER)  # Center image vertically
                 picture.add_css_class("clipboard-item-image")  # Apply image styling
-                picture.set_content_fit(Gtk.ContentFit.CONTAIN)
-                picture.set_can_shrink(False)  # Don't shrink below pixbuf size
+                picture.set_content_fit(Gtk.ContentFit.COVER)  # COVER to fill space and crop
+                picture.set_hexpand(True)  # Fill width
+                picture.set_vexpand(True)  # Fill height
+                picture.set_can_shrink(True)  # Allow shrinking
 
-                box.append(picture)
-                print(f"[UI] ✓ Image widget added to UI")
+                content_clamp.append(picture)
+                print(f"[UI] ✓ Image widget added (will fill available space with COVER mode)")
 
             except Exception as e:
                 error_label = Gtk.Label(label=f"Failed to load image: {str(e)}")
                 error_label.add_css_class("error")
                 error_label.set_selectable(True)  # Make error copyable
                 error_label.set_wrap(True)
-                box.append(error_label)
+                content_clamp.append(error_label)
 
-        main_box.append(box)
-        self.set_child(card_frame)  # Set the card_frame as the child of the row
+        main_box.append(content_clamp)
+        self.set_child(card_frame)  # Set the card frame as the child of the row
 
     def _format_timestamp(self, timestamp_str):
         """Format ISO timestamp to readable format"""
@@ -898,6 +907,100 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_page.set_title("Recently Pasted")
         pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
 
+        # Tab 3: Settings
+        settings_scrolled = Gtk.ScrolledWindow()
+        settings_scrolled.set_vexpand(True)
+        settings_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        # Create settings page using PreferencesPage
+        settings_page = Adw.PreferencesPage()
+
+        # Display Settings Group
+        display_group = Adw.PreferencesGroup()
+        display_group.set_title("Display Settings")
+        display_group.set_description("Configure how clipboard items are displayed")
+
+        # Item Width setting
+        item_width_row = Adw.SpinRow()
+        item_width_row.set_title("Item Width")
+        item_width_row.set_subtitle("Width of clipboard item cards in pixels (50-1000)")
+        item_width_row.set_adjustment(
+            Gtk.Adjustment.new(
+                value=self.settings.item_width,
+                lower=50,
+                upper=1000,
+                step_increment=10,
+                page_increment=50,
+                page_size=0
+            )
+        )
+        item_width_row.set_digits(0)
+        self.item_width_spin = item_width_row
+        display_group.add(item_width_row)
+
+        # Item Height setting
+        item_height_row = Adw.SpinRow()
+        item_height_row.set_title("Item Height")
+        item_height_row.set_subtitle("Height of clipboard item cards in pixels (50-1000)")
+        item_height_row.set_adjustment(
+            Gtk.Adjustment.new(
+                value=self.settings.item_height,
+                lower=50,
+                upper=1000,
+                step_increment=10,
+                page_increment=50,
+                page_size=0
+            )
+        )
+        item_height_row.set_digits(0)
+        self.item_height_spin = item_height_row
+        display_group.add(item_height_row)
+
+        # Max Page Length setting
+        page_length_row = Adw.SpinRow()
+        page_length_row.set_title("Max Page Length")
+        page_length_row.set_subtitle("Maximum number of items to load per page (1-100)")
+        page_length_row.set_adjustment(
+            Gtk.Adjustment.new(
+                value=self.settings.max_page_length,
+                lower=1,
+                upper=100,
+                step_increment=1,
+                page_increment=10,
+                page_size=0
+            )
+        )
+        page_length_row.set_digits(0)
+        self.page_length_spin = page_length_row
+        display_group.add(page_length_row)
+
+        settings_page.add(display_group)
+
+        # Actions Group (for Save button)
+        actions_group = Adw.PreferencesGroup()
+        actions_group.set_title("Actions")
+
+        # Create a button row for saving settings
+        save_row = Adw.ActionRow()
+        save_row.set_title("Save Settings")
+        save_row.set_subtitle("Apply changes and save to settings.yml")
+
+        save_button = Gtk.Button()
+        save_button.set_label("Apply & Save")
+        save_button.add_css_class("suggested-action")
+        save_button.set_valign(Gtk.Align.CENTER)
+        save_button.connect("clicked", self._on_save_settings)
+        save_row.add_suffix(save_button)
+
+        actions_group.add(save_row)
+        settings_page.add(actions_group)
+
+        settings_scrolled.set_child(settings_page)
+
+        settings_tab = self.tab_view.append(settings_scrolled)
+        settings_tab.set_title("Settings")
+        settings_tab.set_icon(Gio.ThemedIcon.new("preferences-system-symbolic"))
+
         # Connect tab switch event
         self.tab_view.connect("notify::selected-page", self._on_tab_switched)
 
@@ -987,9 +1090,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         if item_id:
                             GLib.idle_add(self.remove_item, item_id)
 
+        except websockets.exceptions.ConnectionClosedError:
+            # Normal closure when app exits - suppress error
+            print("WebSocket connection closed")
         except Exception as e:
             print(f"WebSocket error: {e}")
-
             traceback.print_exc()
             GLib.idle_add(self.show_error, str(e))
 
@@ -1324,6 +1429,37 @@ class ClipboardWindow(Adw.ApplicationWindow):
             self.pasted_status_label.set_label(f"Showing {current_count} of {self.pasted_total} items")
 
         return False # Don't repeat
+
+    def _on_save_settings(self, button):
+        """Save settings changes to YAML file and apply them"""
+        try:
+            # Get values from spin rows
+            new_item_width = int(self.item_width_spin.get_value())
+            new_item_height = int(self.item_height_spin.get_value())
+            new_page_length = int(self.page_length_spin.get_value())
+
+            # Update settings using the settings manager
+            self.settings.update_settings(
+                **{
+                    'display.item_width': new_item_width,
+                    'display.item_height': new_item_height,
+                    'display.max_page_length': new_page_length
+                }
+            )
+
+            # Show success toast
+            toast = Adw.Toast.new("Settings saved successfully! Restart the app to apply changes.")
+            toast.set_timeout(3)
+            self.toast_overlay.add_toast(toast)
+
+            print(f"Settings saved: item_width={new_item_width}, item_height={new_item_height}, max_page_length={new_page_length}")
+
+        except Exception as e:
+            # Show error toast
+            toast = Adw.Toast.new(f"Error saving settings: {str(e)}")
+            toast.set_timeout(5)
+            self.toast_overlay.add_toast(toast)
+            print(f"Error saving settings: {e}")
 
     def _on_close_request(self, window):
         """Handle window close request - kill server before exiting"""
