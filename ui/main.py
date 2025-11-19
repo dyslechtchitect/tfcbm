@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import base64
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -28,6 +29,13 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
+
+# Configure logging with module name
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("TFCBM.UI")
 
 
 class ClipboardItemRow(Gtk.ListBoxRow):
@@ -792,6 +800,23 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         main_box.append(header)
 
+        # Search bar container
+        search_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        search_container.set_margin_start(8)
+        search_container.set_margin_end(8)
+        search_container.set_margin_top(8)
+        search_container.set_margin_bottom(4)
+
+        # Search entry
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_hexpand(True)
+        self.search_entry.set_placeholder_text("Search clipboard items...")
+        self.search_entry.connect("search-changed", self._on_search_changed)
+        self.search_entry.connect("activate", self._on_search_activate)
+        search_container.append(self.search_entry)
+
+        main_box.append(search_container)
+
         # Create TabView for Recently Copied and Recently Pasted
         self.tab_view = Adw.TabView()
         self.tab_view.set_vexpand(True)
@@ -854,6 +879,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         copied_page = self.tab_view.append(copied_scrolled)
         copied_page.set_title("Recently Copied")
         copied_page.set_icon(Gio.ThemedIcon.new("edit-copy-symbolic"))
+        copied_page.set_closable(False)
 
         # Tab 2: Recently Pasted
         pasted_scrolled = Gtk.ScrolledWindow()
@@ -908,6 +934,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_page = self.tab_view.append(pasted_scrolled)
         pasted_page.set_title("Recently Pasted")
         pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
+        pasted_page.set_closable(False)
 
         # Tab 3: Settings
         settings_scrolled = Gtk.ScrolledWindow()
@@ -1040,6 +1067,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         settings_tab = self.tab_view.append(settings_scrolled)
         settings_tab.set_title("Settings")
         settings_tab.set_icon(Gio.ThemedIcon.new("preferences-system-symbolic"))
+        settings_tab.set_closable(False)
 
         # Connect tab switch event
         self.tab_view.connect("notify::selected-page", self._on_tab_switched)
@@ -1055,6 +1083,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Store current tab state
         self.current_tab = "copied"
+
+        # Search state
+        self.search_query = ""
+        self.search_timer = None
+        self.search_active = False
+        self.search_results = []
 
         # Position window to the left
         self.position_window_left()
@@ -1327,6 +1361,22 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.copied_total_count = self.copied_total_count + 1 if hasattr(self, 'copied_total_count') else 1
         self._update_copied_status()
         return False
+
+    def _update_copied_status(self):
+        """Update the copied items status label"""
+        # Count current items in listbox
+        current_count = 0
+        index = 0
+        while True:
+            row = self.copied_listbox.get_row_at_index(index)
+            if row is None:
+                break
+            current_count += 1
+            index += 1
+
+        # Update status label
+        total = getattr(self, 'copied_total_count', current_count)
+        self.copied_status_label.set_label(f"Showing {current_count} of {total} items")
 
     def remove_item(self, item_id):
         """Remove an item from both lists by ID"""
@@ -1607,6 +1657,155 @@ class ClipboardWindow(Adw.ApplicationWindow):
         print("Exiting UI...")
         return False  # Allow window to close
 
+    def _on_search_changed(self, entry):
+        """Handle search entry text changes with 1-second debouncing"""
+        # Cancel existing timer if any
+        if self.search_timer:
+            GLib.source_remove(self.search_timer)
+            self.search_timer = None
+
+        query = entry.get_text().strip()
+
+        # If query is empty, clear search and restore normal view
+        if not query:
+            self.search_query = ""
+            self.search_active = False
+            self.search_results = []
+            self._restore_normal_view()
+            return
+
+        # Set up 1-second delay before searching
+        self.search_timer = GLib.timeout_add(1000, self._perform_search, query)
+
+    def _on_search_activate(self, entry):
+        """Handle Enter key press - search immediately"""
+        # Cancel debounce timer
+        if self.search_timer:
+            GLib.source_remove(self.search_timer)
+            self.search_timer = None
+
+        query = entry.get_text().strip()
+        if query:
+            self._perform_search(query)
+
+    def _perform_search(self, query):
+        """Perform the actual search via WebSocket"""
+        self.search_query = query
+        self.search_timer = None  # Clear timer reference
+
+        print(f"[UI] Searching for: '{query}'")
+
+        def run_search():
+            try:
+                async def search():
+                    uri = "ws://localhost:8765"
+                    max_size = 5 * 1024 * 1024  # 5MB
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
+                        request = {"action": "search", "query": query, "limit": 100}
+                        await websocket.send(json.dumps(request))
+
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "search_results":
+                            items = data.get("items", [])
+                            result_count = data.get("count", 0)
+                            print(f"[UI] Search results: {result_count} items")
+                            GLib.idle_add(self._display_search_results, items, query)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(search())
+            except Exception as e:
+                print(f"[UI] Search error: {e}")
+                traceback.print_exc()
+                GLib.idle_add(lambda: self.show_toast(f"Search error: {str(e)}") or False)
+
+        threading.Thread(target=run_search, daemon=True).start()
+        return False  # Don't repeat timer
+
+    def _display_search_results(self, items, query):
+        """Display search results in the current tab"""
+        self.search_active = True
+        self.search_results = items
+
+        # Determine which listbox to update based on current tab
+        if self.current_tab == "pasted":
+            listbox = self.pasted_listbox
+            status_label = self.pasted_status_label
+            show_pasted_time = True
+        else:  # copied
+            listbox = self.copied_listbox
+            status_label = self.copied_status_label
+            show_pasted_time = False
+
+        # Clear existing items
+        while True:
+            row = listbox.get_row_at_index(0)
+            if row is None:
+                break
+            listbox.remove(row)
+
+        # Display search results or empty message
+        if items:
+            for item in items:
+                row = ClipboardItemRow(item, self, show_pasted_time=show_pasted_time)
+                listbox.append(row)
+            status_label.set_label(f"Search: {len(items)} results for '{query}'")
+        else:
+            # Show empty results message
+            empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+            empty_box.set_valign(Gtk.Align.CENTER)
+            empty_box.set_margin_top(60)
+            empty_box.set_margin_bottom(60)
+
+            empty_label = Gtk.Label(label="No results found")
+            empty_label.add_css_class("title-2")
+            empty_box.append(empty_label)
+
+            hint_label = Gtk.Label(label=f"No clipboard items match '{query}'")
+            hint_label.add_css_class("dim-label")
+            empty_box.append(hint_label)
+
+            listbox.append(empty_box)
+            status_label.set_label(f"Search: 0 results for '{query}'")
+
+        return False
+
+    def _restore_normal_view(self):
+        """Restore normal view when search is cleared"""
+        # Reset pagination and reload current tab
+        if self.current_tab == "pasted":
+            self.pasted_offset = 0
+            self.pasted_has_more = True
+            GLib.idle_add(self.load_pasted_history)
+        else:  # copied
+            # Reload first page of copied items
+            def reload_copied():
+                try:
+                    async def get_history():
+                        uri = "ws://localhost:8765"
+                        max_size = 5 * 1024 * 1024
+                        async with websockets.connect(uri, max_size=max_size) as websocket:
+                            request = {"action": "get_history", "limit": self.page_size}
+                            await websocket.send(json.dumps(request))
+                            response = await websocket.recv()
+                            data = json.loads(response)
+
+                            if data.get("type") == "history":
+                                items = data.get("items", [])
+                                total_count = data.get("total_count", 0)
+                                offset = data.get("offset", 0)
+                                GLib.idle_add(self._initial_history_load, items, total_count, offset)
+
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(get_history())
+                except Exception as e:
+                    print(f"[UI] Error reloading history: {e}")
+
+            threading.Thread(target=reload_copied, daemon=True).start()
+
 
 class ClipboardApp(Adw.Application):
     """Main application"""
@@ -1667,6 +1866,11 @@ def main():
     parser = argparse.ArgumentParser(description="TFCBM UI")
     parser.add_argument("--server-pid", type=int, help="Server process ID to kill on exit")
     args = parser.parse_args()
+
+    # Log startup
+    logger.info("TFCBM UI starting...")
+    if args.server_pid:
+        logger.info(f"Monitoring server PID: {args.server_pid}")
 
     # Handle Ctrl+C gracefully
     def signal_handler(sig, frame):

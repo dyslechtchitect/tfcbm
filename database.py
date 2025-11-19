@@ -97,6 +97,16 @@ class ClipboardDB:
         """
         )
 
+        # Create FTS5 virtual table for full-text search on text items
+        # Use unicode61 with custom separators for better URL tokenization
+        # Separators: . : / ? = & # @ (URL components)
+        cursor.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_fts
+            USING fts5(content, tokenize="unicode61 separators './:?=&#@'")
+            """
+        )
+
         self.conn.commit()
         logging.info(f"Database initialized or already exists at: {self.db_path}")
 
@@ -158,8 +168,23 @@ class ClipboardDB:
         """,
             (timestamp, item_type, data, thumbnail, data_hash),
         )
-        self.conn.commit()
         item_id = cursor.lastrowid
+
+        # If it's a text item, also insert into FTS for search
+        if item_type == "text":
+            try:
+                text_content = data.decode("utf-8")
+                cursor.execute(
+                    """
+                    INSERT INTO clipboard_fts (rowid, content)
+                    VALUES (?, ?)
+                    """,
+                    (item_id, text_content),
+                )
+            except Exception as e:
+                logging.warning(f"Failed to index text item {item_id} in FTS: {e}")
+
+        self.conn.commit()
         logging.info(
             f"Added item to DB: ID={item_id}, Type={item_type}, Hash={data_hash[:16] if data_hash else 'None'}..., Timestamp={timestamp}"
         )
@@ -356,6 +381,58 @@ class ClipboardDB:
                     "type": row["type"],
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
+                }
+            )
+        return items
+
+    def search_items(self, query: str, limit: int = 100) -> List[Dict]:
+        """
+        Search clipboard items using full-text search
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results to return
+
+        Returns:
+            List of matching items sorted by relevance (BM25 rank)
+        """
+        if not query or not query.strip():
+            return []
+
+        # Escape FTS5 special characters by wrapping query in quotes
+        # This treats the query as a phrase search and escapes special chars
+        fts_query = f'"{query}"'
+
+        cursor = self.conn.cursor()
+        # Use FTS5 MATCH with BM25 ranking (negative rank = best matches first)
+        cursor.execute(
+            """
+            SELECT
+                ci.id,
+                ci.timestamp,
+                ci.type,
+                ci.data,
+                ci.thumbnail,
+                -fts.rank as relevance
+            FROM clipboard_fts fts
+            INNER JOIN clipboard_items ci ON fts.rowid = ci.id
+            WHERE clipboard_fts MATCH ?
+            ORDER BY fts.rank
+            LIMIT ?
+            """,
+            (fts_query, limit),
+        )
+
+        items = []
+        for row in cursor.fetchall():
+            items.append(
+                {
+                    "id": row["id"],
+                    "timestamp": row["timestamp"],
+                    "type": row["type"],
+                    "data": row["data"],
+                    "thumbnail": row["thumbnail"],
+                    "relevance": row["relevance"],
                 }
             )
         return items

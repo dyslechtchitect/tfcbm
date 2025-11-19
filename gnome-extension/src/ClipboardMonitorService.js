@@ -10,15 +10,16 @@ export class ClipboardMonitorService {
     }
 
     async checkAndNotify() {
-        log('[TFCBM] checkAndNotify called');
         const mimeTypes = await this.clipboardPort.getMimeTypes();
-        log(`[TFCBM] Mime types: ${mimeTypes.join(', ')}`);
 
         const sendEvent = async (type, data) => {
             const event = new ClipboardEvent(type, data);
             if (this.isDuplicate(event)) {
                 return;
             }
+            // Log clipboard event (type and size only, no content)
+            const size = typeof data === 'string' ? data.length : 0;
+            log(`[TFCBM] Clipboard event: ${type} (${size} bytes)`);
             this.lastEvent = event;
             await this.notificationPort.send(event);
         };

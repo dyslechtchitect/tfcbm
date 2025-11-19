@@ -57,6 +57,36 @@ echo ""
 echo "--> Installing GNOME Shell extension..."
 bash install_extension.sh
 
+# --- 3.5. Install Desktop Launcher ---
+echo ""
+echo "--> Installing desktop launcher..."
+INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DESKTOP_FILE="$HOME/.local/share/applications/tfcbm.desktop"
+mkdir -p "$HOME/.local/share/applications"
+
+# Create .desktop file
+cat > "$DESKTOP_FILE" << EOF
+[Desktop Entry]
+Name=TFCBM
+Comment=Clipboard Manager - Manage your clipboard history
+Exec=$INSTALL_DIR/tfcbm-launcher.sh
+Icon=$INSTALL_DIR/resouces/icon-256.png
+Terminal=false
+Type=Application
+Categories=Utility;GTK;
+StartupNotify=true
+Keywords=clipboard;manager;history;
+EOF
+
+# Update desktop database
+if command -v update-desktop-database &> /dev/null; then
+    update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+fi
+
+echo "Desktop launcher installed to: $DESKTOP_FILE"
+echo "You can now launch TFCBM from Activities (Super key, type 'TFCBM')"
+echo "Logs are saved to: /tmp/tfcbm_server.log and /tmp/tfcbm_ui.log"
+
 # --- 4. Create and set up Python Virtual Environment ---
 echo ""
 echo "--> Setting up Python virtual environment..."
@@ -83,7 +113,7 @@ echo "    - WebSocket (for UI)"
 echo "    - SQLite database"
 
 # Start server and redirect output to both log file and terminal
-.venv/bin/python3 -u tfcbm_server.py 2>&1 | tee tfcbm_server.log &
+.venv/bin/python3 -u tfcbm_server.py 2>&1 | tee /tmp/tfcbm_server.log &
 SERVER_PID=$!
 echo "Server started with PID $SERVER_PID"
 

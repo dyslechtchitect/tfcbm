@@ -24,8 +24,11 @@ from PIL import Image
 from database import ClipboardDB
 from settings import get_settings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# Configure logging with module name
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 # Initialize settings
 settings = get_settings()
@@ -329,6 +332,34 @@ async def websocket_handler(websocket):
                             paste_id = db.add_pasted_item(item_id)
                         logging.info(f"Recorded paste for item {item_id} (paste_id={paste_id})")
 
+                elif action == "search":
+                    query = data.get("query", "").strip()
+                    limit = data.get("limit", 100)
+
+                    if query:
+                        logging.info(f"Searching for: '{query}' (limit={limit})")
+                        with db_lock:
+                            results = db.search_items(query, limit)
+
+                        # Prepare items for UI (same as get_page)
+                        ui_items = []
+                        for item in results:
+                            ui_item = prepare_item_for_ui(item)
+                            ui_items.append(ui_item)
+
+                        response = {
+                            "type": "search_results",
+                            "query": query,
+                            "items": ui_items,
+                            "count": len(ui_items)
+                        }
+                        await websocket.send(json.dumps(response))
+                        logging.info(f"Search complete: {len(ui_items)} results")
+                    else:
+                        # Empty query returns empty results
+                        response = {"type": "search_results", "query": "", "items": [], "count": 0}
+                        await websocket.send(json.dumps(response))
+
             except Exception as e:
                 logging.error(f"Error handling WebSocket message: {e}")
 
@@ -476,7 +507,7 @@ def start_server():
                             hash_exists = db.hash_exists(text_hash)
 
                         if hash_exists:
-                            logging.info(f"⊘ Skipping duplicate text - Hash: {text_hash[:16]}...\n")
+                            logging.info(f"⊘ Skipping duplicate text ({len(text)} characters)\n")
                         else:
                             timestamp = datetime.now().isoformat()
 
@@ -492,11 +523,8 @@ def start_server():
                             with db_lock:
                                 db.add_item("text", text_bytes, timestamp, data_hash=text_hash)
 
-                            # Print what was copied
-                            if len(text) > 100:
-                                logging.info(f"✓ Copied: {text[:100]}...")
-                            else:
-                                logging.info(f"✓ Copied: {text}")
+                            # Log clipboard event (no content for privacy)
+                            logging.info(f"✓ Copied text ({len(text)} characters)")
                             logging.info(f"  (History: {len(history)} items)\n")
 
                     elif message["type"].startswith("image/"):
@@ -516,7 +544,7 @@ def start_server():
 
                         if hash_exists:
                             logging.info(
-                                f"⊘ Skipping duplicate image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)\n"
+                                f"⊘ Skipping duplicate image ({message['type']}, {len(image_bytes)} bytes)\n"
                             )
                         else:
                             timestamp = datetime.now().isoformat()
@@ -537,7 +565,7 @@ def start_server():
                             process_thumbnail_async(item_id, image_bytes)
 
                             logging.info(
-                                f"✓ Copied image ({message['type']}) - Hash: {image_hash[:16]}... ({len(image_bytes)} bytes)"
+                                f"✓ Copied image ({message['type']}, {len(image_bytes)} bytes)"
                             )
                             logging.info(f"  (History: {len(history)} items)\n")
 
