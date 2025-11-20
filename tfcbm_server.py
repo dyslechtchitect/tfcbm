@@ -360,6 +360,138 @@ async def websocket_handler(websocket):
                         response = {"type": "search_results", "query": "", "items": [], "count": 0}
                         await websocket.send(json.dumps(response))
 
+                # ========== Tag Management Handlers ==========
+                elif action == "get_tags":
+                    logging.info("Fetching all tags")
+                    with db_lock:
+                        tags = db.get_all_tags()
+                    response = {"type": "tags", "tags": tags}
+                    await websocket.send(json.dumps(response))
+                    logging.info(f"Sent {len(tags)} tags")
+
+                elif action == "create_tag":
+                    name = data.get("name")
+                    description = data.get("description")
+                    color = data.get("color")
+
+                    if name:
+                        logging.info(f"Creating tag: '{name}'")
+                        try:
+                            with db_lock:
+                                tag_id = db.create_tag(name, description, color)
+                                tag = db.get_tag(tag_id)
+                            response = {"type": "tag_created", "tag": tag, "success": True}
+                            await websocket.send(json.dumps(response))
+                            logging.info(f"Created tag: ID={tag_id}, Name='{name}'")
+                        except Exception as e:
+                            response = {"type": "tag_created", "success": False, "error": str(e)}
+                            await websocket.send(json.dumps(response))
+                            logging.error(f"Failed to create tag: {e}")
+                    else:
+                        response = {"type": "tag_created", "success": False, "error": "Name is required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "update_tag":
+                    tag_id = data.get("tag_id")
+                    name = data.get("name")
+                    description = data.get("description")
+                    color = data.get("color")
+
+                    if tag_id:
+                        logging.info(f"Updating tag ID={tag_id}")
+                        with db_lock:
+                            success = db.update_tag(tag_id, name, description, color)
+                            if success:
+                                tag = db.get_tag(tag_id)
+                        response = {"type": "tag_updated", "tag": tag if success else None, "success": success}
+                        await websocket.send(json.dumps(response))
+                        logging.info(f"Updated tag ID={tag_id}: {success}")
+                    else:
+                        response = {"type": "tag_updated", "success": False, "error": "tag_id is required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "delete_tag":
+                    tag_id = data.get("tag_id")
+
+                    if tag_id:
+                        logging.info(f"Deleting tag ID={tag_id}")
+                        with db_lock:
+                            success = db.delete_tag(tag_id)
+                        response = {"type": "tag_deleted", "tag_id": tag_id, "success": success}
+                        await websocket.send(json.dumps(response))
+                        logging.info(f"Deleted tag ID={tag_id}: {success}")
+                    else:
+                        response = {"type": "tag_deleted", "success": False, "error": "tag_id is required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "add_item_tag":
+                    item_id = data.get("item_id")
+                    tag_id = data.get("tag_id")
+
+                    if item_id and tag_id:
+                        logging.info(f"Adding tag {tag_id} to item {item_id}")
+                        with db_lock:
+                            success = db.add_tag_to_item(item_id, tag_id)
+                        response = {"type": "item_tag_added", "item_id": item_id, "tag_id": tag_id, "success": success}
+                        await websocket.send(json.dumps(response))
+                        logging.info(f"Added tag {tag_id} to item {item_id}: {success}")
+                    else:
+                        response = {"type": "item_tag_added", "success": False, "error": "item_id and tag_id are required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "remove_item_tag":
+                    item_id = data.get("item_id")
+                    tag_id = data.get("tag_id")
+
+                    if item_id and tag_id:
+                        logging.info(f"Removing tag {tag_id} from item {item_id}")
+                        with db_lock:
+                            success = db.remove_tag_from_item(item_id, tag_id)
+                        response = {"type": "item_tag_removed", "item_id": item_id, "tag_id": tag_id, "success": success}
+                        await websocket.send(json.dumps(response))
+                        logging.info(f"Removed tag {tag_id} from item {item_id}: {success}")
+                    else:
+                        response = {"type": "item_tag_removed", "success": False, "error": "item_id and tag_id are required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "get_item_tags":
+                    item_id = data.get("item_id")
+
+                    if item_id:
+                        logging.info(f"Fetching tags for item {item_id}")
+                        with db_lock:
+                            tags = db.get_tags_for_item(item_id)
+                        response = {"type": "item_tags", "item_id": item_id, "tags": tags}
+                        await websocket.send(json.dumps(response))
+                        logging.info(f"Sent {len(tags)} tags for item {item_id}")
+                    else:
+                        response = {"type": "item_tags", "tags": [], "error": "item_id is required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "get_items_by_tags":
+                    tag_ids = data.get("tag_ids", [])
+                    match_all = data.get("match_all", False)
+                    limit = data.get("limit", 100)
+                    offset = data.get("offset", 0)
+
+                    if tag_ids:
+                        logging.info(f"Fetching items by tags: {tag_ids} (match_all={match_all})")
+                        with db_lock:
+                            results = db.get_items_by_tags(tag_ids, match_all, limit, offset)
+
+                        # Prepare items for UI
+                        ui_items = []
+                        for item in results:
+                            ui_item = prepare_item_for_ui(item)
+                            ui_items.append(ui_item)
+
+                        response = {"type": "items_by_tags", "items": ui_items, "count": len(ui_items)}
+                        await websocket.send(json.dumps(response))
+                        logging.info(f"Sent {len(ui_items)} items for tags {tag_ids}")
+                    else:
+                        response = {"type": "items_by_tags", "items": [], "count": 0}
+                        await websocket.send(json.dumps(response))
+
             except Exception as e:
                 logging.error(f"Error handling WebSocket message: {e}")
 

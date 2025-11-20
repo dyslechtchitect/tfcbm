@@ -6,6 +6,7 @@ Handles SQLite storage of clipboard items
 
 import hashlib
 import logging
+import random
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,35 @@ from typing import Dict, List, Optional
 
 class ClipboardDB:
     """SQLite database for clipboard items"""
+
+    # Color palette for user-defined tags (Adwaita-inspired colors)
+    TAG_COLOR_PALETTE = [
+        "#3584e4",  # Blue
+        "#33d17a",  # Green
+        "#f6d32d",  # Yellow
+        "#ff7800",  # Orange
+        "#e01b24",  # Red
+        "#c061cb",  # Purple
+        "#9a9996",  # Gray
+        "#62a0ea",  # Light Blue
+        "#57e389",  # Light Green
+        "#f8e45c",  # Light Yellow
+        "#ffa348",  # Light Orange
+        "#f66151",  # Light Red
+        "#dc8add",  # Light Purple
+    ]
+
+    # System tag colors (mapped by item type)
+    SYSTEM_TAG_COLORS = {
+        "text": "#3584e4",  # Blue
+        "image/png": "#33d17a",  # Green
+        "image/jpeg": "#33d17a",  # Green
+        "image/screenshot": "#e01b24",  # Red
+        "image/web": "#ff7800",  # Orange
+        "image/file": "#f6d32d",  # Yellow
+        "image/generic": "#62a0ea",  # Light Blue
+        "file": "#c061cb",  # Purple
+    }
 
     def __init__(self, db_path: str = None):
         if db_path is None:
@@ -104,6 +134,47 @@ class ClipboardDB:
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_fts
             USING fts5(content, tokenize="unicode61 separators './:?=&#@'")
+            """
+        )
+
+        # Create tags table for user-defined tags
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                color TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        # Create item_tags junction table (many-to-many)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS item_tags (
+                item_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (item_id, tag_id),
+                FOREIGN KEY (item_id) REFERENCES clipboard_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        # Create indices for tag queries
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_item_tags_item
+            ON item_tags(item_id)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_item_tags_tag
+            ON item_tags(tag_id)
             """
         )
 
@@ -214,7 +285,7 @@ class ClipboardDB:
             offset: Number of items to skip
 
         Returns:
-            List of items as dicts with 'id', 'timestamp', 'type', 'data', 'thumbnail'
+            List of items as dicts with 'id', 'timestamp', 'type', 'data', 'thumbnail', 'tags'
         """
         cursor = self.conn.cursor()
         cursor.execute(
@@ -229,13 +300,17 @@ class ClipboardDB:
 
         items = []
         for row in cursor.fetchall():
+            item_id = row["id"]
+            # Get tags for this item
+            tags = self.get_tags_for_item(item_id)
             items.append(
                 {
-                    "id": row["id"],
+                    "id": item_id,
                     "timestamp": row["timestamp"],
                     "type": row["type"],
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
+                    "tags": tags,
                 }
             )
         return items
@@ -372,15 +447,19 @@ class ClipboardDB:
 
         items = []
         for row in cursor.fetchall():
+            item_id = row["id"]
+            # Get tags for this item
+            tags = self.get_tags_for_item(item_id)
             items.append(
                 {
                     "paste_id": row["paste_id"],
                     "pasted_timestamp": row["pasted_timestamp"],
-                    "id": row["id"],
+                    "id": item_id,
                     "timestamp": row["timestamp"],
                     "type": row["type"],
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
+                    "tags": tags,
                 }
             )
         return items
@@ -433,6 +512,321 @@ class ClipboardDB:
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
                     "relevance": row["relevance"],
+                }
+            )
+        return items
+
+    # ========== Tag Management Methods ==========
+
+    @staticmethod
+    def get_random_tag_color() -> str:
+        """Get a random color from the tag color palette"""
+        return random.choice(ClipboardDB.TAG_COLOR_PALETTE)
+
+    @staticmethod
+    def get_system_tag_color(item_type: str) -> str:
+        """Get the system tag color for an item type"""
+        return ClipboardDB.SYSTEM_TAG_COLORS.get(item_type, "#9a9996")  # Default to gray
+
+    def create_tag(self, name: str, description: str = None, color: str = None) -> int:
+        """
+        Create a new tag
+
+        Args:
+            name: Tag name (must be unique)
+            description: Optional tag description
+            color: Optional color (hex format). If not provided, randomly selected from palette
+
+        Returns:
+            The ID of the created tag
+        """
+        if color is None:
+            color = self.get_random_tag_color()
+
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                """
+                INSERT INTO tags (name, description, color)
+                VALUES (?, ?, ?)
+                """,
+                (name, description, color),
+            )
+            self.conn.commit()
+            tag_id = cursor.lastrowid
+            logging.info(f"Created tag: ID={tag_id}, Name='{name}', Color={color}")
+            return tag_id
+        except sqlite3.IntegrityError as e:
+            logging.error(f"Failed to create tag '{name}': {e}")
+            raise
+
+    def get_all_tags(self) -> List[Dict]:
+        """
+        Get all tags
+
+        Returns:
+            List of tags as dicts with 'id', 'name', 'description', 'color', 'created_at'
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, name, description, color, created_at
+            FROM tags
+            ORDER BY name ASC
+            """
+        )
+
+        tags = []
+        for row in cursor.fetchall():
+            tags.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "color": row["color"],
+                    "created_at": row["created_at"],
+                }
+            )
+        return tags
+
+    def get_tag(self, tag_id: int) -> Optional[Dict]:
+        """Get a single tag by ID"""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, name, description, color, created_at
+            FROM tags
+            WHERE id = ?
+            """,
+            (tag_id,),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "description": row["description"],
+                "color": row["color"],
+                "created_at": row["created_at"],
+            }
+        return None
+
+    def update_tag(
+        self, tag_id: int, name: str = None, description: str = None, color: str = None
+    ) -> bool:
+        """
+        Update a tag's properties
+
+        Args:
+            tag_id: ID of the tag to update
+            name: New name (optional)
+            description: New description (optional)
+            color: New color (optional)
+
+        Returns:
+            True if tag was updated, False if not found
+        """
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+        if color is not None:
+            updates.append("color = ?")
+            params.append(color)
+
+        if not updates:
+            return False
+
+        params.append(tag_id)
+        cursor = self.conn.cursor()
+        cursor.execute(
+            f"""
+            UPDATE tags
+            SET {', '.join(updates)}
+            WHERE id = ?
+            """,
+            params,
+        )
+        self.conn.commit()
+        success = cursor.rowcount > 0
+        if success:
+            logging.info(f"Updated tag ID={tag_id}")
+        return success
+
+    def delete_tag(self, tag_id: int) -> bool:
+        """
+        Delete a tag by ID (also removes all item-tag associations)
+
+        Args:
+            tag_id: ID of the tag to delete
+
+        Returns:
+            True if tag was deleted, False if not found
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+        self.conn.commit()
+        success = cursor.rowcount > 0
+        if success:
+            logging.info(f"Deleted tag ID={tag_id}")
+        return success
+
+    # ========== Item-Tag Relationship Methods ==========
+
+    def add_tag_to_item(self, item_id: int, tag_id: int) -> bool:
+        """
+        Add a tag to a clipboard item
+
+        Args:
+            item_id: ID of the clipboard item
+            tag_id: ID of the tag
+
+        Returns:
+            True if tag was added, False if already exists
+        """
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                """
+                INSERT INTO item_tags (item_id, tag_id)
+                VALUES (?, ?)
+                """,
+                (item_id, tag_id),
+            )
+            self.conn.commit()
+            logging.info(f"Added tag {tag_id} to item {item_id}")
+            return True
+        except sqlite3.IntegrityError:
+            # Tag already exists on this item
+            return False
+
+    def remove_tag_from_item(self, item_id: int, tag_id: int) -> bool:
+        """
+        Remove a tag from a clipboard item
+
+        Args:
+            item_id: ID of the clipboard item
+            tag_id: ID of the tag
+
+        Returns:
+            True if tag was removed, False if not found
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            DELETE FROM item_tags
+            WHERE item_id = ? AND tag_id = ?
+            """,
+            (item_id, tag_id),
+        )
+        self.conn.commit()
+        success = cursor.rowcount > 0
+        if success:
+            logging.info(f"Removed tag {tag_id} from item {item_id}")
+        return success
+
+    def get_tags_for_item(self, item_id: int) -> List[Dict]:
+        """
+        Get all tags associated with a clipboard item
+
+        Args:
+            item_id: ID of the clipboard item
+
+        Returns:
+            List of tags as dicts
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT t.id, t.name, t.description, t.color, t.created_at
+            FROM tags t
+            INNER JOIN item_tags it ON t.id = it.tag_id
+            WHERE it.item_id = ?
+            ORDER BY t.name ASC
+            """,
+            (item_id,),
+        )
+
+        tags = []
+        for row in cursor.fetchall():
+            tags.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "color": row["color"],
+                    "created_at": row["created_at"],
+                }
+            )
+        return tags
+
+    def get_items_by_tags(
+        self, tag_ids: List[int], match_all: bool = False, limit: int = 100, offset: int = 0
+    ) -> List[Dict]:
+        """
+        Get clipboard items filtered by tags
+
+        Args:
+            tag_ids: List of tag IDs to filter by
+            match_all: If True, items must have ALL tags. If False, items must have ANY tag.
+            limit: Maximum number of items to return
+            offset: Number of items to skip
+
+        Returns:
+            List of items as dicts
+        """
+        if not tag_ids:
+            return []
+
+        cursor = self.conn.cursor()
+
+        if match_all:
+            # Items must have ALL specified tags
+            # Use HAVING COUNT to ensure item has all tags
+            placeholders = ",".join("?" * len(tag_ids))
+            cursor.execute(
+                f"""
+                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail
+                FROM clipboard_items ci
+                INNER JOIN item_tags it ON ci.id = it.item_id
+                WHERE it.tag_id IN ({placeholders})
+                GROUP BY ci.id
+                HAVING COUNT(DISTINCT it.tag_id) = ?
+                ORDER BY ci.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*tag_ids, len(tag_ids), limit, offset),
+            )
+        else:
+            # Items must have ANY of the specified tags
+            placeholders = ",".join("?" * len(tag_ids))
+            cursor.execute(
+                f"""
+                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail
+                FROM clipboard_items ci
+                INNER JOIN item_tags it ON ci.id = it.item_id
+                WHERE it.tag_id IN ({placeholders})
+                ORDER BY ci.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*tag_ids, limit, offset),
+            )
+
+        items = []
+        for row in cursor.fetchall():
+            items.append(
+                {
+                    "id": row["id"],
+                    "timestamp": row["timestamp"],
+                    "type": row["type"],
+                    "data": row["data"],
+                    "thumbnail": row["thumbnail"],
                 }
             )
         return items

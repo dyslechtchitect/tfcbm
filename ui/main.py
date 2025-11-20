@@ -147,6 +147,20 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         save_button.add_controller(save_gesture)
         button_box.append(save_button)
 
+        # Manage Tags button (with event controller to stop propagation)
+        tags_button = Gtk.Button()
+        tags_button.set_icon_name("tag-symbolic")
+        tags_button.add_css_class("flat")
+        tags_button.set_tooltip_text("Manage tags")
+        self.tags_button = tags_button
+
+        # Use click gesture to stop propagation
+        tags_gesture = Gtk.GestureClick.new()
+        tags_gesture.connect("released", lambda g, n, x, y: self._show_tags_popover())
+        tags_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        tags_button.add_controller(tags_gesture)
+        button_box.append(tags_button)
+
         # Delete button (with event controller to stop propagation)
         delete_button = Gtk.Button()
         delete_button.set_icon_name("user-trash-symbolic")
@@ -270,7 +284,25 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 content_clamp.append(error_label)
 
         main_box.append(content_clamp)
-        self.set_child(card_frame)  # Set the card frame as the child of the row
+
+        # Create overlay to position tags at bottom right
+        overlay = Gtk.Overlay()
+        overlay.set_child(card_frame)
+
+        # Tags display box (bottom right, small, semi-transparent)
+        tags_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        tags_box.set_halign(Gtk.Align.END)
+        tags_box.set_valign(Gtk.Align.END)
+        tags_box.set_margin_end(6)
+        tags_box.set_margin_bottom(6)
+        self.tags_display_box = tags_box
+        overlay.add_overlay(tags_box)
+
+        self.set_child(overlay)  # Set the overlay as the child of the row
+
+        # Display tags from item data
+        item_tags = self.item.get('tags', [])
+        self._display_tags(item_tags)
 
     def _format_timestamp(self, timestamp_str):
         """Format ISO timestamp to readable format"""
@@ -280,6 +312,66 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             return dt.strftime("%H:%M:%S")
         except BaseException:
             return timestamp_str
+
+    def _load_item_tags(self):
+        """Load and display tags for this item"""
+        def run_load():
+            try:
+                async def fetch_tags():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "get_item_tags",
+                            "item_id": self.item.get("id")
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "item_tags":
+                            tags = data.get("tags", [])
+                            # Update UI on main thread
+                            GLib.idle_add(self._display_tags, tags)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(fetch_tags())
+            except Exception as e:
+                print(f"[UI] Error loading item tags: {e}")
+
+        threading.Thread(target=run_load, daemon=True).start()
+
+    def _display_tags(self, tags):
+        """Display tags in the tags box (small, semi-transparent)"""
+        # Clear existing tags
+        while True:
+            child = self.tags_display_box.get_first_child()
+            if not child:
+                break
+            self.tags_display_box.remove(child)
+
+        # Only show user-defined tags (not system tags)
+        user_tags = [tag for tag in tags if not tag.get("is_system", False)]
+
+        # Display up to 3 tags
+        for tag in user_tags[:3]:
+            tag_name = tag.get("name", "")
+            tag_color = tag.get("color", "#9a9996")
+
+            # Create small tag label
+            label = Gtk.Label(label=tag_name)
+
+            # Apply very small, semi-transparent styling with thin border
+            css_provider = Gtk.CssProvider()
+            css_data = f"label {{ background-color: alpha({tag_color}, 0.15); color: alpha({tag_color}, 0.8); font-size: 7pt; font-weight: normal; padding: 1px 4px; border: 1px solid alpha({tag_color}, 0.3); border-radius: 2px; }}"
+            css_provider.load_from_data(css_data.encode())
+            label.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+
+            self.tags_display_box.append(label)
+
+        return False
 
     def _on_card_clicked(self, gesture, n_press, x, y):
         """Handle card clicks - single click copies, double click opens full view"""
@@ -734,6 +826,186 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         thread = threading.Thread(target=send_record, daemon=True)
         thread.start()
 
+    def _show_tags_popover(self):
+        """Show popover to manage tags for this item"""
+        # Create popover
+        popover = Gtk.Popover()
+        popover.set_parent(self.tags_button)
+        popover.set_autohide(True)
+
+        # Content box
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content_box.set_margin_top(12)
+        content_box.set_margin_bottom(12)
+        content_box.set_margin_start(12)
+        content_box.set_margin_end(12)
+
+        # Title
+        title = Gtk.Label()
+        title.set_markup("<b>Manage Tags</b>")
+        title.set_halign(Gtk.Align.START)
+        content_box.append(title)
+
+        # Scrollable tag list
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_max_content_height(300)
+        scroll.set_propagate_natural_height(True)
+
+        # Tag list box
+        tag_list = Gtk.ListBox()
+        tag_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        tag_list.add_css_class("boxed-list")
+
+        # Get item's current tags (we'll need to fetch these)
+        item_id = self.item.get("id")
+
+        # Get current tags for this item
+        item_tags = self.item.get('tags', [])
+        item_tag_ids = [tag.get('id') for tag in item_tags if isinstance(tag, dict)]
+        print(f"[UI] Item {item_id} has tags: {item_tag_ids}")
+
+        # Add all tags as checkbuttons
+        for tag in self.window.all_tags:
+            # Skip system tags - they can't be manually added
+            if tag.get("is_system"):
+                continue
+
+            tag_id = tag.get("id")
+            tag_name = tag.get("name", "")
+            tag_color = tag.get("color", "#9a9996")
+
+            # Create row with checkbutton
+            row = Gtk.ListBoxRow()
+            row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+            row_box.set_margin_top(6)
+            row_box.set_margin_bottom(6)
+            row_box.set_margin_start(6)
+            row_box.set_margin_end(6)
+
+            # Color indicator
+            color_box = Gtk.Box()
+            color_box.set_size_request(16, 16)
+            css_provider = Gtk.CssProvider()
+            css_data = f"box {{ background-color: {tag_color}; border-radius: 3px; }}"
+            css_provider.load_from_data(css_data.encode())
+            color_box.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+            row_box.append(color_box)
+
+            # Checkbutton with tag name
+            check = Gtk.CheckButton()
+            check.set_label(tag_name)
+            check.set_hexpand(True)
+            # Set initial state based on whether this item has this tag
+            check.set_active(tag_id in item_tag_ids)
+            handler_id = check.connect("toggled", lambda cb, tid=tag_id, iid=item_id: self._on_tag_toggle(cb, tid, iid, popover))
+            # Store handler ID on the checkbutton for later blocking/unblocking
+            check.handler_id = handler_id
+            row_box.append(check)
+
+            row.set_child(row_box)
+            tag_list.append(row)
+
+        scroll.set_child(tag_list)
+        content_box.append(scroll)
+
+        # No tags message
+        if not any(not tag.get("is_system") for tag in self.window.all_tags):
+            no_tags_label = Gtk.Label()
+            no_tags_label.set_markup("<i>No custom tags available.\nCreate tags in the Tags tab.</i>")
+            no_tags_label.set_justify(Gtk.Justification.CENTER)
+            content_box.append(no_tags_label)
+
+        popover.set_child(content_box)
+        popover.popup()
+
+    def _on_tag_toggle(self, checkbutton, tag_id, item_id, popover):
+        """Handle tag checkbox toggle"""
+        is_active = checkbutton.get_active()
+        print(f"[UI] Tag toggle called: tag_id={tag_id}, item_id={item_id}, is_active={is_active}")
+
+        def run_toggle():
+            try:
+                async def toggle_tag():
+                    print(f"[UI] Connecting to WebSocket for tag toggle...")
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        print(f"[UI] WebSocket connected")
+                        if is_active:
+                            request = {
+                                "action": "add_item_tag",
+                                "item_id": item_id,
+                                "tag_id": tag_id
+                            }
+                        else:
+                            request = {
+                                "action": "remove_item_tag",
+                                "item_id": item_id,
+                                "tag_id": tag_id
+                            }
+
+                        print(f"[UI] Sending request: {request}")
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+                        print(f"[UI] Received response: {data}")
+
+                        # Check for success - server returns "success" type
+                        if data.get("success") or data.get("type") in ["tag_added", "tag_removed", "success"]:
+                            action = "added" if is_active else "removed"
+                            GLib.idle_add(self.window.show_toast, f"Tag {action}")
+                            print(f"[UI] Tag {action} successfully")
+                            # Update item tags and refresh display
+                            def update_tag_display():
+                                # Find the tag in window.all_tags
+                                tag_info = next((t for t in self.window.all_tags if t.get('id') == tag_id), None)
+                                if tag_info:
+                                    if is_active:
+                                        # Add tag to item if not already there
+                                        if 'tags' not in self.item:
+                                            self.item['tags'] = []
+                                        if tag_info not in self.item['tags']:
+                                            self.item['tags'].append(tag_info)
+                                    else:
+                                        # Remove tag from item
+                                        if 'tags' in self.item:
+                                            self.item['tags'] = [t for t in self.item['tags'] if t.get('id') != tag_id]
+                                    # Refresh tag display
+                                    self._display_tags(self.item.get('tags', []))
+                            GLib.idle_add(update_tag_display)
+                        else:
+                            print(f"[UI] Tag update failed - response: {data}")
+                            GLib.idle_add(self.window.show_toast, "Failed to update tag")
+                            # Revert checkbox on failure - use handler ID to block signal
+                            def revert_checkbox():
+                                if hasattr(checkbutton, 'handler_id'):
+                                    checkbutton.handler_block(checkbutton.handler_id)
+                                checkbutton.set_active(not is_active)
+                                if hasattr(checkbutton, 'handler_id'):
+                                    checkbutton.handler_unblock(checkbutton.handler_id)
+                            GLib.idle_add(revert_checkbox)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(toggle_tag())
+            except Exception as e:
+                print(f"[UI] Exception toggling tag: {e}")
+                import traceback
+                traceback.print_exc()
+                GLib.idle_add(self.window.show_toast, f"Error: {e}")
+                # Revert checkbox on error - use handler ID to block signal
+                def revert_checkbox():
+                    if hasattr(checkbutton, 'handler_id'):
+                        checkbutton.handler_block(checkbutton.handler_id)
+                    checkbutton.set_active(not is_active)
+                    if hasattr(checkbutton, 'handler_id'):
+                        checkbutton.handler_unblock(checkbutton.handler_id)
+                GLib.idle_add(revert_checkbox)
+
+        threading.Thread(target=run_toggle, daemon=True).start()
+
 
 class ClipboardWindow(Adw.ApplicationWindow):
     """Main application window"""
@@ -817,9 +1089,60 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         main_box.append(search_container)
 
+        # Tag filter area
+        tag_frame = Gtk.Frame()
+        tag_frame.set_margin_start(8)
+        tag_frame.set_margin_end(8)
+        tag_frame.set_margin_top(4)
+        tag_frame.set_margin_bottom(4)
+        tag_frame.add_css_class("view")
+
+        # Minimal tag container - just tags and a small X
+        tag_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        tag_container.set_margin_top(4)
+        tag_container.set_margin_bottom(4)
+        tag_container.set_margin_start(8)
+        tag_container.set_margin_end(8)
+
+        # Scrollable tag area with FlowBox for tag buttons
+        tag_scrolled = Gtk.ScrolledWindow()
+        tag_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
+        tag_scrolled.set_max_content_height(40)
+        tag_scrolled.set_min_content_height(32)
+        tag_scrolled.set_propagate_natural_height(True)
+        tag_scrolled.set_hexpand(True)
+
+        self.tag_flowbox = Gtk.FlowBox()
+        self.tag_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.tag_flowbox.set_homogeneous(False)
+        self.tag_flowbox.set_column_spacing(4)
+        self.tag_flowbox.set_row_spacing(4)
+        self.tag_flowbox.set_max_children_per_line(15)
+        tag_scrolled.set_child(self.tag_flowbox)
+
+        tag_container.append(tag_scrolled)
+
+        # Small X button to clear filter
+        clear_btn = Gtk.Button()
+        clear_btn.set_icon_name("window-close-symbolic")
+        clear_btn.add_css_class("flat")
+        clear_btn.set_tooltip_text("Clear filter")
+        clear_btn.set_valign(Gtk.Align.CENTER)
+        # Make it very small
+        css_provider = Gtk.CssProvider()
+        css_data = "button { min-width: 20px; min-height: 20px; padding: 2px; }"
+        css_provider.load_from_data(css_data.encode())
+        clear_btn.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        clear_btn.connect("clicked", lambda btn: self._clear_tag_filter())
+        tag_container.append(clear_btn)
+        tag_frame.set_child(tag_container)
+
         # Create TabView for Recently Copied and Recently Pasted
         self.tab_view = Adw.TabView()
         self.tab_view.set_vexpand(True)
+
+        # Prevent tabs from being closed
+        self.tab_view.connect("close-page", lambda view, page: True)
 
         # Tab bar
         tab_bar = Adw.TabBar()
@@ -879,7 +1202,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         copied_page = self.tab_view.append(copied_scrolled)
         copied_page.set_title("Recently Copied")
         copied_page.set_icon(Gio.ThemedIcon.new("edit-copy-symbolic"))
-        copied_page.set_closable(False)
 
         # Tab 2: Recently Pasted
         pasted_scrolled = Gtk.ScrolledWindow()
@@ -934,7 +1256,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_page = self.tab_view.append(pasted_scrolled)
         pasted_page.set_title("Recently Pasted")
         pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
-        pasted_page.set_closable(False)
 
         # Tab 3: Settings
         settings_scrolled = Gtk.ScrolledWindow()
@@ -1067,12 +1388,53 @@ class ClipboardWindow(Adw.ApplicationWindow):
         settings_tab = self.tab_view.append(settings_scrolled)
         settings_tab.set_title("Settings")
         settings_tab.set_icon(Gio.ThemedIcon.new("preferences-system-symbolic"))
-        settings_tab.set_closable(False)
+
+        # Tab 4: Tag Manager
+        tag_manager_scrolled = Gtk.ScrolledWindow()
+        tag_manager_scrolled.set_vexpand(True)
+        tag_manager_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        # Create tag manager page
+        tag_manager_page = Adw.PreferencesPage()
+
+        # Tags List Group
+        tags_group = Adw.PreferencesGroup()
+        tags_group.set_title("User-Defined Tags")
+        tags_group.set_description("Manage your custom tags for organizing clipboard items")
+
+        # Add a "Create New Tag" button at the top
+        create_tag_row = Adw.ActionRow()
+        create_tag_row.set_title("Create New Tag")
+        create_tag_row.set_subtitle("Add a new tag to organize your clipboard items")
+
+        create_tag_button = Gtk.Button()
+        create_tag_button.set_label("New Tag")
+        create_tag_button.add_css_class("suggested-action")
+        create_tag_button.set_valign(Gtk.Align.CENTER)
+        create_tag_button.connect("clicked", self._on_create_tag)
+        create_tag_row.add_suffix(create_tag_button)
+
+        tags_group.add(create_tag_row)
+        tag_manager_page.add(tags_group)
+
+        # User tags list group
+        self.user_tags_group = Adw.PreferencesGroup()
+        self.user_tags_group.set_title("Your Tags")
+        tag_manager_page.add(self.user_tags_group)
+
+        tag_manager_scrolled.set_child(tag_manager_page)
+
+        tag_manager_tab = self.tab_view.append(tag_manager_scrolled)
+        tag_manager_tab.set_title("Tags")
+        tag_manager_tab.set_icon(Gio.ThemedIcon.new("tag-symbolic"))
 
         # Connect tab switch event
         self.tab_view.connect("notify::selected-page", self._on_tab_switched)
 
         main_box.append(self.tab_view)
+
+        # Add tag filter at the bottom (footer)
+        main_box.append(tag_frame)
 
         # Set up toast overlay
         self.toast_overlay.set_child(main_box)
@@ -1090,11 +1452,24 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.search_active = False
         self.search_results = []
 
+        # Tag state
+        self.all_tags = []  # All available tags (system + user)
+        self.selected_tag_ids = []  # Currently selected tag IDs for filtering
+        self.tag_buttons = {}  # Dict of tag_id -> button widget
+        self.filter_active = False  # Track if tag filtering is active
+        self.filtered_items = []  # Filtered items when tag filter is active
+
         # Position window to the left
         self.position_window_left()
 
         # Set up global keyboard shortcut
         self.setup_global_shortcut()
+
+        # Load tags for filtering
+        self.load_tags()
+
+        # Load user tags for tag manager
+        self.load_user_tags()
 
     def setup_global_shortcut(self):
         """Set up global keyboard shortcut to show/focus window"""
@@ -1805,6 +2180,594 @@ class ClipboardWindow(Adw.ApplicationWindow):
                     print(f"[UI] Error reloading history: {e}")
 
             threading.Thread(target=reload_copied, daemon=True).start()
+
+    # ========== Tag Methods ==========
+
+    def load_tags(self):
+        """Load tags from server via WebSocket"""
+        def run_load():
+            try:
+                async def fetch_tags():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {"action": "get_tags"}
+                        await websocket.send(json.dumps(request))
+
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "tags":
+                            tags = data.get("tags", [])
+                            # Add system tags based on item types
+                            system_tags = [
+                                {"id": "system_text", "name": "Text", "color": "#3584e4", "is_system": True},
+                                {"id": "system_image", "name": "Image", "color": "#33d17a", "is_system": True},
+                                {"id": "system_screenshot", "name": "Screenshot", "color": "#e01b24", "is_system": True},
+                            ]
+                            all_tags = system_tags + tags
+                            GLib.idle_add(self._update_tags, all_tags)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(fetch_tags())
+            except Exception as e:
+                print(f"[UI] Error loading tags: {e}")
+
+        threading.Thread(target=run_load, daemon=True).start()
+
+    def _update_tags(self, tags):
+        """Update tags in UI thread"""
+        self.all_tags = tags
+        self._refresh_tag_display()
+
+    def _refresh_tag_display(self):
+        """Refresh the tag display area"""
+        # Clear existing tags
+        while True:
+            child = self.tag_flowbox.get_first_child()
+            if not child:
+                break
+            self.tag_flowbox.remove(child)
+
+        self.tag_buttons = {}
+
+        # Add tag buttons
+        for tag in self.all_tags:
+            tag_id = tag.get("id")
+            tag_name = tag.get("name", "")
+            tag_color = tag.get("color", "#9a9996")
+            is_selected = tag_id in self.selected_tag_ids
+
+            # Create button for tag
+            btn = Gtk.Button.new_with_label(tag_name)
+            btn.add_css_class("pill")
+
+            # Apply color styling - selected tags colored, unselected greyed out
+            css_provider = Gtk.CssProvider()
+            if is_selected:
+                css_data = f"button.pill {{ background-color: alpha({tag_color}, 0.25); color: {tag_color}; font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha({tag_color}, 0.4); border-radius: 2px; }}"
+            else:
+                # Unselected: greyed out
+                css_data = "button.pill { background-color: alpha(#666666, 0.08); color: alpha(#666666, 0.5); font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha(#666666, 0.2); border-radius: 2px; }"
+            css_provider.load_from_data(css_data.encode())
+            btn.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+
+            btn.connect("clicked", lambda b, tid=tag_id: self._on_tag_clicked(tid))
+
+            self.tag_buttons[tag_id] = btn
+            self.tag_flowbox.append(btn)
+
+    def _on_tag_clicked(self, tag_id):
+        """Handle tag button click - toggle selection"""
+        if tag_id in self.selected_tag_ids:
+            self.selected_tag_ids.remove(tag_id)
+        else:
+            self.selected_tag_ids.append(tag_id)
+
+        # Refresh display to update button styles
+        self._refresh_tag_display()
+
+        # Apply filter if tags are selected
+        if self.selected_tag_ids:
+            self._apply_tag_filter()
+        else:
+            self._restore_normal_view()
+
+    def _clear_tag_filter(self):
+        """Clear all tag filters"""
+        self.selected_tag_ids = []
+        self._refresh_tag_display()
+        self._restore_normal_view()
+
+    def _apply_tag_filter(self):
+        """Filter items by selected tags at UI level (no DB calls)"""
+        print(f"[UI] Applying tag filter: {self.selected_tag_ids}")
+
+        if not self.selected_tag_ids:
+            self._restore_normal_view()
+            return
+
+        # Map system tag IDs to item types
+        type_map = {
+            "system_text": ["text"],
+            "system_image": ["image/generic", "image/file", "image/web", "image/screenshot"],
+            "system_screenshot": ["image/screenshot"]
+        }
+
+        # Get user-defined tag IDs (non-system tags) - convert to string to check
+        user_tag_ids = [tag_id for tag_id in self.selected_tag_ids if not str(tag_id).startswith("system_")]
+
+        # Get allowed types from system tags
+        allowed_types = []
+        for tag_id in self.selected_tag_ids:
+            if tag_id in type_map:
+                allowed_types.extend(type_map[tag_id])
+
+        # Filter rows by showing/hiding them based on tags
+        visible_count = 0
+        i = 0
+        while True:
+            row = self.copied_listbox.get_row_at_index(i)
+            if not row:
+                break
+
+            if hasattr(row, 'item'):
+                item = row.item
+                item_type = item.get('type', '')
+                item_tags = item.get('tags', [])
+
+                # Extract tag IDs from item tags
+                item_tag_ids = [tag.get('id') for tag in item_tags if isinstance(tag, dict)]
+
+                # Check if item matches filter
+                matches = False
+
+                # If we have system tag filters, check type match
+                if allowed_types:
+                    if item_type in allowed_types:
+                        # If we also have user tags, check if item has those tags
+                        if user_tag_ids:
+                            # Item must have at least one of the selected user tags
+                            if any(tag_id in item_tag_ids for tag_id in user_tag_ids):
+                                matches = True
+                        else:
+                            # No user tags, just type match is enough
+                            matches = True
+
+                # If we only have user tag filters (no system tags)
+                elif user_tag_ids:
+                    if any(tag_id in item_tag_ids for tag_id in user_tag_ids):
+                        matches = True
+
+                # Show/hide row based on match
+                row.set_visible(matches)
+                if matches:
+                    visible_count += 1
+
+            i += 1
+
+        self.filter_active = True
+        self.show_toast(f"Showing {visible_count} filtered items")
+
+    def _restore_normal_view(self):
+        """Restore normal unfiltered view by making all rows visible"""
+        if not self.filter_active:
+            return
+
+        self.filter_active = False
+
+        # Show all rows again
+        i = 0
+        while True:
+            row = self.copied_listbox.get_row_at_index(i)
+            if not row:
+                break
+            row.set_visible(True)
+            i += 1
+
+    # ========== Tag Manager Methods ==========
+
+    def load_user_tags(self):
+        """Load user-defined tags for the tag manager"""
+        def run_load():
+            try:
+                async def fetch_tags():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {"action": "get_tags"}
+                        await websocket.send(json.dumps(request))
+
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "tags":
+                            tags = data.get("tags", [])
+                            # Only user-defined tags (not system tags)
+                            GLib.idle_add(self._refresh_user_tags_display, tags)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(fetch_tags())
+            except Exception as e:
+                print(f"[UI] Error loading user tags: {e}")
+
+        threading.Thread(target=run_load, daemon=True).start()
+
+    def _refresh_user_tags_display(self, tags):
+        """Refresh the user tags display in the tag manager"""
+        # Clear existing tags - AdwPreferencesGroup stores rows internally
+        # We need to track and remove only the rows we added
+        if hasattr(self, '_user_tag_rows'):
+            for row in self._user_tag_rows:
+                self.user_tags_group.remove(row)
+
+        self._user_tag_rows = []
+
+        # Add tag rows
+        if not tags:
+            empty_row = Adw.ActionRow()
+            empty_row.set_title("No custom tags yet")
+            empty_row.set_subtitle("Create your first tag to organize clipboard items")
+            self.user_tags_group.add(empty_row)
+            self._user_tag_rows.append(empty_row)
+        else:
+            for tag in tags:
+                tag_id = tag.get("id")
+                tag_name = tag.get("name", "")
+                tag_color = tag.get("color", "#9a9996")
+
+                tag_row = Adw.ActionRow()
+                tag_row.set_title(tag_name)
+
+                # Create a color indicator box
+                color_box = Gtk.Box()
+                color_box.set_size_request(20, 20)
+                color_box.add_css_class("card")
+
+                # Apply color
+                css_provider = Gtk.CssProvider()
+                css_data = f"box {{ background-color: {tag_color}; border-radius: 4px; }}"
+                css_provider.load_from_data(css_data.encode())
+                color_box.get_style_context().add_provider(
+                    css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+                )
+                tag_row.add_prefix(color_box)
+
+                # Edit button
+                edit_button = Gtk.Button()
+                edit_button.set_icon_name("document-edit-symbolic")
+                edit_button.set_valign(Gtk.Align.CENTER)
+                edit_button.add_css_class("flat")
+                edit_button.connect("clicked", lambda b, tid=tag_id: self._on_edit_tag(tid))
+                tag_row.add_suffix(edit_button)
+
+                # Delete button
+                delete_button = Gtk.Button()
+                delete_button.set_icon_name("user-trash-symbolic")
+                delete_button.set_valign(Gtk.Align.CENTER)
+                delete_button.add_css_class("flat")
+                delete_button.add_css_class("destructive-action")
+                delete_button.connect("clicked", lambda b, tid=tag_id: self._on_delete_tag(tid))
+                tag_row.add_suffix(delete_button)
+
+                self.user_tags_group.add(tag_row)
+                self._user_tag_rows.append(tag_row)
+
+    def _on_create_tag(self, button):
+        """Show dialog to create a new tag"""
+        dialog = Adw.MessageDialog.new(self)
+        dialog.set_heading("Create New Tag")
+        dialog.set_body("Enter a name for the new tag")
+
+        # Create entry for tag name
+        entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        entry_box.set_margin_top(12)
+        entry_box.set_margin_bottom(12)
+        entry_box.set_margin_start(12)
+        entry_box.set_margin_end(12)
+
+        name_entry = Gtk.Entry()
+        name_entry.set_placeholder_text("Tag name")
+        entry_box.append(name_entry)
+
+        # Color picker - use a simple dropdown with predefined colors
+        color_label = Gtk.Label()
+        color_label.set_text("Choose a color:")
+        color_label.set_halign(Gtk.Align.START)
+        entry_box.append(color_label)
+
+        color_flow = Gtk.FlowBox()
+        color_flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        color_flow.set_max_children_per_line(6)
+        color_flow.set_column_spacing(6)
+        color_flow.set_row_spacing(6)
+
+        colors = ["#3584e4", "#33d17a", "#f6d32d", "#ff7800", "#e01b24", "#9141ac", "#986a44", "#5e5c64"]
+        for color in colors:
+            color_btn = Gtk.Button()
+            color_btn.set_size_request(40, 40)
+            # Store color value on button for later retrieval
+            color_btn.color_value = color
+            css_provider = Gtk.CssProvider()
+            css_data = f"button {{ background-color: {color}; border-radius: 20px; }}"
+            css_provider.load_from_data(css_data.encode())
+            color_btn.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+            # Make button clickable to select its flowbox child
+            def on_color_click(btn, flow=color_flow):
+                # Find and select this button's parent FlowBoxChild
+                parent = btn.get_parent()
+                if parent:
+                    flow.select_child(parent)
+            color_btn.connect("clicked", on_color_click)
+            color_flow.append(color_btn)
+
+        color_flow.select_child(color_flow.get_child_at_index(0))
+        entry_box.append(color_flow)
+
+        dialog.set_extra_child(entry_box)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("create", "Create")
+        dialog.set_response_appearance("create", Adw.ResponseAppearance.SUGGESTED)
+
+        def on_response(dialog, response):
+            if response == "create":
+                tag_name = name_entry.get_text().strip()
+                if not tag_name:
+                    self.show_toast("Tag name cannot be empty")
+                    return
+
+                # Get selected color from the selected FlowBoxChild's button
+                selected = color_flow.get_selected_children()
+                if selected and len(selected) > 0:
+                    # Get the button from the FlowBoxChild
+                    flow_child = selected[0]
+                    button = flow_child.get_child()
+                    if hasattr(button, 'color_value'):
+                        selected_color = button.color_value
+                    else:
+                        selected_color = colors[0]
+                else:
+                    selected_color = colors[0]
+
+                # Create tag via WebSocket
+                self._create_tag_on_server(tag_name, selected_color)
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def _create_tag_on_server(self, name, color):
+        """Create a new tag on the server"""
+        def run_create():
+            try:
+                async def create_tag():
+                    print(f"[UI] Creating tag: name='{name}', color='{color}'")
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "create_tag",
+                            "name": name,
+                            "color": color
+                        }
+                        print(f"[UI] Sending create_tag request: {request}")
+                        await websocket.send(json.dumps(request))
+
+                        response = await websocket.recv()
+                        data = json.loads(response)
+                        print(f"[UI] Received response: {data}")
+
+                        if data.get("type") == "tag_created":
+                            print(f"[UI] Tag created successfully")
+                            GLib.idle_add(self.show_toast, f"Tag '{name}' created")
+                            GLib.idle_add(self.load_user_tags)
+                            GLib.idle_add(self.load_tags)  # Refresh tag filter display
+                        else:
+                            print(f"[UI] Tag creation failed - unexpected response type: {data.get('type')}")
+                            GLib.idle_add(self.show_toast, f"Failed to create tag: {data.get('message', 'Unknown error')}")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(create_tag())
+            except Exception as e:
+                print(f"[UI] Exception creating tag: {e}")
+                import traceback
+                traceback.print_exc()
+                GLib.idle_add(self.show_toast, f"Error creating tag: {e}")
+
+        threading.Thread(target=run_create, daemon=True).start()
+
+    def _on_edit_tag(self, tag_id):
+        """Show dialog to edit a tag"""
+        # Find the tag
+        tag = None
+        for t in self.all_tags:
+            if t.get("id") == tag_id and not t.get("is_system"):
+                tag = t
+                break
+
+        if not tag:
+            self.show_toast("Tag not found")
+            return
+
+        dialog = Adw.MessageDialog.new(self)
+        dialog.set_heading("Edit Tag")
+        dialog.set_body(f"Modify the tag '{tag.get('name')}'")
+
+        # Create entry for tag name
+        entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        entry_box.set_margin_top(12)
+        entry_box.set_margin_bottom(12)
+        entry_box.set_margin_start(12)
+        entry_box.set_margin_end(12)
+
+        name_entry = Gtk.Entry()
+        name_entry.set_text(tag.get("name", ""))
+        entry_box.append(name_entry)
+
+        # Color picker
+        color_label = Gtk.Label()
+        color_label.set_text("Choose a color:")
+        color_label.set_halign(Gtk.Align.START)
+        entry_box.append(color_label)
+
+        color_flow = Gtk.FlowBox()
+        color_flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        color_flow.set_max_children_per_line(6)
+        color_flow.set_column_spacing(6)
+        color_flow.set_row_spacing(6)
+
+        colors = ["#3584e4", "#33d17a", "#f6d32d", "#ff7800", "#e01b24", "#9141ac", "#986a44", "#5e5c64"]
+        current_color_index = 0
+        if tag.get("color") in colors:
+            current_color_index = colors.index(tag.get("color"))
+
+        for color in colors:
+            color_btn = Gtk.Button()
+            color_btn.set_size_request(40, 40)
+            # Store color value on button
+            color_btn.color_value = color
+            css_provider = Gtk.CssProvider()
+            css_data = f"button {{ background-color: {color}; border-radius: 20px; }}"
+            css_provider.load_from_data(css_data.encode())
+            color_btn.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+            # Make button clickable to select its flowbox child
+            def on_color_click(btn, flow=color_flow):
+                parent = btn.get_parent()
+                if parent:
+                    flow.select_child(parent)
+            color_btn.connect("clicked", on_color_click)
+            color_flow.append(color_btn)
+
+        color_flow.select_child(color_flow.get_child_at_index(current_color_index))
+        entry_box.append(color_flow)
+
+        dialog.set_extra_child(entry_box)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("save", "Save")
+        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+
+        def on_response(dialog, response):
+            if response == "save":
+                tag_name = name_entry.get_text().strip()
+                if not tag_name:
+                    self.show_toast("Tag name cannot be empty")
+                    return
+
+                # Get selected color from the selected FlowBoxChild's button
+                selected = color_flow.get_selected_children()
+                if selected and len(selected) > 0:
+                    flow_child = selected[0]
+                    button = flow_child.get_child()
+                    if hasattr(button, 'color_value'):
+                        selected_color = button.color_value
+                    else:
+                        selected_color = colors[current_color_index]
+                else:
+                    selected_color = colors[current_color_index]
+
+                # Update tag via WebSocket
+                self._update_tag_on_server(tag_id, tag_name, selected_color)
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def _update_tag_on_server(self, tag_id, name, color):
+        """Update a tag on the server"""
+        def run_update():
+            try:
+                async def update_tag():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "update_tag",
+                            "tag_id": tag_id,
+                            "name": name,
+                            "color": color
+                        }
+                        await websocket.send(json.dumps(request))
+
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "tag_updated":
+                            GLib.idle_add(self.show_toast, f"Tag updated")
+                            GLib.idle_add(self.load_user_tags)
+                            GLib.idle_add(self.load_tags)  # Refresh tag filter display
+                        else:
+                            GLib.idle_add(self.show_toast, "Failed to update tag")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(update_tag())
+            except Exception as e:
+                print(f"[UI] Error updating tag: {e}")
+                GLib.idle_add(self.show_toast, f"Error updating tag: {e}")
+
+        threading.Thread(target=run_update, daemon=True).start()
+
+    def _on_delete_tag(self, tag_id):
+        """Show confirmation dialog and delete tag"""
+        # Find the tag
+        tag = None
+        for t in self.all_tags:
+            if t.get("id") == tag_id:
+                tag = t
+                break
+
+        if not tag:
+            self.show_toast("Tag not found")
+            return
+
+        dialog = Adw.MessageDialog.new(self)
+        dialog.set_heading("Delete Tag")
+        dialog.set_body(f"Are you sure you want to delete the tag '{tag.get('name')}'?")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+
+        def on_response(dialog, response):
+            if response == "delete":
+                self._delete_tag_on_server(tag_id)
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def _delete_tag_on_server(self, tag_id):
+        """Delete a tag on the server"""
+        def run_delete():
+            try:
+                async def delete_tag():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "delete_tag",
+                            "tag_id": tag_id
+                        }
+                        await websocket.send(json.dumps(request))
+
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "tag_deleted":
+                            GLib.idle_add(self.show_toast, "Tag deleted")
+                            GLib.idle_add(self.load_user_tags)
+                            GLib.idle_add(self.load_tags)  # Refresh tag filter display
+                        else:
+                            GLib.idle_add(self.show_toast, "Failed to delete tag")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(delete_tag())
+            except Exception as e:
+                print(f"[UI] Error deleting tag: {e}")
+                GLib.idle_add(self.show_toast, f"Error deleting tag: {e}")
+
+        threading.Thread(target=run_delete, daemon=True).start()
 
 
 class ClipboardApp(Adw.Application):
