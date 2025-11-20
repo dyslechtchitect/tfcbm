@@ -151,6 +151,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         tags_button = Gtk.Button()
         tags_button.set_icon_name("tag-symbolic")
         tags_button.add_css_class("flat")
+        tags_button.add_css_class("tags-button")
         tags_button.set_tooltip_text("Manage tags")
         self.tags_button = tags_button
 
@@ -953,7 +954,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                         print(f"[UI] Received response: {data}")
 
                         # Check for success - server returns "success" type
-                        if data.get("success") or data.get("type") in ["tag_added", "tag_removed", "success"]:
+                        if data.get("success") or data.get("type") in ["item_tag_added", "item_tag_removed", "success"]:
                             action = "added" if is_active else "removed"
                             GLib.idle_add(self.window.show_toast, f"Tag {action}")
                             print(f"[UI] Tag {action} successfully")
@@ -1011,6 +1012,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
     """Main application window"""
 
     def __init__(self, app, server_pid=None):
+        start_time = time.time()
+        logger.info("Initializing ClipboardWindow...")
         super().__init__(application=app, title="TFCBM")
         self.server_pid = server_pid
 
@@ -1141,8 +1144,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.tab_view = Adw.TabView()
         self.tab_view.set_vexpand(True)
 
-        # Prevent tabs from being closed
-        self.tab_view.connect("close-page", lambda view, page: True)
+        # Prevent tabs from being closed by the user
+        self.tab_view.connect("close-page", self._on_close_page)
 
         # Tab bar
         tab_bar = Adw.TabBar()
@@ -1471,6 +1474,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Load user tags for tag manager
         self.load_user_tags()
 
+        logger.info(f"ClipboardWindow initialized in {time.time() - start_time:.2f} seconds")
+
     def setup_global_shortcut(self):
         """Set up global keyboard shortcut to show/focus window"""
         try:
@@ -1505,6 +1510,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def load_history(self):
         """Load clipboard history and listen for updates via WebSocket"""
+        self.history_load_start_time = time.time()
+        logger.info("Starting initial history load...")
 
         def run_websocket():
             # Create new event loop for this thread
@@ -1670,6 +1677,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _initial_history_load(self, items, total_count, offset):
         """Initial load of copied history with pagination data"""
+        if hasattr(self, "history_load_start_time"):
+            duration = time.time() - self.history_load_start_time
+            logger.info(f"Initial history loaded in {duration:.2f} seconds")
+            del self.history_load_start_time
+
         # Update pagination state
         self.copied_offset = offset
         self.copied_total = total_count
@@ -2032,6 +2044,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
         print("Exiting UI...")
         return False  # Allow window to close
 
+    def _on_close_page(self, tab_view, page):
+        """Prevent pages from being closed. This should also hide the close button."""
+        logger.info("Intercepted 'close-page' signal. Preventing tab closure.")
+        return True  # Returning True handles the signal and prevents the default action (closing)
+
     def _on_search_changed(self, entry):
         """Handle search entry text changes with 1-second debouncing"""
         # Cancel existing timer if any
@@ -2185,6 +2202,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def load_tags(self):
         """Load tags from server via WebSocket"""
+        self.tags_load_start_time = time.time()
+        logger.info("Starting tags load...")
         def run_load():
             try:
                 async def fetch_tags():
@@ -2217,6 +2236,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _update_tags(self, tags):
         """Update tags in UI thread"""
+        if hasattr(self, "tags_load_start_time"):
+            duration = time.time() - self.tags_load_start_time
+            logger.info(f"Tags loaded in {duration:.2f} seconds")
+            del self.tags_load_start_time
         self.all_tags = tags
         self._refresh_tag_display()
 
@@ -2273,13 +2296,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
         if self.selected_tag_ids:
             self._apply_tag_filter()
         else:
-            self._restore_normal_view()
+            self._restore_filtered_view()
 
     def _clear_tag_filter(self):
         """Clear all tag filters"""
         self.selected_tag_ids = []
         self._refresh_tag_display()
-        self._restore_normal_view()
+        self._restore_filtered_view()
 
     def _apply_tag_filter(self):
         """Filter items by selected tags at UI level (no DB calls)"""
@@ -2305,11 +2328,17 @@ class ClipboardWindow(Adw.ApplicationWindow):
             if tag_id in type_map:
                 allowed_types.extend(type_map[tag_id])
 
+        # Determine which listbox to update
+        if self.current_tab == "pasted":
+            listbox = self.pasted_listbox
+        else:
+            listbox = self.copied_listbox
+
         # Filter rows by showing/hiding them based on tags
         visible_count = 0
         i = 0
         while True:
-            row = self.copied_listbox.get_row_at_index(i)
+            row = listbox.get_row_at_index(i)
             if not row:
                 break
 
@@ -2351,17 +2380,23 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.filter_active = True
         self.show_toast(f"Showing {visible_count} filtered items")
 
-    def _restore_normal_view(self):
+    def _restore_filtered_view(self):
         """Restore normal unfiltered view by making all rows visible"""
         if not self.filter_active:
             return
 
         self.filter_active = False
 
+        # Determine which listbox to update
+        if self.current_tab == "pasted":
+            listbox = self.pasted_listbox
+        else:
+            listbox = self.copied_listbox
+
         # Show all rows again
         i = 0
         while True:
-            row = self.copied_listbox.get_row_at_index(i)
+            row = listbox.get_row_at_index(i)
             if not row:
                 break
             row.set_visible(True)
@@ -2371,6 +2406,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def load_user_tags(self):
         """Load user-defined tags for the tag manager"""
+        self.user_tags_load_start_time = time.time()
+        logger.info("Starting user tags load...")
         def run_load():
             try:
                 async def fetch_tags():
@@ -2397,6 +2434,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _refresh_user_tags_display(self, tags):
         """Refresh the user tags display in the tag manager"""
+        if hasattr(self, "user_tags_load_start_time"):
+            duration = time.time() - self.user_tags_load_start_time
+            logger.info(f"User tags loaded in {duration:.2f} seconds")
+            del self.user_tags_load_start_time
         # Clear existing tags - AdwPreferencesGroup stores rows internally
         # We need to track and remove only the rows we added
         if hasattr(self, '_user_tag_rows'):
