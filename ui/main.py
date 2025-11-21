@@ -3081,36 +3081,25 @@ class ClipboardApp(Adw.Application):
 
             invocation.return_value(None)  # Return immediately to avoid timeout
 
-            # Get the window and activate it
+            # Get the window and TOGGLE visibility (Wayland-compatible)
             win = self.props.active_window
             if win:
                 try:
-                    with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
-                        f.write(f"Window found: {win}\n")
-                        f.write(f"Window visible: {win.get_visible()}, mapped: {win.get_mapped()}\n")
+                    is_visible = win.is_visible()
 
-                    # Show and focus the window
-                    win.show()
-                    win.set_visible(True)
-                    win.unminimize()
-
-                    # On Wayland, we need to use the application's activate method
-                    # which properly requests attention from the compositor
-                    self.activate()  # This asks compositor to focus our app
-
-                    # Also present the window
-                    if timestamp > 0:
-                        win.present_with_time(timestamp)
+                    if is_visible:
+                        # Hide the window
+                        win.hide()
+                        logger.info("Window hidden via DBus")
                     else:
+                        # Show and present the window
+                        win.show()
+                        win.unminimize()
                         win.present()
+                        logger.info("Window shown via DBus")
 
-                    logger.info("Window activation via DBus successful")
                 except Exception as e:
-                    with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
-                        f.write(f"Error: {e}\n")
-            else:
-                with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
-                    f.write("No active window found!\n")
+                    logger.error(f"Error toggling window: {e}")
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""
