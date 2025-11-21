@@ -69,14 +69,10 @@
     color: @theme_fg_color; /* Use theme foreground color */
 }
 
-.tags-button image {
-    opacity: 0.7;
-}
-
-.tags-button:hover image {
-    opacity: 1.0;
-}
-
 .toast {
-    margin-bottom: 60px;
+    margin-bottom: 300px;
+}
+
+tabbar button.close {
+    display: none;
 }

@@ -700,10 +700,11 @@ class ClipboardDB:
                 (item_id, tag_id),
             )
             self.conn.commit()
-            logging.info(f"Added tag {tag_id} to item {item_id}")
+            logging.info(f"Committed add tag {tag_id} to item {item_id}")
             return True
         except sqlite3.IntegrityError:
             # Tag already exists on this item
+            logging.warning(f"Tag {tag_id} already exists on item {item_id}")
             return False
 
     def remove_tag_from_item(self, item_id: int, tag_id: int) -> bool:
@@ -728,7 +729,9 @@ class ClipboardDB:
         self.conn.commit()
         success = cursor.rowcount > 0
         if success:
-            logging.info(f"Removed tag {tag_id} from item {item_id}")
+            logging.info(f"Committed remove tag {tag_id} from item {item_id}")
+        else:
+            logging.warning(f"Attempted to remove non-existent tag {tag_id} from item {item_id}")
         return success
 
     def get_tags_for_item(self, item_id: int) -> List[Dict]:

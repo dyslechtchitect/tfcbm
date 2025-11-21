@@ -8,6 +8,7 @@ import base64
 import json
 import logging
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -210,7 +211,7 @@ def prepare_item_for_ui(item: dict) -> dict:
     data = item["data"]
     thumbnail = item.get("thumbnail")
 
-    if item_type == "text":
+    if item_type == "text" or item_type == "url":
         content = data.decode("utf-8") if isinstance(data, bytes) else data
         thumbnail_b64 = None
     elif item_type.startswith("image/") or item_type == "screenshot":
@@ -629,6 +630,11 @@ def start_server():
                         text = message["content"]
                         text_bytes = text.encode("utf-8")
 
+                        # Check for URL
+                        url_pattern = re.compile(r'https?://\S+')
+                        is_url = url_pattern.search(text) is not None
+                        item_type = "url" if is_url else "text"
+
                         # Calculate hash for deduplication
                         from database import ClipboardDB
 
@@ -639,13 +645,13 @@ def start_server():
                             hash_exists = db.hash_exists(text_hash)
 
                         if hash_exists:
-                            logging.info(f"⊘ Skipping duplicate text ({len(text)} characters)\n")
+                            logging.info(f"⊘ Skipping duplicate {item_type} ({len(text)} characters)\n")
                         else:
                             timestamp = datetime.now().isoformat()
 
                             history.append(
                                 {
-                                    "type": "text",
+                                    "type": item_type,
                                     "content": text,
                                     "timestamp": timestamp,
                                 }
@@ -653,10 +659,10 @@ def start_server():
 
                             # Save to database with hash (thread-safe)
                             with db_lock:
-                                db.add_item("text", text_bytes, timestamp, data_hash=text_hash)
+                                db.add_item(item_type, text_bytes, timestamp, data_hash=text_hash)
 
                             # Log clipboard event (no content for privacy)
-                            logging.info(f"✓ Copied text ({len(text)} characters)")
+                            logging.info(f"✓ Copied {item_type} ({len(text)} characters)")
                             logging.info(f"  (History: {len(history)} items)\n")
 
                     elif message["type"].startswith("image/"):

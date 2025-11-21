@@ -151,7 +151,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         tags_button = Gtk.Button()
         tags_button.set_icon_name("tag-symbolic")
         tags_button.add_css_class("flat")
-        tags_button.add_css_class("tags-button")
         tags_button.set_tooltip_text("Manage tags")
         self.tags_button = tags_button
 
@@ -190,7 +189,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         content_clamp.set_vexpand(False)
 
         # Content based on type
-        if item["type"] == "text":
+        if item["type"] == "text" or item["type"] == "url":
             # Create overlay to position opening quote at top-left and closing quote at bottom-right
             overlay = Gtk.Overlay()
 
@@ -1045,6 +1044,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Create toast overlay
         self.toast_overlay = Adw.ToastOverlay()
+        self.toast_overlay.set_vexpand(True)
 
         # Create main box
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -2222,6 +2222,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                                 {"id": "system_text", "name": "Text", "color": "#3584e4", "is_system": True},
                                 {"id": "system_image", "name": "Image", "color": "#33d17a", "is_system": True},
                                 {"id": "system_screenshot", "name": "Screenshot", "color": "#e01b24", "is_system": True},
+                                {"id": "system_url", "name": "URL", "color": "#c061cb", "is_system": True},
                             ]
                             all_tags = system_tags + tags
                             GLib.idle_add(self._update_tags, all_tags)
@@ -2316,7 +2317,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         type_map = {
             "system_text": ["text"],
             "system_image": ["image/generic", "image/file", "image/web", "image/screenshot"],
-            "system_screenshot": ["image/screenshot"]
+            "system_screenshot": ["image/screenshot"],
+            "system_url": ["url"]
         }
 
         # Get user-defined tag IDs (non-system tags) - convert to string to check
