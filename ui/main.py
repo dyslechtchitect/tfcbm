@@ -32,7 +32,7 @@ gi.require_version("Adw", "1")
 
 # Configure logging with module name
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("TFCBM.UI")
@@ -304,6 +304,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         item_tags = self.item.get('tags', [])
         self._display_tags(item_tags)
 
+        # Load tags for this item asynchronously
+        self._load_item_tags()
+
     def _format_timestamp(self, timestamp_str):
         """Format ISO timestamp to readable format"""
 
@@ -388,10 +391,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _perform_copy_to_clipboard(self, item_type, item_id, content=None):
         """Performs the actual copy to clipboard, shows toast, and records paste."""
+        logger.debug("Attempting to get clipboard.")
         clipboard = Gdk.Display.get_default().get_clipboard()
+        logger.debug(f"Clipboard object obtained: {clipboard}")
         if not clipboard:
             print("Error: Could not get default clipboard.")
-            self.window.show_toast("Error: Could not access clipboard.")
+            self.window.show_notification(f"Error: Could not access clipboard.")
             return
 
         print(f"[UI] _perform_copy_to_clipboard called for item_id: {item_id}, type: {item_type}")
@@ -403,23 +408,24 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     print(f"[UI] Attempting to copy text: {content[:50]}...")
                     try:
                         clipboard.set(content)
+                        logger.debug("Clipboard.set() successful.")
                         print(f"[UI] Successfully set text to clipboard: {content[:50]}")
-                        self.window.show_toast("Text copied to clipboard")
+                        self.window.show_notification("Text copied to clipboard")
                         self._record_paste(item_id)
                     except Exception as clipboard_e:
+                        logger.error(f"Clipboard.set() failed: {clipboard_e}")
                         print(f"Error: Failed to set text to clipboard for item {item_id}: {clipboard_e}")
                         traceback.print_exc()
-                        self.window.show_toast(f"Error setting clipboard: {str(clipboard_e)}")
+                        self.window.show_notification(f"Error setting clipboard: {str(clipboard_e)}")
                 else:
                     print(f"Error: Text content is None for copy operation for item {item_id}.")
-                    self.window.show_toast("Error copying text: content is empty.")
+                    self.window.show_notification("Error copying text: content is empty.")
             elif item_type.startswith("image/") or item_type == "screenshot":
-                self.window.show_toast("Loading full image...")
+                self.window.show_notification("Loading full image...")
                 self._copy_full_image_to_clipboard(item_id, clipboard)
         except Exception as e:
             print(f"Error setting clipboard content for item {item_id}: {e}")
-            traceback.print_exc()
-            self.window.show_toast(f"Error copying: {str(e)}")
+            self.window.show_notification(f"Error copying: {str(e)}")
 
     def _copy_full_image_to_clipboard(self, item_id, clipboard):
         """Request and copy full image from server to clipboard"""
@@ -454,7 +460,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                 try:
                                     if not clipboard:
                                         print("Error: Clipboard object is None in copy_to_clipboard_on_main_thread.")
-                                        self.window.show_toast("Error: Could not access clipboard.")
+                                        self.window.show_notification("Error: Could not access clipboard.")
                                         return False
 
                                     # Convert pixbuf to PNG bytes for clipboard
@@ -473,7 +479,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                     print(
                                         f"Copied full image to clipboard ({pixbuf.get_width()}x{pixbuf.get_height()})"
                                     )
-                                    self.window.show_toast(
+                                    self.window.show_notification(
                                         f"📷 Full image copied ({pixbuf.get_width()}x{pixbuf.get_height()})"
                                     )
 
@@ -483,7 +489,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                     print(f"Error copying to clipboard in main thread: {e}")
 
                                     traceback.print_exc()
-                                    self.window.show_toast(f"Error copying: {str(e)}")
+                                    self.window.show_notification(f"Error copying: {str(e)}")
                                 return False
 
                             GLib.idle_add(copy_to_clipboard_on_main_thread)
@@ -497,7 +503,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 print(f"Error fetching full image: {error_msg}")
 
                 traceback.print_exc()
-                GLib.idle_add(lambda: self.window.show_toast(f"Error: {error_msg}") or False)
+                GLib.idle_add(lambda: self.window.show_notification(f"Error: {error_msg}") or False)
 
         # Run in background thread
 
@@ -546,7 +552,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             except Exception as e:
                 print(f"Error saving file: {e}")
-                self.window.show_toast(f"Error saving file: {str(e)}")
+                self.window.show_notification(f"Error saving file: {str(e)}")
 
         dialog.save(window, None, on_save_finish)
 
@@ -679,14 +685,14 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                                 GLib.idle_add(update_image_on_ui)
                             else:
-                                GLib.idle_add(lambda: self.window.show_toast("Failed to get full image data") or False)
+                                GLib.idle_add(lambda: self.window.show_notification("Failed to get full image data") or False)
 
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     loop.run_until_complete(get_full_image_data())
                 except Exception as e:
                     print(f"Error fetching full image for dialog: {e}")
-                    GLib.idle_add(lambda: self.window.show_toast(f"Error loading image: {str(e)}") or False)
+                    GLib.idle_add(lambda: self.window.show_notification(f"Error loading image: {str(e)}") or False)
                     GLib.idle_add(spinner.stop)
                     GLib.idle_add(lambda: spinner.set_visible(False))
 
@@ -774,7 +780,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                         request = {"action": "delete_item", "id": item_id}
                         await websocket.send(json.dumps(request))
                         print(f"Deleted item {item_id}")
-                        GLib.idle_add(lambda: self.window.show_toast(f"Item {item_id} deleted") or False)
+                        GLib.idle_add(lambda: self.window.show_notification(f"Item {item_id} deleted") or False)
                         if full_item_dialog:
                             GLib.idle_add(full_item_dialog.close)
 
@@ -784,7 +790,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             except Exception as e:
                 print(f"Error deleting item: {e}")
-                GLib.idle_add(lambda: self.window.show_toast(f"Error deleting item: {str(e)}") or False)
+                GLib.idle_add(lambda: self.window.show_notification(f"Error deleting item: {str(e)}") or False)
 
         # Run in background thread
 
@@ -955,7 +961,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                         # Check for success - server returns "success" type
                         if data.get("success") or data.get("type") in ["item_tag_added", "item_tag_removed", "success"]:
                             action = "added" if is_active else "removed"
-                            GLib.idle_add(self.window.show_toast, f"Tag {action}")
+                            GLib.idle_add(self.window.show_notification, f"Tag {action}")
                             print(f"[UI] Tag {action} successfully")
                             # Update item tags and refresh display
                             def update_tag_display():
@@ -975,17 +981,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                     # Refresh tag display
                                     self._display_tags(self.item.get('tags', []))
                             GLib.idle_add(update_tag_display)
-                        else:
-                            print(f"[UI] Tag update failed - response: {data}")
-                            GLib.idle_add(self.window.show_toast, "Failed to update tag")
-                            # Revert checkbox on failure - use handler ID to block signal
-                            def revert_checkbox():
-                                if hasattr(checkbutton, 'handler_id'):
-                                    checkbutton.handler_block(checkbutton.handler_id)
-                                checkbutton.set_active(not is_active)
-                                if hasattr(checkbutton, 'handler_id'):
-                                    checkbutton.handler_unblock(checkbutton.handler_id)
-                            GLib.idle_add(revert_checkbox)
+                            GLib.idle_add(self.window.show_notification, "Failed to update tag")
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -994,7 +990,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 print(f"[UI] Exception toggling tag: {e}")
                 import traceback
                 traceback.print_exc()
-                GLib.idle_add(self.window.show_toast, f"Error: {e}")
+                GLib.idle_add(self.window.show_notification, f"Error: {e}")
                 # Revert checkbox on error - use handler ID to block signal
                 def revert_checkbox():
                     if hasattr(checkbutton, 'handler_id'):
@@ -1041,10 +1037,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Window icon is set through the desktop file and application
         # GTK4/Adwaita doesn't use set_icon() anymore
-
-        # Create toast overlay
-        self.toast_overlay = Adw.ToastOverlay()
-        self.toast_overlay.set_vexpand(True)
 
         # Create main box
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -1439,9 +1431,24 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Add tag filter at the bottom (footer)
         main_box.append(tag_frame)
 
-        # Set up toast overlay
-        self.toast_overlay.set_child(main_box)
-        self.set_content(self.toast_overlay)
+        # NEW: Notification area
+        self.notification_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.notification_box.set_vexpand(False)
+        self.notification_box.set_hexpand(True)
+        self.notification_box.set_halign(Gtk.Align.FILL)
+        self.notification_box.set_valign(Gtk.Align.END)
+        self.notification_box.set_size_request(-1, 30) # Narrow strip
+        self.notification_box.add_css_class("notification-area")
+        self.notification_label = Gtk.Label(label="")
+        self.notification_label.set_hexpand(True)
+        self.notification_label.set_halign(Gtk.Align.CENTER)
+        self.notification_label.set_valign(Gtk.Align.CENTER)
+        self.notification_label.add_css_class("marquee-text") # Add marquee-text class
+        self.notification_box.append(self.notification_label)
+        main_box.append(self.notification_box)
+
+        # Set up main box as content
+        self.set_content(main_box)
 
         # Load clipboard history
         GLib.idle_add(self.load_history)
@@ -1637,12 +1644,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
             spinner.start()
             return spinner
 
-    def show_toast(self, message):
-        """Show a toast notification"""
-        toast = Adw.Toast.new(message)
-        toast.set_timeout(2)  # 2 seconds
-        self.toast_overlay.add_toast(toast)
-
     def update_history(self, history):
         """Update the copied listbox with history items"""
         # Clear existing items
@@ -1800,6 +1801,30 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.copied_listbox.append(error_label)
         return False
 
+    def show_notification(self, message):
+        """Show a notification message in the dedicated area"""
+        logger.debug(f"Showing notification: {message}")
+        self.notification_label.set_label(message)
+        # The notification box should always be visible now, controlled by CSS
+        # self.notification_box.set_visible(True)
+
+        logger.debug(f"Notification box visible: {self.notification_box.get_visible()}")
+        logger.debug(f"Notification label visible: {self.notification_label.get_visible()}")
+        logger.debug(f"Notification box height: {self.notification_box.get_height()}")
+
+        # Marquee animation is now continuous via CSS, no dynamic class needed
+        # if len(message) > 50: # Arbitrary threshold, can be adjusted
+        #     self.notification_label.add_css_class("animate-marquee")
+        # else:
+        #     self.notification_label.remove_css_class("animate-marquee")
+
+        # No longer hide after a few seconds, it's always visible
+        GLib.timeout_add_seconds(15, self._hide_notification)
+
+
+
+
+
     def _on_tab_switched(self, tab_view, param):
         """Handle tab switching"""
         selected_page = tab_view.get_selected_page()
@@ -1885,7 +1910,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         except Exception as e:
             print(f"WebSocket error fetching more {list_type} items: {e}")
             traceback.print_exc()
-            GLib.idle_add(lambda: self.show_toast(f"Error loading more items: {str(e)}") or False)
+            GLib.idle_add(lambda: print(f"Error loading more items: {str(e)}") or False)
         finally:
             if list_type == "copied":
                 GLib.idle_add(lambda: self.copied_loader.set_visible(False))
@@ -1964,10 +1989,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 shortcut_row.set_subtitle(f"Current: {escaped_accel}")
                 self.new_shortcut = accel
 
-                # Show toast (escaped for display)
-                toast = Adw.Toast.new(f"Shortcut set to: {escaped_accel}")
-                toast.set_timeout(2)
-                self.toast_overlay.add_toast(toast)
+                # Print message (escaped for display)
+                self.show_notification(f"Shortcut set to: {escaped_accel}")
 
             # Cleanup
             button.set_label("Record Shortcut")
@@ -1986,10 +2009,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.shortcut_subtitle.set_subtitle(f"Current: {escaped_default}")
         self.new_shortcut = default_shortcut
 
-        # Show toast
-        toast = Adw.Toast.new("Shortcuts reset to defaults")
-        toast.set_timeout(2)
-        self.toast_overlay.add_toast(toast)
+        # Print message
+        self.show_notification("Shortcuts reset to defaults")
 
     def _on_save_settings(self, button):
         """Save settings changes to YAML file and apply them"""
@@ -2013,18 +2034,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
             # Update settings using the settings manager
             self.settings.update_settings(**settings_update)
 
-            # Show success toast
-            toast = Adw.Toast.new("Settings saved successfully! Restart the app to apply changes.")
-            toast.set_timeout(3)
-            self.toast_overlay.add_toast(toast)
+            # Print message
+            self.show_notification("Settings saved successfully! Restart the app to apply changes.")
 
             print(f"Settings saved: item_width={new_item_width}, item_height={new_item_height}, max_page_length={new_page_length}")
 
         except Exception as e:
-            # Show error toast
-            toast = Adw.Toast.new(f"Error saving settings: {str(e)}")
-            toast.set_timeout(5)
-            self.toast_overlay.add_toast(toast)
+            # Print message
+            self.show_notification(f"Error saving settings: {str(e)}")
             print(f"Error saving settings: {e}")
 
     def _on_close_request(self, window):
@@ -2560,7 +2577,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             if response == "create":
                 tag_name = name_entry.get_text().strip()
                 if not tag_name:
-                    self.show_toast("Tag name cannot be empty")
+                    print("Tag name cannot be empty")
                     return
 
                 # Get selected color from the selected FlowBoxChild's button
@@ -2604,12 +2621,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                         if data.get("type") == "tag_created":
                             print(f"[UI] Tag created successfully")
-                            GLib.idle_add(self.show_toast, f"Tag '{name}' created")
+                            GLib.idle_add(self.show_notification, f"Tag '{name}' created")
                             GLib.idle_add(self.load_user_tags)
                             GLib.idle_add(self.load_tags)  # Refresh tag filter display
                         else:
                             print(f"[UI] Tag creation failed - unexpected response type: {data.get('type')}")
-                            GLib.idle_add(self.show_toast, f"Failed to create tag: {data.get('message', 'Unknown error')}")
+                            GLib.idle_add(self.show_notification, f"Failed to create tag: {data.get('message', 'Unknown error')}")
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -2618,7 +2635,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 print(f"[UI] Exception creating tag: {e}")
                 import traceback
                 traceback.print_exc()
-                GLib.idle_add(self.show_toast, f"Error creating tag: {e}")
+                GLib.idle_add(self.show_notification, f"Error creating tag: {e}")
 
         threading.Thread(target=run_create, daemon=True).start()
 
@@ -2698,7 +2715,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             if response == "save":
                 tag_name = name_entry.get_text().strip()
                 if not tag_name:
-                    self.show_toast("Tag name cannot be empty")
+                    print("Tag name cannot be empty")
                     return
 
                 # Get selected color from the selected FlowBoxChild's button
@@ -2738,18 +2755,18 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         data = json.loads(response)
 
                         if data.get("type") == "tag_updated":
-                            GLib.idle_add(self.show_toast, f"Tag updated")
+                            GLib.idle_add(self.show_notification, f"Tag updated")
                             GLib.idle_add(self.load_user_tags)
                             GLib.idle_add(self.load_tags)  # Refresh tag filter display
                         else:
-                            GLib.idle_add(self.show_toast, "Failed to update tag")
+                            GLib.idle_add(self.show_notification, "Failed to update tag")
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(update_tag())
             except Exception as e:
                 print(f"[UI] Error updating tag: {e}")
-                GLib.idle_add(self.show_toast, f"Error updating tag: {e}")
+                GLib.idle_add(self.show_notification, f"Error updating tag: {e}")
 
         threading.Thread(target=run_update, daemon=True).start()
 
@@ -2763,7 +2780,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 break
 
         if not tag:
-            self.show_toast("Tag not found")
+            print("Tag not found")
             return
 
         dialog = Adw.MessageDialog.new(self)
@@ -2797,18 +2814,18 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         data = json.loads(response)
 
                         if data.get("type") == "tag_deleted":
-                            GLib.idle_add(self.show_toast, "Tag deleted")
+                            GLib.idle_add(self.show_notification, "Tag deleted")
                             GLib.idle_add(self.load_user_tags)
                             GLib.idle_add(self.load_tags)  # Refresh tag filter display
                         else:
-                            GLib.idle_add(self.show_toast, "Failed to delete tag")
+                            GLib.idle_add(self.show_notification, "Failed to delete tag")
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(delete_tag())
             except Exception as e:
                 print(f"[UI] Error deleting tag: {e}")
-                GLib.idle_add(self.show_toast, f"Error deleting tag: {e}")
+                GLib.idle_add(self.show_notification, f"Error deleting tag: {e}")
 
         threading.Thread(target=run_delete, daemon=True).start()
 

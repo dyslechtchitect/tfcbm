@@ -69,8 +69,29 @@
     color: @theme_fg_color; /* Use theme foreground color */
 }
 
-.toast {
-    margin-bottom: 300px;
+.notification-area {
+    background-color: @theme_surface_container_low; /* Use light theme color */
+    color: @theme_fg_color; /* Foreground color for text */
+    font-weight: bold;
+    padding: 5px 10px;
+    border-top: 1px solid @theme_border_color;
+    overflow: hidden; /* Hide overflowing text */
+    position: relative; /* Needed for absolute positioning of marquee-text */
+}
+
+.notification-area .marquee-text {
+    display: inline-block; /* Allow text to be wider than its container */
+    white-space: nowrap; /* Prevent text from wrapping */
+    position: absolute; /* Position absolutely within the notification-area */
+    padding-left: 100%; /* Start text off-screen to the right */
+    animation: marquee 15s linear infinite; /* Apply marquee animation continuously */
+    font-family: 'monospace'; /* Use a generic monospace font */
+    font-size: 1.1em; /* Same as text items */
+}
+
+@keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); } /* Move text completely off-screen to the left */
 }
 
 tabbar button.close {
