@@ -8,3 +8,9 @@ Icon=/home/ron/Documents/git/TFCBM/resouces/icon.svg
 Terminal=false
 Categories=Utility;
 StartupNotify=true
+DBusActivatable=true
+Actions=ShowWindow;
+
+[Desktop Action ShowWindow]
+Name=Show Window
+Exec=/home/ron/Documents/git/TFCBM/tfcbm-activate.sh

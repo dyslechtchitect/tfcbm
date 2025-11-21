@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.simple-clipboard" path="/org/gnome/shell/extensions/simple-clipboard/">
+    <key name="toggle-tfcbm-ui" type="as">
+      <default>['&lt;Control&gt;Escape']</default>
+      <summary>Toggle TFCBM UI</summary>
+      <description>Keyboard shortcut to bring the TFCBM UI to the foreground</description>
+    </key>
+  </schema>
+</schemalist>

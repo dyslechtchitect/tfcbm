@@ -19,6 +19,7 @@ cp gnome-extension/extension.js "$EXTENSION_DIR/"
 cp gnome-extension/metadata.json "$EXTENSION_DIR/"
 cp -r gnome-extension/src "$EXTENSION_DIR/"
 cp -r gnome-extension/node_modules "$EXTENSION_DIR/"
+cp -r gnome-extension/schemas "$EXTENSION_DIR/"
 
 echo "✓ Files copied to $EXTENSION_DIR"
 

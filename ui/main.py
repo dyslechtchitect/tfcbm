@@ -3,6 +3,11 @@
 TFCBM UI - GTK4 clipboard manager interface
 """
 
+# Add parent directory to path for imports
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from settings import get_settings
 import gi
 import argparse
@@ -13,19 +18,13 @@ import logging
 import os
 import signal
 import subprocess
-
-# Add parent directory to path for imports
-import sys
 import threading
 import time
 import traceback
 from datetime import datetime
-from pathlib import Path
 
 import websockets
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 gi.require_version("Gtk", "4.0")
@@ -2964,8 +2963,29 @@ class ClipboardApp(Adw.Application):
     """Main application"""
 
     def __init__(self, server_pid=None):
-        super().__init__(application_id="org.tfcbm.ClipboardManager")
+        super().__init__(
+            application_id="org.tfcbm.ClipboardManager",
+            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE
+        )
         self.server_pid = server_pid
+
+        # Add command-line options
+        self.add_main_option(
+            "activate",
+            ord("a"),
+            GLib.OptionFlags.NONE,
+            GLib.OptionArg.NONE,
+            "Activate and bring window to front",
+            None
+        )
+        self.add_main_option(
+            "server-pid",
+            ord("s"),
+            GLib.OptionFlags.NONE,
+            GLib.OptionArg.INT,
+            "Server process ID to monitor",
+            "PID"
+        )
 
     def do_startup(self):
         """Application startup - set icon"""
@@ -3001,6 +3021,91 @@ class ClipboardApp(Adw.Application):
         except Exception as e:
             print(f"Warning: Could not load custom CSS: {e}")
 
+        # Register DBus interface for activation
+        self._setup_dbus()
+
+        # Add action for window activation
+        activate_action = Gio.SimpleAction.new("show-window", None)
+        activate_action.connect("activate", self._on_show_window_action)
+        self.add_action(activate_action)
+
+    def _on_show_window_action(self, action, parameter):
+        """Handle show-window action"""
+        logger.info("show-window action triggered")
+        # Call self.activate() which will trigger do_activate
+        # This should properly handle the activation context
+        self.activate()
+
+    def _setup_dbus(self):
+        """Set up DBus service for window activation"""
+        try:
+            # DBus introspection XML
+            dbus_xml = """
+            <!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+            "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+            <node>
+                <interface name="org.tfcbm.ClipboardManager">
+                    <method name="Activate">
+                        <arg type="u" name="timestamp" direction="in"/>
+                    </method>
+                </interface>
+            </node>
+            """
+
+            # Parse introspection XML
+            node_info = Gio.DBusNodeInfo.new_for_xml(dbus_xml)
+
+            # Register object
+            connection = self.get_dbus_connection()
+            if connection:
+                connection.register_object(
+                    "/org/tfcbm/ClipboardManager",
+                    node_info.interfaces[0],
+                    self._handle_dbus_method_call,
+                    None,
+                    None
+                )
+                logger.info("DBus service registered for window activation")
+        except Exception as e:
+            logger.error(f"Failed to setup DBus service: {e}")
+
+    def _handle_dbus_method_call(self, connection, sender, object_path, interface_name, method_name, parameters, invocation):
+        """Handle DBus method calls"""
+        if method_name == "Activate":
+            timestamp = parameters.unpack()[0] if parameters else 0
+            logger.info(f"DBus Activate called with timestamp {timestamp}")
+
+            # Get the window and activate it
+            win = self.props.active_window
+            if win:
+                # Use present_with_time on Wayland for proper activation
+                if timestamp > 0:
+                    win.present_with_time(timestamp)
+                else:
+                    win.present()
+                logger.info("Window activation via DBus successful")
+
+            invocation.return_value(None)
+
+    def do_command_line(self, command_line):
+        """Handle command-line arguments"""
+        options = command_line.get_options_dict()
+        options = options.end().unpack()
+
+        # Handle server-pid option
+        if "server-pid" in options:
+            self.server_pid = options["server-pid"]
+            logger.info(f"Monitoring server PID: {self.server_pid}")
+
+        # If --activate flag is present, activate the window
+        if "activate" in options:
+            self.activate()
+        else:
+            # Normal startup
+            self.activate()
+
+        return 0
+
     def do_activate(self):
         """Activate the application"""
         win = self.props.active_window
@@ -3010,53 +3115,30 @@ class ClipboardApp(Adw.Application):
             # Window will be shown after history loads and kills the standalone splash
         else:
             # Use present() - the modern Wayland-compatible way
-            print("Activating window...")
+            # When called via do_command_line, this will have proper activation token
+            logger.info("Activating existing window...")
             win.present()
-            print("Window activated")
+            logger.info("Window activation requested")
 
 
 def main():
     """Entry point"""
 
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="TFCBM UI")
-    parser.add_argument("--server-pid", type=int, help="Server process ID to kill on exit")
-    args = parser.parse_args()
-
     # Log startup
     logger.info("TFCBM UI starting...")
-    if args.server_pid:
-        logger.info(f"Monitoring server PID: {args.server_pid}")
 
     # Handle Ctrl+C gracefully
     def signal_handler(sig, frame):
-        if args.server_pid:
-            try:
-
-                print(f"\n\nKilling server (PID: {args.server_pid})...")
-                os.kill(args.server_pid, signal.SIGTERM)
-
-                # Also kill child processes
-
-                subprocess.run(["pkill", "-P", str(args.server_pid)], stderr=subprocess.DEVNULL)
-            except Exception as e:
-                print(f"Error killing server: {e}")
         print("Shutting down UI...")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    app = ClipboardApp(args.server_pid)
+    # Create app and pass command-line arguments to GApplication
+    app = ClipboardApp()
     try:
-        return app.run(None)
+        return app.run(sys.argv)
     except KeyboardInterrupt:
-        if args.server_pid:
-            try:
-
-                print(f"\n\nKilling server (PID: {args.server_pid})...")
-                os.kill(args.server_pid, signal.SIGTERM)
-            except Exception as e:
-                print(f"Error killing server: {e}")
         print("\n\nShutting down UI...")
         sys.exit(0)
 
