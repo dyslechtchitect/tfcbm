@@ -38,22 +38,7 @@ export default class ClipboardMonitorExtension extends Extension {
 
         try {
             log('[TFCBM] Attempting to add keybinding...');
-            // Load settings from extension's schemas directory
-            log('[TFCBM] Extension dir: ' + this.dir.get_path());
-            const schemaDir = this.dir.get_child('schemas');
-            log('[TFCBM] Schema dir: ' + schemaDir.get_path());
-            const schemaSource = Gio.SettingsSchemaSource.new_from_directory(
-                schemaDir.get_path(),
-                Gio.SettingsSchemaSource.get_default(),
-                false
-            );
-            log('[TFCBM] Schema source created');
-            const schema = schemaSource.lookup('org.gnome.shell.extensions.simple-clipboard', false);
-            log('[TFCBM] Schema lookup result: ' + schema);
-            if (!schema) {
-                throw new Error('Schema not found');
-            }
-            this._settings = new Gio.Settings({ settings_schema: schema });
+            this._settings = this.getSettings();
             log('[TFCBM] Got settings: ' + this._settings);
             Main.wm.addKeybinding(
                 'toggle-tfcbm-ui',
