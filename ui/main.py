@@ -3075,17 +3075,42 @@ class ClipboardApp(Adw.Application):
             timestamp = parameters.unpack()[0] if parameters else 0
             logger.info(f"DBus Activate called with timestamp {timestamp}")
 
+            # DEBUG: Write to file to confirm this is being called
+            with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
+                f.write(f"DBus Activate called at {timestamp}\n")
+
+            invocation.return_value(None)  # Return immediately to avoid timeout
+
             # Get the window and activate it
             win = self.props.active_window
             if win:
-                # Use present_with_time on Wayland for proper activation
-                if timestamp > 0:
-                    win.present_with_time(timestamp)
-                else:
-                    win.present()
-                logger.info("Window activation via DBus successful")
+                try:
+                    with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
+                        f.write(f"Window found: {win}\n")
+                        f.write(f"Window visible: {win.get_visible()}, mapped: {win.get_mapped()}\n")
 
-            invocation.return_value(None)
+                    # Show and focus the window
+                    win.show()
+                    win.set_visible(True)
+                    win.unminimize()
+
+                    # On Wayland, we need to use the application's activate method
+                    # which properly requests attention from the compositor
+                    self.activate()  # This asks compositor to focus our app
+
+                    # Also present the window
+                    if timestamp > 0:
+                        win.present_with_time(timestamp)
+                    else:
+                        win.present()
+
+                    logger.info("Window activation via DBus successful")
+                except Exception as e:
+                    with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
+                        f.write(f"Error: {e}\n")
+            else:
+                with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
+                    f.write("No active window found!\n")
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""
