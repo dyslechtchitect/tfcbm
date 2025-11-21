@@ -35,13 +35,24 @@ export default class ClipboardMonitorExtension extends Extension {
 
         this.scheduler.start();
 
-        Main.wm.addKeybinding(
-            'toggle-tfcbm-ui',
-            this.getSettings(),
-            0, // Gio.SettingsBindFlags.DEFAULT
-            1, // Shell.ActionMode.NORMAL
-            () => this._toggleUI()
-        );
+        try {
+            log('[TFCBM] Attempting to add keybinding...');
+            const settings = this.getSettings();
+            log('[TFCBM] Got settings: ' + settings);
+            Main.wm.addKeybinding(
+                'toggle-tfcbm-ui',
+                settings,
+                0, // Gio.SettingsBindFlags.DEFAULT
+                1, // Shell.ActionMode.NORMAL
+                () => {
+                    log('[TFCBM] Keybinding triggered!');
+                    this._toggleUI();
+                }
+            );
+            log('[TFCBM] Keybinding added successfully');
+        } catch (e) {
+            log('[TFCBM] Error adding keybinding: ' + e);
+        }
     }
 
     disable() {
