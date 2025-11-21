@@ -3,4 +3,4 @@ display:
   item_width: 200
   max_page_length: 19
 shortcuts:
-  show_window: <Alt>grave
+  show_window: <Control>Escape
