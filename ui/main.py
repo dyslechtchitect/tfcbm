@@ -3,8 +3,8 @@
 TFCBM UI - GTK4 clipboard manager interface
 """
 
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
-import websockets
+from settings import get_settings
+import gi
 import argparse
 import asyncio
 import base64
@@ -13,6 +13,8 @@ import logging
 import os
 import signal
 import subprocess
+
+# Add parent directory to path for imports
 import sys
 import threading
 import time
@@ -20,21 +22,17 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-# Add parent directory to path for imports
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from settings import get_settings
+import websockets
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 
-import gi
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
 # Configure logging with module name
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("TFCBM.UI")
 
 
@@ -49,7 +47,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self._last_paste_time = 0  # Track last paste to prevent duplicates
 
         # Get item dimensions from settings
-        item_width = self.window.settings.item_width
+        self.window.settings.item_width
         item_height = self.window.settings.item_height
 
         # Make row activatable for keyboard navigation (Enter/Space)
@@ -205,7 +203,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             text_box.append(open_quote)
 
             # Actual content with proper width constraint
-            content_label = Gtk.Label(label=item['content'])
+            content_label = Gtk.Label(label=item["content"])
             content_label.set_wrap(True)
             content_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
             content_label.set_ellipsize(Pango.EllipsizeMode.END)  # Show ... at end
@@ -301,7 +299,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.set_child(overlay)  # Set the overlay as the child of the row
 
         # Display tags from item data
-        item_tags = self.item.get('tags', [])
+        item_tags = self.item.get("tags", [])
         self._display_tags(item_tags)
 
         # Load tags for this item asynchronously
@@ -318,15 +316,14 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _load_item_tags(self):
         """Load and display tags for this item"""
+
         def run_load():
             try:
+
                 async def fetch_tags():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "get_item_tags",
-                            "item_id": self.item.get("id")
-                        }
+                        request = {"action": "get_item_tags", "item_id": self.item.get("id")}
                         await websocket.send(json.dumps(request))
                         response = await websocket.recv()
                         data = json.loads(response)
@@ -368,9 +365,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             css_provider = Gtk.CssProvider()
             css_data = f"label {{ background-color: alpha({tag_color}, 0.15); color: alpha({tag_color}, 0.8); font-size: 7pt; font-weight: normal; padding: 1px 4px; border: 1px solid alpha({tag_color}, 0.3); border-radius: 2px; }}"
             css_provider.load_from_data(css_data.encode())
-            label.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+            label.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
             self.tags_display_box.append(label)
 
@@ -624,7 +619,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             # Make text clickable to copy
             text_copy_gesture = Gtk.GestureClick.new()
-            text_copy_gesture.connect("released", lambda g, n, x, y: self._perform_copy_to_clipboard(item_type, item_id, self.item["content"]))
+            text_copy_gesture.connect(
+                "released", lambda g, n, x, y: self._perform_copy_to_clipboard(item_type, item_id, self.item["content"])
+            )
             content_label.add_controller(text_copy_gesture)
             content_label.set_cursor(Gdk.Cursor.new_from_name("pointer"))
 
@@ -651,7 +648,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             # Make image clickable to copy
             image_copy_gesture = Gtk.GestureClick.new()
-            image_copy_gesture.connect("released", lambda g, n, x, y: self._perform_copy_to_clipboard(item_type, item_id))
+            image_copy_gesture.connect(
+                "released", lambda g, n, x, y: self._perform_copy_to_clipboard(item_type, item_id)
+            )
             picture.add_controller(image_copy_gesture)
             picture.set_cursor(Gdk.Cursor.new_from_name("pointer"))
 
@@ -685,7 +684,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                                 GLib.idle_add(update_image_on_ui)
                             else:
-                                GLib.idle_add(lambda: self.window.show_notification("Failed to get full image data") or False)
+                                GLib.idle_add(
+                                    lambda: self.window.show_notification("Failed to get full image data") or False
+                                )
 
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -867,8 +868,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         item_id = self.item.get("id")
 
         # Get current tags for this item
-        item_tags = self.item.get('tags', [])
-        item_tag_ids = [tag.get('id') for tag in item_tags if isinstance(tag, dict)]
+        item_tags = self.item.get("tags", [])
+        item_tag_ids = [tag.get("id") for tag in item_tags if isinstance(tag, dict)]
         print(f"[UI] Item {item_id} has tags: {item_tag_ids}")
 
         # Add all tags as checkbuttons
@@ -895,9 +896,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             css_provider = Gtk.CssProvider()
             css_data = f"box {{ background-color: {tag_color}; border-radius: 3px; }}"
             css_provider.load_from_data(css_data.encode())
-            color_box.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+            color_box.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
             row_box.append(color_box)
 
             # Checkbutton with tag name
@@ -906,7 +905,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             check.set_hexpand(True)
             # Set initial state based on whether this item has this tag
             check.set_active(tag_id in item_tag_ids)
-            handler_id = check.connect("toggled", lambda cb, tid=tag_id, iid=item_id: self._on_tag_toggle(cb, tid, iid, popover))
+            handler_id = check.connect(
+                "toggled", lambda cb, tid=tag_id, iid=item_id: self._on_tag_toggle(cb, tid, iid, popover)
+            )
             # Store handler ID on the checkbutton for later blocking/unblocking
             check.handler_id = handler_id
             row_box.append(check)
@@ -934,23 +935,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         def run_toggle():
             try:
+
                 async def toggle_tag():
                     print(f"[UI] Connecting to WebSocket for tag toggle...")
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
                         print(f"[UI] WebSocket connected")
                         if is_active:
-                            request = {
-                                "action": "add_item_tag",
-                                "item_id": item_id,
-                                "tag_id": tag_id
-                            }
+                            request = {"action": "add_item_tag", "item_id": item_id, "tag_id": tag_id}
                         else:
-                            request = {
-                                "action": "remove_item_tag",
-                                "item_id": item_id,
-                                "tag_id": tag_id
-                            }
+                            request = {"action": "remove_item_tag", "item_id": item_id, "tag_id": tag_id}
 
                         print(f"[UI] Sending request: {request}")
                         await websocket.send(json.dumps(request))
@@ -963,23 +957,25 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                             action = "added" if is_active else "removed"
                             GLib.idle_add(self.window.show_notification, f"Tag {action}")
                             print(f"[UI] Tag {action} successfully")
+
                             # Update item tags and refresh display
                             def update_tag_display():
                                 # Find the tag in window.all_tags
-                                tag_info = next((t for t in self.window.all_tags if t.get('id') == tag_id), None)
+                                tag_info = next((t for t in self.window.all_tags if t.get("id") == tag_id), None)
                                 if tag_info:
                                     if is_active:
                                         # Add tag to item if not already there
-                                        if 'tags' not in self.item:
-                                            self.item['tags'] = []
-                                        if tag_info not in self.item['tags']:
-                                            self.item['tags'].append(tag_info)
+                                        if "tags" not in self.item:
+                                            self.item["tags"] = []
+                                        if tag_info not in self.item["tags"]:
+                                            self.item["tags"].append(tag_info)
                                     else:
                                         # Remove tag from item
-                                        if 'tags' in self.item:
-                                            self.item['tags'] = [t for t in self.item['tags'] if t.get('id') != tag_id]
+                                        if "tags" in self.item:
+                                            self.item["tags"] = [t for t in self.item["tags"] if t.get("id") != tag_id]
                                     # Refresh tag display
-                                    self._display_tags(self.item.get('tags', []))
+                                    self._display_tags(self.item.get("tags", []))
+
                             GLib.idle_add(update_tag_display)
                             GLib.idle_add(self.window.show_notification, "Failed to update tag")
 
@@ -988,16 +984,17 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 loop.run_until_complete(toggle_tag())
             except Exception as e:
                 print(f"[UI] Exception toggling tag: {e}")
-                import traceback
                 traceback.print_exc()
                 GLib.idle_add(self.window.show_notification, f"Error: {e}")
+
                 # Revert checkbox on error - use handler ID to block signal
                 def revert_checkbox():
-                    if hasattr(checkbutton, 'handler_id'):
+                    if hasattr(checkbutton, "handler_id"):
                         checkbutton.handler_block(checkbutton.handler_id)
                     checkbutton.set_active(not is_active)
-                    if hasattr(checkbutton, 'handler_id'):
+                    if hasattr(checkbutton, "handler_id"):
                         checkbutton.handler_unblock(checkbutton.handler_id)
+
                 GLib.idle_add(revert_checkbox)
 
         threading.Thread(target=run_toggle, daemon=True).start()
@@ -1271,12 +1268,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         item_width_row.set_subtitle("Width of clipboard item cards in pixels (50-1000)")
         item_width_row.set_adjustment(
             Gtk.Adjustment.new(
-                value=self.settings.item_width,
-                lower=50,
-                upper=1000,
-                step_increment=10,
-                page_increment=50,
-                page_size=0
+                value=self.settings.item_width, lower=50, upper=1000, step_increment=10, page_increment=50, page_size=0
             )
         )
         item_width_row.set_digits(0)
@@ -1289,12 +1281,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         item_height_row.set_subtitle("Height of clipboard item cards in pixels (50-1000)")
         item_height_row.set_adjustment(
             Gtk.Adjustment.new(
-                value=self.settings.item_height,
-                lower=50,
-                upper=1000,
-                step_increment=10,
-                page_increment=50,
-                page_size=0
+                value=self.settings.item_height, lower=50, upper=1000, step_increment=10, page_increment=50, page_size=0
             )
         )
         item_height_row.set_digits(0)
@@ -1312,7 +1299,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 upper=100,
                 step_increment=1,
                 page_increment=10,
-                page_size=0
+                page_size=0,
             )
         )
         page_length_row.set_digits(0)
@@ -1437,13 +1424,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.notification_box.set_hexpand(True)
         self.notification_box.set_halign(Gtk.Align.FILL)
         self.notification_box.set_valign(Gtk.Align.END)
-        self.notification_box.set_size_request(-1, 30) # Narrow strip
+        self.notification_box.set_size_request(-1, 30)  # Narrow strip
         self.notification_box.add_css_class("notification-area")
         self.notification_label = Gtk.Label(label="")
         self.notification_label.set_hexpand(True)
         self.notification_label.set_halign(Gtk.Align.CENTER)
         self.notification_label.set_valign(Gtk.Align.CENTER)
-        self.notification_label.add_css_class("marquee-text") # Add marquee-text class
+        self.notification_label.add_css_class("marquee-text")  # Add marquee-text class
         self.notification_box.append(self.notification_label)
         main_box.append(self.notification_box)
 
@@ -1503,6 +1490,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
     def _on_show_window_activated(self, action, parameter):
         """Callback when show window shortcut is activated"""
         # Present the window (brings to front and focuses)
+        # Use present() - the modern Wayland-compatible way
         self.present()
         print("Window presented via global shortcut")
 
@@ -1746,7 +1734,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Force the listbox to redraw
         self.copied_listbox.queue_draw()
         # Update the total count
-        self.copied_total_count = self.copied_total_count + 1 if hasattr(self, 'copied_total_count') else 1
+        self.copied_total_count = self.copied_total_count + 1 if hasattr(self, "copied_total_count") else 1
         self._update_copied_status()
         return False
 
@@ -1763,7 +1751,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             index += 1
 
         # Update status label
-        total = getattr(self, 'copied_total_count', current_count)
+        total = getattr(self, "copied_total_count", current_count)
         self.copied_status_label.set_label(f"Showing {current_count} of {total} items")
 
     def remove_item(self, item_id):
@@ -1805,25 +1793,27 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Show a notification message in the dedicated area"""
         logger.debug(f"Showing notification: {message}")
         self.notification_label.set_label(message)
-        # The notification box should always be visible now, controlled by CSS
-        # self.notification_box.set_visible(True)
+        self.notification_box.set_visible(True)
 
         logger.debug(f"Notification box visible: {self.notification_box.get_visible()}")
         logger.debug(f"Notification label visible: {self.notification_label.get_visible()}")
         logger.debug(f"Notification box height: {self.notification_box.get_height()}")
 
-        # Marquee animation is now continuous via CSS, no dynamic class needed
-        # if len(message) > 50: # Arbitrary threshold, can be adjusted
-        #     self.notification_label.add_css_class("animate-marquee")
-        # else:
-        #     self.notification_label.remove_css_class("animate-marquee")
+        # Check if message is long enough for marquee
+        if len(message) > 50:  # Arbitrary threshold, can be adjusted
+            self.notification_label.add_css_class("animate-marquee")
+        else:
+            self.notification_label.remove_css_class("animate-marquee")
 
-        # No longer hide after a few seconds, it's always visible
-        GLib.timeout_add_seconds(15, self._hide_notification)
+        # Hide after a few seconds
+        GLib.timeout_add_seconds(10, self._hide_notification)
 
-
-
-
+    def _hide_notification(self):
+        """Hide the notification area"""
+        self.notification_box.set_visible(False)
+        self.notification_label.set_label("")
+        self.notification_label.remove_css_class("animate-marquee")  # Remove marquee class
+        return GLib.SOURCE_REMOVE  # Only run once
 
     def _on_tab_switched(self, tab_view, param):
         """Handle tab switching"""
@@ -1851,7 +1841,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _on_scroll_changed(self, adjustment, list_type):
         """Handle scroll events for infinite scrolling"""
-        if adjustment.get_upper() - adjustment.get_page_size() - adjustment.get_value() < 50: # 50 pixels from bottom
+        if adjustment.get_upper() - adjustment.get_page_size() - adjustment.get_value() < 50:  # 50 pixels from bottom
             if list_type == "copied" and self.copied_has_more and not self.copied_loading:
                 print("[UI] Scrolled to bottom of copied list, loading more...")
                 self.copied_loading = True
@@ -1865,19 +1855,23 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _load_more_copied_items(self):
         """Load more copied items via WebSocket"""
+
         def run_websocket():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(self._fetch_more_items("copied"))
+
         threading.Thread(target=run_websocket, daemon=True).start()
         return False
 
     def _load_more_pasted_items(self):
         """Load more pasted items via WebSocket"""
+
         def run_websocket():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(self._fetch_more_items("pasted"))
+
         threading.Thread(target=run_websocket, daemon=True).start()
         return False
 
@@ -1888,10 +1882,18 @@ class ClipboardWindow(Adw.ApplicationWindow):
         try:
             async with websockets.connect(uri, max_size=max_size) as websocket:
                 if list_type == "copied":
-                    request = {"action": "get_history", "offset": self.copied_offset + self.page_size, "limit": self.page_size}
-                else: # pasted
-                    request = {"action": "get_recently_pasted", "offset": self.pasted_offset + self.page_size, "limit": self.page_size}
-                
+                    request = {
+                        "action": "get_history",
+                        "offset": self.copied_offset + self.page_size,
+                        "limit": self.page_size,
+                    }
+                else:  # pasted
+                    request = {
+                        "action": "get_recently_pasted",
+                        "offset": self.pasted_offset + self.page_size,
+                        "limit": self.page_size,
+                    }
+
                 await websocket.send(json.dumps(request))
                 response = await websocket.recv()
                 data = json.loads(response)
@@ -1928,7 +1930,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             self.copied_has_more = (self.copied_offset + len(items)) < self.copied_total
             self.copied_loader.set_visible(False)
             self.copied_loading = False
-        else: # pasted
+        else:  # pasted
             listbox = self.pasted_listbox
             self.pasted_offset = offset
             self.pasted_total = total_count
@@ -1956,17 +1958,82 @@ class ClipboardWindow(Adw.ApplicationWindow):
         else:
             self.pasted_status_label.set_label(f"Showing {current_count} of {self.pasted_total} items")
 
-        return False # Don't repeat
+        return False  # Don't repeat
 
     def _on_record_shortcut(self, button, shortcut_row):
         """Record a new keyboard shortcut"""
         button.set_label("Press keys...")
         button.set_sensitive(False)
 
-        # Create event controller to capture key press
-        key_controller = Gtk.EventControllerKey.new()
+        # Temporarily disable the global shortcut while recording
+        app = self.get_application()
+        if app:
+            app.set_accels_for_action("win.show-window", [])
+            print("DEBUG: Temporarily disabled global shortcut for recording")
+
+        # Store key_controller as an instance variable to manage it properly
+        self._shortcut_key_controller = Gtk.EventControllerKey.new()
+        # Store click controller for stopping recording on click
+        self._shortcut_click_controller = Gtk.GestureClick.new()
+        # Store the button and shortcut_row for cleanup
+        self._shortcut_record_button = button
+        self._shortcut_record_row = shortcut_row
+        # Store timeout ID
+        self._shortcut_timeout_id = None
+        # Store the recorded shortcut
+        self._recorded_shortcut = None
+
+        def cleanup_recording():
+            """Resets the button state and disconnects the event controller."""
+            print("DEBUG: cleanup_recording called")
+
+            try:
+                if self._shortcut_record_button:
+                    self._shortcut_record_button.set_label("Record Shortcut")
+                    self._shortcut_record_button.set_sensitive(True)
+            except Exception as e:
+                print(f"Error resetting button: {e}")
+
+            try:
+                if self._shortcut_key_controller:
+                    self.remove_controller(self._shortcut_key_controller)
+                    self._shortcut_key_controller = None
+            except Exception as e:
+                print(f"Error removing key controller: {e}")
+
+            try:
+                if self._shortcut_click_controller:
+                    self.remove_controller(self._shortcut_click_controller)
+                    self._shortcut_click_controller = None
+            except Exception as e:
+                print(f"Error removing click controller: {e}")
+
+            self._shortcut_record_button = None
+            self._shortcut_record_row = None
+            self._shortcut_timeout_id = None
+
+            # Re-enable the global shortcut with the new value if one was recorded
+            try:
+                app = self.get_application()
+                if app:
+                    if self._recorded_shortcut:
+                        shortcut = self._recorded_shortcut
+                        print(f"DEBUG: Re-enabling with NEW shortcut: {shortcut}")
+                    else:
+                        shortcut = self.settings.show_window_shortcut
+                        print(f"DEBUG: Re-enabling with EXISTING shortcut: {shortcut}")
+                    app.set_accels_for_action("win.show-window", [shortcut])
+            except Exception as e:
+                print(f"Error re-enabling shortcut: {e}")
+
+            return GLib.SOURCE_REMOVE  # Ensure this timeout only runs once
 
         def on_key_pressed(controller, keyval, keycode, state):
+            # If a timeout is pending, remove it as a key has been pressed
+            if self._shortcut_timeout_id:
+                GLib.source_remove(self._shortcut_timeout_id)
+                self._shortcut_timeout_id = None
+
             # Get modifier keys
             modifiers = []
             if state & Gdk.ModifierType.CONTROL_MASK:
@@ -1980,30 +2047,90 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
             # Get key name
             key_name = Gdk.keyval_name(keyval)
+            debug_msg = f"keyval={keyval}, keycode={keycode}, key_name={key_name}, mods={modifiers}"
+            print(f"DEBUG SHORTCUT RECORDING: {debug_msg}")
 
-            # Build accelerator string
-            if modifiers and key_name:
-                accel = "<" + "><".join(modifiers) + ">" + key_name
-                # Escape the shortcut text to prevent markup parsing errors
-                escaped_accel = GLib.markup_escape_text(accel)
-                shortcut_row.set_subtitle(f"Current: {escaped_accel}")
-                self.new_shortcut = accel
+            # Handle grave/backtick key variations - try both keyval and key_name
+            # Common keyvalsfor grave: 96 (grave), 126 (asciitilde), 65104 (dead_grave)
+            if keyval in [96, 126, 65104] or key_name in ["dead_grave", "grave", "asciitilde", "quoteleft", "`"]:
+                key_name = "grave"
+                print(f"DEBUG: Detected grave key, normalizing to 'grave'")
 
-                # Print message (escaped for display)
-                self.show_notification(f"Shortcut set to: {escaped_accel}")
+            # Ignore modifier keys themselves - only record when a non-modifier key is pressed
+            modifier_keys = [
+                "Control_L",
+                "Control_R",
+                "Alt_L",
+                "Alt_R",
+                "Shift_L",
+                "Shift_R",
+                "Super_L",
+                "Super_R",
+                "Meta_L",
+                "Meta_R",
+                "Hyper_L",
+                "Hyper_R",
+            ]
+            if key_name in modifier_keys:
+                # Don't record yet, wait for the actual key
+                print(f"DEBUG: Skipping modifier key: {key_name}")
+                return True
 
-            # Cleanup
-            button.set_label("Record Shortcut")
-            button.set_sensitive(True)
-            self.remove_controller(controller)
-            return True
+            # Build accelerator string - allow single keys or keys with modifiers
+            accel = ""
+            if modifiers:
+                accel += "<" + "><".join(modifiers) + ">"
+            if key_name:
+                accel += key_name
 
-        key_controller.connect("key-pressed", on_key_pressed)
-        self.add_controller(key_controller)
+            if accel:  # Only set if a valid key combination was pressed
+                print(f"DEBUG: Recorded shortcut: {accel}")
+
+                # Store the recorded shortcut for cleanup to apply
+                self._recorded_shortcut = accel
+
+                # Update UI
+                try:
+                    escaped_accel = GLib.markup_escape_text(accel)
+                    self._shortcut_record_row.set_subtitle(f"Current: {escaped_accel}")
+                    self.new_shortcut = accel
+
+                    # Save to settings file (do this before cleanup to avoid issues)
+                    self.settings.update_settings(**{"shortcuts.show_window": accel})
+                    print(f"SUCCESS: Shortcut saved to settings: {accel}")
+                except Exception as e:
+                    print(f"Error updating UI/settings: {e}")
+
+            # Perform cleanup immediately after a key is pressed
+            cleanup_recording()
+            return True  # Stop propagation
+
+        def on_key_released(controller, keyval, keycode, state):
+            """Debug handler for key release events"""
+            key_name = Gdk.keyval_name(keyval)
+            print(f"DEBUG KEY RELEASED: keyval={keyval}, keycode={keycode}, key_name={key_name}")
+            return False
+
+        def on_click(gesture, n_press, x, y):
+            """Stop recording when user clicks anywhere"""
+            cleanup_recording()
+
+        # Set propagation phase to CAPTURE to intercept events before anything else
+        self._shortcut_key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        self._shortcut_key_controller.connect("key-pressed", on_key_pressed)
+        self._shortcut_key_controller.connect("key-released", on_key_released)
+        self.add_controller(self._shortcut_key_controller)
+
+        # Add click controller to stop recording on click
+        self._shortcut_click_controller.connect("pressed", on_click)
+        self.add_controller(self._shortcut_click_controller)
+
+        # Add a timeout for automatic cleanup if no key is pressed within 2 seconds
+        self._shortcut_timeout_id = GLib.timeout_add_seconds(2, cleanup_recording)
 
     def _on_reset_shortcuts(self, button):
         """Reset shortcuts to defaults"""
-        default_shortcut = "<Alt>grave"
+        default_shortcut = "<Control>grave"
         # Escape the shortcut text to prevent markup parsing errors
         escaped_default = GLib.markup_escape_text(default_shortcut)
         self.shortcut_subtitle.set_subtitle(f"Current: {escaped_default}")
@@ -2022,14 +2149,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
             # Prepare settings update dictionary
             settings_update = {
-                'display.item_width': new_item_width,
-                'display.item_height': new_item_height,
-                'display.max_page_length': new_page_length
+                "display.item_width": new_item_width,
+                "display.item_height": new_item_height,
+                "display.max_page_length": new_page_length,
             }
 
             # Add shortcut if it was changed
-            if hasattr(self, 'new_shortcut'):
-                settings_update['shortcuts.show_window'] = self.new_shortcut
+            if hasattr(self, "new_shortcut"):
+                settings_update["shortcuts.show_window"] = self.new_shortcut
 
             # Update settings using the settings manager
             self.settings.update_settings(**settings_update)
@@ -2037,7 +2164,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
             # Print message
             self.show_notification("Settings saved successfully! Restart the app to apply changes.")
 
-            print(f"Settings saved: item_width={new_item_width}, item_height={new_item_height}, max_page_length={new_page_length}")
+            print(
+                f"Settings saved: item_width={new_item_width}, item_height={new_item_height}, max_page_length={new_page_length}")
 
         except Exception as e:
             # Print message
@@ -2106,6 +2234,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         def run_search():
             try:
+
                 async def search():
                     uri = "ws://localhost:8765"
                     max_size = 5 * 1024 * 1024  # 5MB
@@ -2192,6 +2321,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             # Reload first page of copied items
             def reload_copied():
                 try:
+
                     async def get_history():
                         uri = "ws://localhost:8765"
                         max_size = 5 * 1024 * 1024
@@ -2221,8 +2351,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Load tags from server via WebSocket"""
         self.tags_load_start_time = time.time()
         logger.info("Starting tags load...")
+
         def run_load():
             try:
+
                 async def fetch_tags():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
@@ -2238,7 +2370,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             system_tags = [
                                 {"id": "system_text", "name": "Text", "color": "#3584e4", "is_system": True},
                                 {"id": "system_image", "name": "Image", "color": "#33d17a", "is_system": True},
-                                {"id": "system_screenshot", "name": "Screenshot", "color": "#e01b24", "is_system": True},
+                                {
+                                    "id": "system_screenshot",
+                                    "name": "Screenshot",
+                                    "color": "#e01b24",
+                                    "is_system": True,
+                                },
                                 {"id": "system_url", "name": "URL", "color": "#c061cb", "is_system": True},
                             ]
                             all_tags = system_tags + tags
@@ -2291,9 +2428,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 # Unselected: greyed out
                 css_data = "button.pill { background-color: alpha(#666666, 0.08); color: alpha(#666666, 0.5); font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha(#666666, 0.2); border-radius: 2px; }"
             css_provider.load_from_data(css_data.encode())
-            btn.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+            btn.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
             btn.connect("clicked", lambda b, tid=tag_id: self._on_tag_clicked(tid))
 
@@ -2335,7 +2470,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             "system_text": ["text"],
             "system_image": ["image/generic", "image/file", "image/web", "image/screenshot"],
             "system_screenshot": ["image/screenshot"],
-            "system_url": ["url"]
+            "system_url": ["url"],
         }
 
         # Get user-defined tag IDs (non-system tags) - convert to string to check
@@ -2361,13 +2496,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
             if not row:
                 break
 
-            if hasattr(row, 'item'):
+            if hasattr(row, "item"):
                 item = row.item
-                item_type = item.get('type', '')
-                item_tags = item.get('tags', [])
+                item_type = item.get("type", "")
+                item_tags = item.get("tags", [])
 
                 # Extract tag IDs from item tags
-                item_tag_ids = [tag.get('id') for tag in item_tags if isinstance(tag, dict)]
+                item_tag_ids = [tag.get("id") for tag in item_tags if isinstance(tag, dict)]
 
                 # Check if item matches filter
                 matches = False
@@ -2427,8 +2562,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Load user-defined tags for the tag manager"""
         self.user_tags_load_start_time = time.time()
         logger.info("Starting user tags load...")
+
         def run_load():
             try:
+
                 async def fetch_tags():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
@@ -2459,7 +2596,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             del self.user_tags_load_start_time
         # Clear existing tags - AdwPreferencesGroup stores rows internally
         # We need to track and remove only the rows we added
-        if hasattr(self, '_user_tag_rows'):
+        if hasattr(self, "_user_tag_rows"):
             for row in self._user_tag_rows:
                 self.user_tags_group.remove(row)
 
@@ -2490,9 +2627,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 css_provider = Gtk.CssProvider()
                 css_data = f"box {{ background-color: {tag_color}; border-radius: 4px; }}"
                 css_provider.load_from_data(css_data.encode())
-                color_box.get_style_context().add_provider(
-                    css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-                )
+                color_box.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
                 tag_row.add_prefix(color_box)
 
                 # Edit button
@@ -2553,15 +2688,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
             css_provider = Gtk.CssProvider()
             css_data = f"button {{ background-color: {color}; border-radius: 20px; }}"
             css_provider.load_from_data(css_data.encode())
-            color_btn.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+            color_btn.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
             # Make button clickable to select its flowbox child
             def on_color_click(btn, flow=color_flow):
                 # Find and select this button's parent FlowBoxChild
                 parent = btn.get_parent()
                 if parent:
                     flow.select_child(parent)
+
             color_btn.connect("clicked", on_color_click)
             color_flow.append(color_btn)
 
@@ -2586,7 +2721,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                     # Get the button from the FlowBoxChild
                     flow_child = selected[0]
                     button = flow_child.get_child()
-                    if hasattr(button, 'color_value'):
+                    if hasattr(button, "color_value"):
                         selected_color = button.color_value
                     else:
                         selected_color = colors[0]
@@ -2601,17 +2736,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _create_tag_on_server(self, name, color):
         """Create a new tag on the server"""
+
         def run_create():
             try:
+
                 async def create_tag():
                     print(f"[UI] Creating tag: name='{name}', color='{color}'")
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "create_tag",
-                            "name": name,
-                            "color": color
-                        }
+                        request = {"action": "create_tag", "name": name, "color": color}
                         print(f"[UI] Sending create_tag request: {request}")
                         await websocket.send(json.dumps(request))
 
@@ -2626,14 +2759,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             GLib.idle_add(self.load_tags)  # Refresh tag filter display
                         else:
                             print(f"[UI] Tag creation failed - unexpected response type: {data.get('type')}")
-                            GLib.idle_add(self.show_notification, f"Failed to create tag: {data.get('message', 'Unknown error')}")
+                            GLib.idle_add(
+                                self.show_notification, f"Failed to create tag: {data.get('message', 'Unknown error')}"
+                            )
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(create_tag())
             except Exception as e:
                 print(f"[UI] Exception creating tag: {e}")
-                import traceback
                 traceback.print_exc()
                 GLib.idle_add(self.show_notification, f"Error creating tag: {e}")
 
@@ -2692,14 +2826,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
             css_provider = Gtk.CssProvider()
             css_data = f"button {{ background-color: {color}; border-radius: 20px; }}"
             css_provider.load_from_data(css_data.encode())
-            color_btn.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
+            color_btn.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
             # Make button clickable to select its flowbox child
             def on_color_click(btn, flow=color_flow):
                 parent = btn.get_parent()
                 if parent:
                     flow.select_child(parent)
+
             color_btn.connect("clicked", on_color_click)
             color_flow.append(color_btn)
 
@@ -2723,7 +2857,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 if selected and len(selected) > 0:
                     flow_child = selected[0]
                     button = flow_child.get_child()
-                    if hasattr(button, 'color_value'):
+                    if hasattr(button, "color_value"):
                         selected_color = button.color_value
                     else:
                         selected_color = colors[current_color_index]
@@ -2738,17 +2872,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _update_tag_on_server(self, tag_id, name, color):
         """Update a tag on the server"""
+
         def run_update():
             try:
+
                 async def update_tag():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "update_tag",
-                            "tag_id": tag_id,
-                            "name": name,
-                            "color": color
-                        }
+                        request = {"action": "update_tag", "tag_id": tag_id, "name": name, "color": color}
                         await websocket.send(json.dumps(request))
 
                         response = await websocket.recv()
@@ -2799,15 +2930,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _delete_tag_on_server(self, tag_id):
         """Delete a tag on the server"""
+
         def run_delete():
             try:
+
                 async def delete_tag():
                     uri = "ws://localhost:8765"
                     async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "delete_tag",
-                            "tag_id": tag_id
-                        }
+                        request = {"action": "delete_tag", "tag_id": tag_id}
                         await websocket.send(json.dumps(request))
 
                         response = await websocket.recv()
@@ -2879,7 +3009,10 @@ class ClipboardApp(Adw.Application):
             win = ClipboardWindow(self, self.server_pid)
             # Window will be shown after history loads and kills the standalone splash
         else:
+            # Use present() - the modern Wayland-compatible way
+            print("Activating window...")
             win.present()
+            print("Window activated")
 
 
 def main():
