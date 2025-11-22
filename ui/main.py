@@ -236,12 +236,14 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             # Display file with icon, name, and metadata
             try:
                 file_metadata = item.get("content", {})
+                print(f"[UI] Rendering file item {item.get('id')}: metadata type = {type(file_metadata)}")
                 if isinstance(file_metadata, dict):
                     file_name = file_metadata.get("name", "Unknown file")
                     file_size = file_metadata.get("size", 0)
                     mime_type = file_metadata.get("mime_type", "application/octet-stream")
                     extension = file_metadata.get("extension", "")
                     is_directory = file_metadata.get("is_directory", False)
+                    print(f"[UI] File: {file_name}, is_dir: {is_directory}, ext: {extension}, mime: {mime_type}")
 
                     # Format file size nicely
                     def format_size(size_bytes):
@@ -263,21 +265,28 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     if is_directory:
                         # Use folder icon for directories
                         icon_name = "folder"
+                        print(f"[UI] Using folder icon for directory")
                     else:
                         try:
                             content_type = Gio.content_type_from_mime_type(mime_type)
+                            print(f"[UI] Content type from mime '{mime_type}': {content_type}")
                             if content_type:
                                 icon = Gio.content_type_get_icon(content_type)
                                 if isinstance(icon, Gio.ThemedIcon):
                                     icon_names = icon.get_names()
                                     if icon_names:
                                         icon_name = icon_names[0]
-                        except Exception:
+                                        print(f"[UI] Icon names: {icon_names}")
+                        except Exception as e:
+                            print(f"[UI] Error getting icon: {e}")
                             pass
 
                     # Fallback icon
                     if not icon_name:
                         icon_name = "text-x-generic"
+                        print(f"[UI] Using fallback icon")
+
+                    print(f"[UI] Final icon name: {icon_name}")
 
                     # File icon (larger size)
                     file_icon = Gtk.Image.new_from_icon_name(icon_name)
