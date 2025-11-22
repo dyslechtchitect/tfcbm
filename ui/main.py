@@ -232,6 +232,89 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             content_clamp.append(overlay)
 
+        elif item["type"] == "file":
+            # Display file with icon, name, and metadata
+            try:
+                file_metadata = item.get("content", {})
+                if isinstance(file_metadata, dict):
+                    file_name = file_metadata.get("name", "Unknown file")
+                    file_size = file_metadata.get("size", 0)
+                    mime_type = file_metadata.get("mime_type", "application/octet-stream")
+                    extension = file_metadata.get("extension", "")
+
+                    # Format file size nicely
+                    def format_size(size_bytes):
+                        for unit in ['B', 'KB', 'MB', 'GB']:
+                            if size_bytes < 1024.0:
+                                return f"{size_bytes:.1f} {unit}"
+                            size_bytes /= 1024.0
+                        return f"{size_bytes:.1f} TB"
+
+                    size_str = format_size(file_size)
+
+                    # Create file display box (horizontal layout with icon and info)
+                    file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+                    file_box.set_halign(Gtk.Align.START)
+                    file_box.set_valign(Gtk.Align.CENTER)
+                    file_box.set_margin_start(12)
+                    file_box.set_margin_top(12)
+
+                    # Get icon for mime type
+                    icon_name = None
+                    try:
+                        content_type = Gio.content_type_from_mime_type(mime_type)
+                        if content_type:
+                            icon = Gio.content_type_get_icon(content_type)
+                            if isinstance(icon, Gio.ThemedIcon):
+                                icon_names = icon.get_names()
+                                if icon_names:
+                                    icon_name = icon_names[0]
+                    except Exception:
+                        pass
+
+                    # Fallback icon
+                    if not icon_name:
+                        icon_name = "text-x-generic"
+
+                    # File icon (larger size)
+                    file_icon = Gtk.Image.new_from_icon_name(icon_name)
+                    file_icon.set_pixel_size(64)  # Large icon
+                    file_box.append(file_icon)
+
+                    # File info box (vertical layout with name and metadata)
+                    info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+                    info_box.set_halign(Gtk.Align.START)
+                    info_box.set_valign(Gtk.Align.CENTER)
+
+                    # File name (bold, larger)
+                    name_label = Gtk.Label(label=file_name)
+                    name_label.set_halign(Gtk.Align.START)
+                    name_label.add_css_class("title-4")
+                    name_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+                    name_label.set_max_width_chars(50)
+                    info_box.append(name_label)
+
+                    # File size and type
+                    meta_label = Gtk.Label(label=f"{size_str} • {extension.upper() if extension else mime_type}")
+                    meta_label.set_halign(Gtk.Align.START)
+                    meta_label.add_css_class("dim-label")
+                    meta_label.add_css_class("caption")
+                    info_box.append(meta_label)
+
+                    file_box.append(info_box)
+                    content_clamp.append(file_box)
+                else:
+                    # Error: invalid metadata
+                    error_label = Gtk.Label(label="Invalid file metadata")
+                    error_label.add_css_class("error")
+                    content_clamp.append(error_label)
+
+            except Exception as e:
+                error_label = Gtk.Label(label=f"Failed to display file: {str(e)}")
+                error_label.add_css_class("error")
+                error_label.set_wrap(True)
+                content_clamp.append(error_label)
+
         elif item["type"].startswith("image/") or item["type"] == "screenshot":
             try:
                 # Use thumbnail if available, otherwise use full image
@@ -414,6 +497,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 else:
                     print(f"Error: Text content is None for copy operation for item {item_id}.")
                     self.window.show_notification("Error copying text: content is empty.")
+            elif item_type == "file":
+                self.window.show_notification("Loading file...")
+                self._copy_file_to_clipboard(item_id, content, clipboard)
             elif item_type.startswith("image/") or item_type == "screenshot":
                 self.window.show_notification("Loading full image...")
                 self._copy_full_image_to_clipboard(item_id, clipboard)
@@ -504,6 +590,90 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         thread = threading.Thread(target=fetch_and_copy, daemon=True)
         thread.start()
 
+    def _copy_file_to_clipboard(self, item_id, file_metadata, clipboard):
+        """Request full file from server, save to temp location, and copy to clipboard"""
+
+        def fetch_and_copy():
+            try:
+
+                async def get_full_file():
+                    uri = "ws://localhost:8765"
+                    max_size = 100 * 1024 * 1024  # 100MB for files
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
+                        # Request full file
+                        request = {"action": "get_full_image", "id": item_id}
+                        await websocket.send(json.dumps(request))
+
+                        # Wait for response
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "full_file" and data.get("id") == item_id:
+                            file_b64 = data.get("content")
+                            file_data = base64.b64decode(file_b64)
+
+                            # Get file name from metadata
+                            file_name = file_metadata.get("name", "clipboard_file")
+
+                            # Save to temp directory
+                            import tempfile
+                            temp_dir = Path(tempfile.gettempdir()) / "tfcbm_files"
+                            temp_dir.mkdir(exist_ok=True)
+
+                            # Create unique filename to avoid conflicts
+                            temp_file_path = temp_dir / file_name
+
+                            # Write file
+                            with open(temp_file_path, 'wb') as f:
+                                f.write(file_data)
+
+                            print(f"[UI] Saved file to temp location: {temp_file_path}")
+
+                            # Copy file URI to clipboard on main thread
+                            def copy_to_clipboard_on_main_thread():
+                                try:
+                                    if not clipboard:
+                                        print("Error: Clipboard object is None in copy_to_clipboard_on_main_thread.")
+                                        self.window.show_notification("Error: Could not access clipboard.")
+                                        return False
+
+                                    # Create file URI (file:// format)
+                                    file_uri = f"file://{temp_file_path}"
+
+                                    # Copy URI list to clipboard (this is what file managers expect)
+                                    clipboard.set(file_uri)
+
+                                    print(f"[UI] Copied file URI to clipboard: {file_uri}")
+                                    self.window.show_notification(f"📄 File copied: {file_name}")
+
+                                    # Record paste event
+                                    self._record_paste(item_id)
+                                except Exception as e:
+                                    print(f"Error copying file to clipboard in main thread: {e}")
+                                    traceback.print_exc()
+                                    self.window.show_notification(f"Error copying file: {str(e)}")
+                                return False
+
+                            GLib.idle_add(copy_to_clipboard_on_main_thread)
+
+                        else:
+                            print(f"[UI] Unexpected response type: {data.get('type')}")
+                            GLib.idle_add(
+                                lambda: self.window.show_notification("Error: Failed to get file data") or False
+                            )
+
+                # Run async function
+                asyncio.run(get_full_file())
+
+            except Exception as e:
+                print(f"Error fetching file: {e}")
+                traceback.print_exc()
+                GLib.idle_add(lambda: self.window.show_notification(f"Error copying file: {str(e)}") or False)
+
+        # Run in background thread
+        thread = threading.Thread(target=fetch_and_copy, daemon=True)
+        thread.start()
+
     def _on_save_clicked(self, button):
         """Save item to file - stop event propagation"""
         # Stop the click from activating the row
@@ -519,6 +689,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         if item_type == "text":
             dialog.set_initial_name("clipboard.txt")
+        elif item_type == "file":
+            # Use original filename from metadata
+            file_metadata = self.item.get("content", {})
+            file_name = file_metadata.get("name", "clipboard_file")
+            dialog.set_initial_name(file_name)
         elif item_type.startswith("image/"):
             ext = item_type.split("/")[-1]
             dialog.set_initial_name(f"clipboard.{ext}")
@@ -540,6 +715,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                             f.write(content)
                         print(f"Saved text to {path}")
                         self.window.show_toast(f"Saved text to {path}")
+                    elif item_type == "file":
+                        # For files, request full file from server
+                        self._save_full_file(item_id, path)
                     elif item_type.startswith("image/") or item_type == "screenshot":
                         # For images, request full image from server
                         self._save_full_image(item_id, path)
@@ -740,6 +918,48 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Run in background thread
 
+        thread = threading.Thread(target=fetch_and_save, daemon=True)
+        thread.start()
+
+    def _save_full_file(self, item_id, path):
+        """Request and save full file from server"""
+
+        def fetch_and_save():
+            try:
+
+                async def get_full_file():
+                    uri = "ws://localhost:8765"
+                    max_size = 100 * 1024 * 1024  # 100MB for files
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
+                        # Request full file
+                        request = {"action": "get_full_image", "id": item_id}
+                        await websocket.send(json.dumps(request))
+
+                        # Wait for response
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "full_file" and data.get("id") == item_id:
+                            file_b64 = data.get("content")
+                            file_data = base64.b64decode(file_b64)
+
+                            # Save to file
+                            with open(path, "wb") as f:
+                                f.write(file_data)
+
+                            print(f"Saved file to {path}")
+                            GLib.idle_add(lambda: self.window.show_notification(f"Saved file to {path}") or False)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(get_full_file())
+
+            except Exception as e:
+                print(f"Error fetching full file: {e}")
+                traceback.print_exc()
+                GLib.idle_add(lambda: self.window.show_notification(f"Error saving file: {str(e)}") or False)
+
+        # Run in background thread
         thread = threading.Thread(target=fetch_and_save, daemon=True)
         thread.start()
 
@@ -1307,43 +1527,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         settings_page.add(display_group)
 
-        # Shortcuts Settings Group
-        shortcuts_group = Adw.PreferencesGroup()
-        shortcuts_group.set_title("Keyboard Shortcuts")
-        shortcuts_group.set_description("Configure global keyboard shortcuts")
-
-        # Show Window shortcut
-        shortcut_row = Adw.ActionRow()
-        shortcut_row.set_title("Show Window")
-        # Escape the shortcut text to prevent markup parsing errors
-        escaped_shortcut = GLib.markup_escape_text(self.settings.show_window_shortcut)
-        shortcut_row.set_subtitle(f"Current: {escaped_shortcut}")
-
-        # Button to record shortcut
-        record_button = Gtk.Button()
-        record_button.set_label("Record Shortcut")
-        record_button.set_valign(Gtk.Align.CENTER)
-        record_button.connect("clicked", self._on_record_shortcut, shortcut_row)
-        shortcut_row.add_suffix(record_button)
-        self.shortcut_subtitle = shortcut_row  # Store for updating
-
-        shortcuts_group.add(shortcut_row)
-
-        # Reset shortcuts to defaults
-        reset_row = Adw.ActionRow()
-        reset_row.set_title("Reset Shortcuts")
-        reset_row.set_subtitle("Restore default keyboard shortcuts")
-
-        reset_button = Gtk.Button()
-        reset_button.set_label("Reset to Defaults")
-        reset_button.add_css_class("destructive-action")
-        reset_button.set_valign(Gtk.Align.CENTER)
-        reset_button.connect("clicked", self._on_reset_shortcuts)
-        reset_row.add_suffix(reset_button)
-
-        shortcuts_group.add(reset_row)
-
-        settings_page.add(shortcuts_group)
 
         # Actions Group (for Save button)
         actions_group = Adw.PreferencesGroup()
@@ -1459,7 +1642,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.position_window_left()
 
         # Set up global keyboard shortcut
-        self.setup_global_shortcut()
 
         # Load tags for filtering
         self.load_tags()
@@ -1469,29 +1651,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         logger.info(f"ClipboardWindow initialized in {time.time() - start_time:.2f} seconds")
 
-    def setup_global_shortcut(self):
-        """Set up global keyboard shortcut to show/focus window"""
-        try:
-            # Create action to show/focus window
-            show_action = Gio.SimpleAction.new("show-window", None)
-            show_action.connect("activate", self._on_show_window_activated)
-            self.add_action(show_action)
-
-            # Get application and set accelerator
-            app = self.get_application()
-            if app:
-                shortcut = self.settings.show_window_shortcut
-                app.set_accels_for_action("win.show-window", [shortcut])
-                print(f"Global shortcut set: {shortcut} -> show window")
-        except Exception as e:
-            print(f"Error setting up global shortcut: {e}")
-
-    def _on_show_window_activated(self, action, parameter):
-        """Callback when show window shortcut is activated"""
-        # Present the window (brings to front and focuses)
-        # Use present() - the modern Wayland-compatible way
-        self.present()
-        print("Window presented via global shortcut")
 
     def position_window_left(self):
         """Position window to the left side of the screen"""
@@ -1959,184 +2118,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         return False  # Don't repeat
 
-    def _on_record_shortcut(self, button, shortcut_row):
-        """Record a new keyboard shortcut"""
-        button.set_label("Press keys...")
-        button.set_sensitive(False)
-
-        # Temporarily disable the global shortcut while recording
-        app = self.get_application()
-        if app:
-            app.set_accels_for_action("win.show-window", [])
-            print("DEBUG: Temporarily disabled global shortcut for recording")
-
-        # Store key_controller as an instance variable to manage it properly
-        self._shortcut_key_controller = Gtk.EventControllerKey.new()
-        # Store click controller for stopping recording on click
-        self._shortcut_click_controller = Gtk.GestureClick.new()
-        # Store the button and shortcut_row for cleanup
-        self._shortcut_record_button = button
-        self._shortcut_record_row = shortcut_row
-        # Store timeout ID
-        self._shortcut_timeout_id = None
-        # Store the recorded shortcut
-        self._recorded_shortcut = None
-
-        def cleanup_recording():
-            """Resets the button state and disconnects the event controller."""
-            print("DEBUG: cleanup_recording called")
-
-            try:
-                if self._shortcut_record_button:
-                    self._shortcut_record_button.set_label("Record Shortcut")
-                    self._shortcut_record_button.set_sensitive(True)
-            except Exception as e:
-                print(f"Error resetting button: {e}")
-
-            try:
-                if self._shortcut_key_controller:
-                    self.remove_controller(self._shortcut_key_controller)
-                    self._shortcut_key_controller = None
-            except Exception as e:
-                print(f"Error removing key controller: {e}")
-
-            try:
-                if self._shortcut_click_controller:
-                    self.remove_controller(self._shortcut_click_controller)
-                    self._shortcut_click_controller = None
-            except Exception as e:
-                print(f"Error removing click controller: {e}")
-
-            self._shortcut_record_button = None
-            self._shortcut_record_row = None
-            self._shortcut_timeout_id = None
-
-            # Re-enable the global shortcut with the new value if one was recorded
-            try:
-                app = self.get_application()
-                if app:
-                    if self._recorded_shortcut:
-                        shortcut = self._recorded_shortcut
-                        print(f"DEBUG: Re-enabling with NEW shortcut: {shortcut}")
-                    else:
-                        shortcut = self.settings.show_window_shortcut
-                        print(f"DEBUG: Re-enabling with EXISTING shortcut: {shortcut}")
-                    app.set_accels_for_action("win.show-window", [shortcut])
-            except Exception as e:
-                print(f"Error re-enabling shortcut: {e}")
-
-            return GLib.SOURCE_REMOVE  # Ensure this timeout only runs once
-
-        def on_key_pressed(controller, keyval, keycode, state):
-            # If a timeout is pending, remove it as a key has been pressed
-            if self._shortcut_timeout_id:
-                GLib.source_remove(self._shortcut_timeout_id)
-                self._shortcut_timeout_id = None
-
-            # Get modifier keys
-            modifiers = []
-            if state & Gdk.ModifierType.CONTROL_MASK:
-                modifiers.append("Control")
-            if state & Gdk.ModifierType.ALT_MASK:
-                modifiers.append("Alt")
-            if state & Gdk.ModifierType.SHIFT_MASK:
-                modifiers.append("Shift")
-            if state & Gdk.ModifierType.SUPER_MASK:
-                modifiers.append("Super")
-
-            # Get key name
-            key_name = Gdk.keyval_name(keyval)
-            debug_msg = f"keyval={keyval}, keycode={keycode}, key_name={key_name}, mods={modifiers}"
-            print(f"DEBUG SHORTCUT RECORDING: {debug_msg}")
-
-            # Handle grave/backtick key variations - try both keyval and key_name
-            # Common keyvalsfor grave: 96 (grave), 126 (asciitilde), 65104 (dead_grave)
-            if keyval in [96, 126, 65104] or key_name in ["dead_grave", "grave", "asciitilde", "quoteleft", "`"]:
-                key_name = "grave"
-                print(f"DEBUG: Detected grave key, normalizing to 'grave'")
-
-            # Ignore modifier keys themselves - only record when a non-modifier key is pressed
-            modifier_keys = [
-                "Control_L",
-                "Control_R",
-                "Alt_L",
-                "Alt_R",
-                "Shift_L",
-                "Shift_R",
-                "Super_L",
-                "Super_R",
-                "Meta_L",
-                "Meta_R",
-                "Hyper_L",
-                "Hyper_R",
-            ]
-            if key_name in modifier_keys:
-                # Don't record yet, wait for the actual key
-                print(f"DEBUG: Skipping modifier key: {key_name}")
-                return True
-
-            # Build accelerator string - allow single keys or keys with modifiers
-            accel = ""
-            if modifiers:
-                accel += "<" + "><".join(modifiers) + ">"
-            if key_name:
-                accel += key_name
-
-            if accel:  # Only set if a valid key combination was pressed
-                print(f"DEBUG: Recorded shortcut: {accel}")
-
-                # Store the recorded shortcut for cleanup to apply
-                self._recorded_shortcut = accel
-
-                # Update UI
-                try:
-                    escaped_accel = GLib.markup_escape_text(accel)
-                    self._shortcut_record_row.set_subtitle(f"Current: {escaped_accel}")
-                    self.new_shortcut = accel
-
-                    # Save to settings file (do this before cleanup to avoid issues)
-                    self.settings.update_settings(**{"shortcuts.show_window": accel})
-                    print(f"SUCCESS: Shortcut saved to settings: {accel}")
-                except Exception as e:
-                    print(f"Error updating UI/settings: {e}")
-
-            # Perform cleanup immediately after a key is pressed
-            cleanup_recording()
-            return True  # Stop propagation
-
-        def on_key_released(controller, keyval, keycode, state):
-            """Debug handler for key release events"""
-            key_name = Gdk.keyval_name(keyval)
-            print(f"DEBUG KEY RELEASED: keyval={keyval}, keycode={keycode}, key_name={key_name}")
-            return False
-
-        def on_click(gesture, n_press, x, y):
-            """Stop recording when user clicks anywhere"""
-            cleanup_recording()
-
-        # Set propagation phase to CAPTURE to intercept events before anything else
-        self._shortcut_key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        self._shortcut_key_controller.connect("key-pressed", on_key_pressed)
-        self._shortcut_key_controller.connect("key-released", on_key_released)
-        self.add_controller(self._shortcut_key_controller)
-
-        # Add click controller to stop recording on click
-        self._shortcut_click_controller.connect("pressed", on_click)
-        self.add_controller(self._shortcut_click_controller)
-
-        # Add a timeout for automatic cleanup if no key is pressed within 2 seconds
-        self._shortcut_timeout_id = GLib.timeout_add_seconds(2, cleanup_recording)
-
-    def _on_reset_shortcuts(self, button):
-        """Reset shortcuts to defaults"""
-        default_shortcut = "<Control>grave"
-        # Escape the shortcut text to prevent markup parsing errors
-        escaped_default = GLib.markup_escape_text(default_shortcut)
-        self.shortcut_subtitle.set_subtitle(f"Current: {escaped_default}")
-        self.new_shortcut = default_shortcut
-
-        # Print message
-        self.show_notification("Shortcuts reset to defaults")
 
     def _on_save_settings(self, button):
         """Save settings changes to YAML file and apply them"""
@@ -2152,10 +2133,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 "display.item_height": new_item_height,
                 "display.max_page_length": new_page_length,
             }
-
-            # Add shortcut if it was changed
-            if hasattr(self, "new_shortcut"):
-                settings_update["shortcuts.show_window"] = self.new_shortcut
 
             # Update settings using the settings manager
             self.settings.update_settings(**settings_update)

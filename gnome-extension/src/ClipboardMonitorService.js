@@ -12,6 +12,9 @@ export class ClipboardMonitorService {
     async checkAndNotify() {
         const mimeTypes = await this.clipboardPort.getMimeTypes();
 
+        // Log mime types for debugging
+        log(`[TFCBM] Available mime types: ${JSON.stringify(mimeTypes)}`);
+
         const sendEvent = async (type, data) => {
             const event = new ClipboardEvent(type, data);
             if (this.isDuplicate(event)) {
@@ -83,6 +86,17 @@ export class ClipboardMonitorService {
         // 3. Check for text
         const text = await this.clipboardPort.getText();
         if (text) {
+            // Check if text looks like a file path
+            const trimmedText = text.trim();
+            if (trimmedText.startsWith('/') && !trimmedText.includes('\n')) {
+                // Looks like an absolute file path - treat as file
+                // Convert to file:// URI
+                const fileUri = `file://${trimmedText}`;
+                log(`[TFCBM] Detected file path in text, converting: ${fileUri}`);
+                await sendEvent('file', fileUri);
+                return;
+            }
+
             await sendEvent('text', text);
             return;
         }

@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import logging
+import mimetypes
 import os
 import re
 import socket
@@ -18,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import websockets
 from PIL import Image
@@ -109,6 +111,71 @@ def process_thumbnail_async(item_id: int, image_data: bytes):
 
     # Submit to thread pool
     thumbnail_executor.submit(worker)
+
+
+def process_file(file_uri: str) -> dict:
+    """
+    Process a file URI and read its contents
+
+    Args:
+        file_uri: file:// URI from clipboard
+
+    Returns:
+        Dict with file metadata and content, or None if error
+    """
+    try:
+        # Parse file URI to get path
+        parsed = urlparse(file_uri)
+        file_path = unquote(parsed.path)
+
+        # Check if file exists
+        path_obj = Path(file_path)
+        if not path_obj.exists():
+            logging.error(f"File not found: {file_path}")
+            return None
+
+        if not path_obj.is_file():
+            logging.error(f"Not a file: {file_path}")
+            return None
+
+        # Get file info
+        file_name = path_obj.name
+        file_size = path_obj.stat().st_size
+        file_extension = path_obj.suffix.lower()
+
+        # Determine mime type
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type:
+            mime_type = "application/octet-stream"
+
+        # Read file contents (with size limit for safety)
+        MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB limit
+        if file_size > MAX_FILE_SIZE:
+            logging.warning(f"File too large: {file_size} bytes (max: {MAX_FILE_SIZE})")
+            return None
+
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+
+        # Create metadata JSON
+        metadata = {
+            'name': file_name,
+            'size': file_size,
+            'mime_type': mime_type,
+            'extension': file_extension,
+            'original_path': file_path,
+        }
+
+        logging.info(f"Processed file: {file_name} ({file_size} bytes, {mime_type})")
+
+        return {
+            'metadata': metadata,
+            'content': file_content
+        }
+
+    except Exception as e:
+        logging.error(f"Error processing file {file_uri}: {e}")
+        return None
 
 
 # Screenshot configuration
@@ -214,6 +281,22 @@ def prepare_item_for_ui(item: dict) -> dict:
     if item_type == "text" or item_type == "url":
         content = data.decode("utf-8") if isinstance(data, bytes) else data
         thumbnail_b64 = None
+    elif item_type == "file":
+        # Extract file metadata from combined data
+        try:
+            separator = b'\n---FILE_CONTENT---\n'
+            if separator in data:
+                metadata_bytes, _ = data.split(separator, 1)
+                metadata_json = metadata_bytes.decode('utf-8')
+                metadata = json.loads(metadata_json)
+                content = metadata  # Send metadata as content
+            else:
+                content = {"error": "Invalid file data format"}
+            thumbnail_b64 = None
+        except Exception as e:
+            logging.error(f"Error parsing file metadata for item {item['id']}: {e}")
+            content = {"error": "Failed to parse file metadata"}
+            thumbnail_b64 = None
     elif item_type.startswith("image/") or item_type == "screenshot":
         # DON'T send full image in WebSocket messages - too large!
         # Only send item ID and thumbnail
@@ -297,6 +380,17 @@ async def websocket_handler(websocket):
                             full_image_b64 = base64.b64encode(item["data"]).decode("utf-8")
                             response = {"type": "full_image", "id": item_id, "content": full_image_b64}
                             await websocket.send(json.dumps(response))
+                        elif item and item["type"] == "file":
+                            # For files, send the full file data
+                            separator = b'\n---FILE_CONTENT---\n'
+                            if separator in item["data"]:
+                                _, file_content = item["data"].split(separator, 1)
+                                file_content_b64 = base64.b64encode(file_content).decode("utf-8")
+                                response = {"type": "full_file", "id": item_id, "content": file_content_b64}
+                                await websocket.send(json.dumps(response))
+                            else:
+                                response = {"type": "error", "message": "Invalid file data format"}
+                                await websocket.send(json.dumps(response))
 
                 elif action == "delete_item":
                     item_id = data.get("id")
@@ -706,6 +800,61 @@ def start_server():
                                 f"✓ Copied image ({message['type']}, {len(image_bytes)} bytes)"
                             )
                             logging.info(f"  (History: {len(history)} items)\n")
+
+                    elif message["type"] == "file":
+                        # Handle file data
+                        file_uri = message["content"]
+                        logging.info(f"Received file URI: {file_uri}")
+
+                        # Process the file
+                        file_data = process_file(file_uri)
+
+                        if file_data:
+                            metadata = file_data['metadata']
+                            file_content = file_data['content']
+
+                            # Calculate hash for deduplication
+                            from database import ClipboardDB
+
+                            file_hash = ClipboardDB.calculate_hash(file_content)
+
+                            # Check if hash already exists in database
+                            with db_lock:
+                                hash_exists = db.hash_exists(file_hash)
+
+                            if hash_exists:
+                                logging.info(
+                                    f"⊘ Skipping duplicate file ({metadata['name']}, {metadata['size']} bytes)\n"
+                                )
+                            else:
+                                timestamp = datetime.now().isoformat()
+
+                                # Store metadata as JSON in the data field along with content
+                                # We'll store: metadata JSON + separator + file content
+                                metadata_json = json.dumps(metadata)
+                                metadata_bytes = metadata_json.encode('utf-8')
+                                separator = b'\n---FILE_CONTENT---\n'
+                                combined_data = metadata_bytes + separator + file_content
+
+                                # Add to history (in-memory)
+                                history.append(
+                                    {
+                                        "type": "file",
+                                        "content": metadata,  # Store metadata in history
+                                        "timestamp": timestamp,
+                                    }
+                                )
+
+                                # Save to database with hash (thread-safe)
+                                with db_lock:
+                                    item_id = db.add_item("file", combined_data, timestamp, data_hash=file_hash)
+
+                                logging.info(
+                                    f"✓ Copied file: {metadata['name']} ({metadata['size']} bytes, {metadata['mime_type']})"
+                                )
+                                logging.info(f"  (History: {len(history)} items)\n")
+                        else:
+                            logging.warning("Failed to process file URI")
 
             except json.JSONDecodeError:
                 logging.warning("Received malformed JSON message on UNIX socket.")

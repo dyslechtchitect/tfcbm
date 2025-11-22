@@ -52,18 +52,9 @@ class DisplaySettings(BaseModel):
         return v
 
 
-class ShortcutSettings(BaseModel):
-    """Keyboard shortcut settings"""
-    show_window: str = Field(
-        default="<Alt>grave",  # Option+` (grave is the ` key)
-        description="Keyboard shortcut to show/focus the window"
-    )
-
-
 class Settings(BaseModel):
     """Main settings model"""
     display: DisplaySettings = Field(default_factory=DisplaySettings)
-    shortcuts: ShortcutSettings = Field(default_factory=ShortcutSettings)
 
 
 class SettingsManager:
@@ -129,11 +120,6 @@ class SettingsManager:
     def item_height(self) -> int:
         """Get the item height setting"""
         return self.settings.display.item_height
-
-    @property
-    def show_window_shortcut(self) -> str:
-        """Get the show window shortcut"""
-        return self.settings.shortcuts.show_window
 
     def update_settings(self, **kwargs):
         """Update settings and save to file"""

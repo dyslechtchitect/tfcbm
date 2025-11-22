@@ -1,6 +1,4 @@
 display:
   item_height: 100
-  item_width: 200
+  item_width: 500
   max_page_length: 19
-shortcuts:
-  show_window: <Control>Escape
