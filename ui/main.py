@@ -618,11 +618,17 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                     self.window.show_notification("Error: Could not access clipboard.")
                                     return False
 
-                                # Create file URI for the folder
-                                file_uri = f"file://{original_path}"
-                                clipboard.set(file_uri)
+                                # Create GFile for the folder
+                                gfile = Gio.File.new_for_path(original_path)
 
-                                print(f"[UI] Copied folder URI to clipboard: {file_uri}")
+                                # Create content provider for file list
+                                file_list = Gdk.FileList.new_from_array([gfile])
+                                content_provider = Gdk.ContentProvider.new_for_value(file_list)
+
+                                # Set clipboard content
+                                clipboard.set_content(content_provider)
+
+                                print(f"[UI] Copied folder to clipboard: {original_path}")
                                 self.window.show_notification(f"📁 Folder copied: {folder_name}")
 
                                 # Record paste event
@@ -692,13 +698,17 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                         self.window.show_notification("Error: Could not access clipboard.")
                                         return False
 
-                                    # Create file URI (file:// format)
-                                    file_uri = f"file://{temp_file_path}"
+                                    # Create GFile for the file
+                                    gfile = Gio.File.new_for_path(str(temp_file_path))
 
-                                    # Copy URI list to clipboard (this is what file managers expect)
-                                    clipboard.set(file_uri)
+                                    # Create content provider for file list
+                                    file_list = Gdk.FileList.new_from_array([gfile])
+                                    content_provider = Gdk.ContentProvider.new_for_value(file_list)
 
-                                    print(f"[UI] Copied file URI to clipboard: {file_uri}")
+                                    # Set clipboard content
+                                    clipboard.set_content(content_provider)
+
+                                    print(f"[UI] Copied file to clipboard: {temp_file_path}")
                                     self.window.show_notification(f"📄 File copied: {file_name}")
 
                                     # Record paste event
