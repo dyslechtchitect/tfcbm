@@ -241,6 +241,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     file_size = file_metadata.get("size", 0)
                     mime_type = file_metadata.get("mime_type", "application/octet-stream")
                     extension = file_metadata.get("extension", "")
+                    is_directory = file_metadata.get("is_directory", False)
 
                     # Format file size nicely
                     def format_size(size_bytes):
@@ -250,8 +251,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                             size_bytes /= 1024.0
                         return f"{size_bytes:.1f} TB"
 
-                    size_str = format_size(file_size)
-
                     # Create file display box (horizontal layout with icon and info)
                     file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
                     file_box.set_halign(Gtk.Align.START)
@@ -259,18 +258,22 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     file_box.set_margin_start(12)
                     file_box.set_margin_top(12)
 
-                    # Get icon for mime type
+                    # Get icon for mime type or use folder icon
                     icon_name = None
-                    try:
-                        content_type = Gio.content_type_from_mime_type(mime_type)
-                        if content_type:
-                            icon = Gio.content_type_get_icon(content_type)
-                            if isinstance(icon, Gio.ThemedIcon):
-                                icon_names = icon.get_names()
-                                if icon_names:
-                                    icon_name = icon_names[0]
-                    except Exception:
-                        pass
+                    if is_directory:
+                        # Use folder icon for directories
+                        icon_name = "folder"
+                    else:
+                        try:
+                            content_type = Gio.content_type_from_mime_type(mime_type)
+                            if content_type:
+                                icon = Gio.content_type_get_icon(content_type)
+                                if isinstance(icon, Gio.ThemedIcon):
+                                    icon_names = icon.get_names()
+                                    if icon_names:
+                                        icon_name = icon_names[0]
+                        except Exception:
+                            pass
 
                     # Fallback icon
                     if not icon_name:
@@ -294,8 +297,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     name_label.set_max_width_chars(50)
                     info_box.append(name_label)
 
-                    # File size and type
-                    meta_label = Gtk.Label(label=f"{size_str} • {extension.upper() if extension else mime_type}")
+                    # File size and type (or "Folder" for directories)
+                    if is_directory:
+                        meta_label = Gtk.Label(label="Folder")
+                    else:
+                        size_str = format_size(file_size)
+                        meta_label = Gtk.Label(label=f"{size_str} • {extension.upper() if extension else mime_type}")
                     meta_label.set_halign(Gtk.Align.START)
                     meta_label.add_css_class("dim-label")
                     meta_label.add_css_class("caption")
@@ -593,6 +600,54 @@ class ClipboardItemRow(Gtk.ListBoxRow):
     def _copy_file_to_clipboard(self, item_id, file_metadata, clipboard):
         """Request full file from server, save to temp location, and copy to clipboard"""
 
+        # Check if it's a folder
+        is_directory = file_metadata.get("is_directory", False)
+
+        if is_directory:
+            # For folders, try to copy the original path if it still exists
+            def copy_folder():
+                try:
+                    original_path = file_metadata.get("original_path", "")
+                    folder_name = file_metadata.get("name", "folder")
+
+                    if original_path and Path(original_path).exists():
+                        def copy_to_clipboard_on_main_thread():
+                            try:
+                                if not clipboard:
+                                    print("Error: Clipboard object is None.")
+                                    self.window.show_notification("Error: Could not access clipboard.")
+                                    return False
+
+                                # Create file URI for the folder
+                                file_uri = f"file://{original_path}"
+                                clipboard.set(file_uri)
+
+                                print(f"[UI] Copied folder URI to clipboard: {file_uri}")
+                                self.window.show_notification(f"📁 Folder copied: {folder_name}")
+
+                                # Record paste event
+                                self._record_paste(item_id)
+                            except Exception as e:
+                                print(f"Error copying folder to clipboard: {e}")
+                                traceback.print_exc()
+                                self.window.show_notification(f"Error copying folder: {str(e)}")
+                            return False
+
+                        GLib.idle_add(copy_to_clipboard_on_main_thread)
+                    else:
+                        GLib.idle_add(
+                            lambda: self.window.show_notification(f"Folder no longer exists at original location") or False
+                        )
+                except Exception as e:
+                    print(f"Error copying folder: {e}")
+                    traceback.print_exc()
+                    GLib.idle_add(lambda: self.window.show_notification(f"Error copying folder: {str(e)}") or False)
+
+            thread = threading.Thread(target=copy_folder, daemon=True)
+            thread.start()
+            return
+
+        # For regular files, fetch from server
         def fetch_and_copy():
             try:
 

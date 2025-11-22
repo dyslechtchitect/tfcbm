@@ -128,14 +128,33 @@ def process_file(file_uri: str) -> dict:
         parsed = urlparse(file_uri)
         file_path = unquote(parsed.path)
 
-        # Check if file exists
+        # Check if path exists
         path_obj = Path(file_path)
         if not path_obj.exists():
-            logging.error(f"File not found: {file_path}")
+            logging.error(f"Path not found: {file_path}")
             return None
 
+        # Handle directories
+        if path_obj.is_dir():
+            folder_name = path_obj.name
+            # For directories, we don't store content, just metadata
+            metadata = {
+                'name': folder_name,
+                'size': 0,  # Folders don't have a size we can easily calculate
+                'mime_type': 'inode/directory',
+                'extension': '',  # Folders don't have extensions
+                'original_path': file_path,
+                'is_directory': True,
+            }
+            logging.info(f"Processed folder: {folder_name}")
+            return {
+                'metadata': metadata,
+                'content': b''  # Empty content for folders
+            }
+
+        # Handle regular files
         if not path_obj.is_file():
-            logging.error(f"Not a file: {file_path}")
+            logging.error(f"Not a file or directory: {file_path}")
             return None
 
         # Get file info
@@ -164,6 +183,7 @@ def process_file(file_uri: str) -> dict:
             'mime_type': mime_type,
             'extension': file_extension,
             'original_path': file_path,
+            'is_directory': False,
         }
 
         logging.info(f"Processed file: {file_name} ({file_size} bytes, {mime_type})")
