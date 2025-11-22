@@ -160,7 +160,16 @@ def process_file(file_uri: str) -> dict:
         # Get file info
         file_name = path_obj.name
         file_size = path_obj.stat().st_size
+
+        # Extract file extension (handle dotfiles better)
+        # For files like ".zshrc", treat the whole name as the extension
         file_extension = path_obj.suffix.lower()
+        if not file_extension and file_name.startswith('.') and file_name.count('.') == 1:
+            # Dotfile without extension (e.g., .zshrc, .bashrc)
+            file_extension = file_name.lower()
+        elif not file_extension and '.' in file_name:
+            # File with extension but no stem (shouldn't happen normally)
+            file_extension = '.' + file_name.split('.')[-1].lower()
 
         # Determine mime type
         mime_type, _ = mimetypes.guess_type(file_path)
