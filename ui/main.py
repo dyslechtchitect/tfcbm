@@ -1360,6 +1360,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         tab_bar.set_view(self.tab_view)
         main_box.append(tab_bar)
 
+        # Filter bar (system content types + file extensions)
+        self._create_filter_bar()
+        main_box.append(self.filter_bar)
+
         # Tab 1: Recently Copied
         copied_scrolled = Gtk.ScrolledWindow()
         copied_scrolled.set_vexpand(True)
@@ -2164,6 +2168,229 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         print("Exiting UI...")
         return False  # Allow window to close
+
+    def _create_filter_bar(self):
+        """Create the filter bar with system content types and file extensions"""
+        # Store active filters
+        self.active_filters = set()
+        self.file_extensions = []
+
+        # Main filter bar container
+        self.filter_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.filter_bar.set_margin_top(6)
+        self.filter_bar.set_margin_bottom(6)
+        self.filter_bar.set_margin_start(8)
+        self.filter_bar.set_margin_end(8)
+        self.filter_bar.add_css_class("toolbar")
+
+        # Scrollable container for filter chips
+        self.filter_scroll = Gtk.ScrolledWindow()
+        self.filter_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        self.filter_scroll.set_hexpand(True)
+
+        # FlowBox for filter chips (wraps automatically)
+        self.filter_box = Gtk.FlowBox()
+        self.filter_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.filter_box.set_homogeneous(False)
+        self.filter_box.set_column_spacing(4)
+        self.filter_box.set_row_spacing(4)
+        self.filter_box.set_max_children_per_line(20)
+
+        self.filter_scroll.set_child(self.filter_box)
+        self.filter_bar.append(self.filter_scroll)
+
+        # Clear filters button
+        clear_btn = Gtk.Button()
+        clear_btn.set_icon_name("edit-clear-symbolic")
+        clear_btn.set_tooltip_text("Clear all filters")
+        clear_btn.add_css_class("flat")
+        clear_btn.connect("clicked", self._on_clear_filters)
+        self.filter_bar.append(clear_btn)
+
+        # Add system content type filters
+        self._add_system_filters()
+
+        # Load file extensions
+        self._load_file_extensions()
+
+    def _add_system_filters(self):
+        """Add system content type filter buttons"""
+        system_filters = [
+            ("text", "Text", "text-x-generic-symbolic"),
+            ("image", "Images", "image-x-generic-symbolic"),
+            ("url", "URLs", "web-browser-symbolic"),
+            ("file", "Files", "folder-documents-symbolic"),
+        ]
+
+        for filter_type, label, icon_name in system_filters:
+            self._create_filter_chip(filter_type, label, icon_name)
+
+    def _create_filter_chip(self, filter_id, label, icon_name=None):
+        """Create a small filter chip button"""
+        chip = Gtk.ToggleButton()
+        chip.set_has_frame(False)
+        chip.add_css_class("pill")
+
+        chip_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+
+        if icon_name:
+            icon = Gtk.Image.new_from_icon_name(icon_name)
+            icon.set_pixel_size(12)
+            chip_box.append(icon)
+
+        chip_label = Gtk.Label(label=label)
+        chip_label.add_css_class("caption")
+        chip_box.append(chip_label)
+
+        chip.set_child(chip_box)
+        chip.connect("toggled", lambda btn: self._on_filter_toggled(filter_id, btn))
+
+        # Wrap in FlowBoxChild
+        flow_child = Gtk.FlowBoxChild()
+        flow_child.set_child(chip)
+        self.filter_box.append(flow_child)
+
+        return chip
+
+    def _load_file_extensions(self):
+        """Load available file extensions from server"""
+        async def fetch_extensions():
+            try:
+                uri = "ws://localhost:8765"
+                async with websockets.connect(uri, max_size=5 * 1024 * 1024) as websocket:
+                    request = {"action": "get_file_extensions"}
+                    await websocket.send(json.dumps(request))
+
+                    response = await websocket.recv()
+                    data = json.loads(response)
+
+                    if data.get("type") == "file_extensions":
+                        extensions = data.get("extensions", [])
+
+                        def update_ui():
+                            self.file_extensions = extensions
+                            for ext in extensions:
+                                # Remove leading dot for display
+                                display_ext = ext.lstrip('.')
+                                # Get icon for this file type
+                                icon_name = self._get_icon_for_extension(ext)
+                                self._create_filter_chip(f"file:{ext}", display_ext.upper(), icon_name)
+                            return False
+
+                        GLib.idle_add(update_ui)
+
+            except Exception as e:
+                logger.error(f"Error loading file extensions: {e}")
+
+        def run_async():
+            asyncio.run(fetch_extensions())
+
+        threading.Thread(target=run_async, daemon=True).start()
+
+    def _get_icon_for_extension(self, extension):
+        """Get appropriate icon for file extension"""
+        # Map common extensions to icons
+        icon_map = {
+            '.zip': 'package-x-generic-symbolic',
+            '.gz': 'package-x-generic-symbolic',
+            '.tar': 'package-x-generic-symbolic',
+            '.sh': 'text-x-script-symbolic',
+            '.py': 'text-x-python-symbolic',
+            '.txt': 'text-x-generic-symbolic',
+            '.pdf': 'x-office-document-symbolic',
+            '.doc': 'x-office-document-symbolic',
+            '.docx': 'x-office-document-symbolic',
+        }
+        return icon_map.get(extension, 'text-x-generic-symbolic')
+
+    def _on_filter_toggled(self, filter_id, button):
+        """Handle filter chip toggle"""
+        if button.get_active():
+            self.active_filters.add(filter_id)
+        else:
+            self.active_filters.discard(filter_id)
+
+        # Apply filters
+        self._apply_filters()
+
+    def _on_clear_filters(self, button):
+        """Clear all active filters"""
+        self.active_filters.clear()
+
+        # Uncheck all filter chips
+        for flow_child in list(self.filter_box):
+            chip = flow_child.get_child()
+            if isinstance(chip, Gtk.ToggleButton):
+                chip.set_active(False)
+
+        # Reload items
+        self._apply_filters()
+
+    def _apply_filters(self):
+        """Apply active filters to the item list"""
+        if not self.active_filters:
+            # No filters active, reload all items
+            self._reload_current_tab()
+            return
+
+        # Filter logic
+        # Check which tab is active
+        current_page = self.tab_view.get_selected_page()
+        if not current_page:
+            return
+
+        is_copied_tab = current_page.get_title() == "Recently Copied"
+        listbox = self.copied_listbox if is_copied_tab else self.pasted_listbox
+
+        # Hide/show items based on filters
+        for row in list(listbox):
+            if isinstance(row, ClipboardItemRow):
+                item_type = row.item.get("type", "")
+                should_show = False
+
+                for filter_id in self.active_filters:
+                    if filter_id == "text" and item_type == "text":
+                        should_show = True
+                    elif filter_id == "image" and (item_type.startswith("image/") or item_type == "screenshot"):
+                        should_show = True
+                    elif filter_id == "url" and item_type == "url":
+                        should_show = True
+                    elif filter_id == "file" and item_type == "file":
+                        # General file filter - matches any file
+                        should_show = True
+                    elif filter_id.startswith("file:"):
+                        # Specific file extension filter
+                        ext = filter_id.replace("file:", "")
+                        if item_type == "file":
+                            file_metadata = row.item.get("content", {})
+                            if isinstance(file_metadata, dict):
+                                file_ext = file_metadata.get("extension", "")
+                                if file_ext == ext:
+                                    should_show = True
+
+                row.set_visible(should_show)
+
+    def _reload_current_tab(self):
+        """Reload items in the current tab"""
+        current_page = self.tab_view.get_selected_page()
+        if not current_page:
+            return
+
+        is_copied_tab = current_page.get_title() == "Recently Copied"
+        if is_copied_tab:
+            # Clear and reload copied items
+            for row in list(self.copied_listbox):
+                self.copied_listbox.remove(row)
+            self.current_page = 0
+            self.has_more_copied = True
+            self.load_history()
+        else:
+            # Clear and reload pasted items
+            for row in list(self.pasted_listbox):
+                self.pasted_listbox.remove(row)
+            self.current_pasted_page = 0
+            self.has_more_pasted = True
+            self.load_pasted_history()
 
     def _on_close_page(self, tab_view, page):
         """Prevent pages from being closed. This should also hide the close button."""

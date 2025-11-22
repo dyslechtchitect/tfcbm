@@ -97,3 +97,32 @@
 tabbar button.close {
     display: none;
 }
+
+/* Filter bar styling */
+button.pill {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    min-height: 24px;
+    background: alpha(@theme_bg_color, 0.5);
+    border: 1px solid alpha(@borders, 0.3);
+}
+
+button.pill:hover {
+    background: alpha(@theme_bg_color, 0.7);
+}
+
+button.pill:checked {
+    background: @accent_bg_color;
+    color: @accent_fg_color;
+    border-color: @accent_bg_color;
+}
+
+button.pill image {
+    margin: 0;
+    padding: 0;
+}
+
+button.pill label {
+    font-weight: 500;
+}

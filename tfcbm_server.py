@@ -587,6 +587,14 @@ async def websocket_handler(websocket):
                         response = {"type": "items_by_tags", "items": [], "count": 0}
                         await websocket.send(json.dumps(response))
 
+                elif action == "get_file_extensions":
+                    logging.info("Fetching file extensions")
+                    with db_lock:
+                        extensions = db.get_file_extensions()
+                    response = {"type": "file_extensions", "extensions": extensions}
+                    await websocket.send(json.dumps(response))
+                    logging.info(f"Sent {len(extensions)} file extensions")
+
             except Exception as e:
                 logging.error(f"Error handling WebSocket message: {e}")
 

@@ -834,6 +834,41 @@ class ClipboardDB:
             )
         return items
 
+    def get_file_extensions(self) -> List[str]:
+        """
+        Get unique file extensions from file-type clipboard items
+
+        Returns:
+            List of file extensions (e.g., ['.zip', '.sh', '.txt'])
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT DISTINCT data FROM clipboard_items
+            WHERE type = 'file'
+            ORDER BY id DESC
+            LIMIT 100
+            """
+        )
+
+        extensions = set()
+        for row in cursor.fetchall():
+            try:
+                data = row["data"]
+                # Extract metadata from file data
+                separator = b'\n---FILE_CONTENT---\n'
+                if separator in data:
+                    metadata_bytes, _ = data.split(separator, 1)
+                    metadata_json = metadata_bytes.decode('utf-8')
+                    metadata = json.loads(metadata_json)
+                    extension = metadata.get('extension', '')
+                    if extension:
+                        extensions.add(extension)
+            except Exception:
+                continue
+
+        return sorted(list(extensions))
+
     def close(self):
         """Close database connection"""
         self.conn.close()
