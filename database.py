@@ -417,8 +417,13 @@ class ClipboardDB:
                         type_filters.append("type = 'url'")
                     elif f == "file":
                         type_filters.append("type = 'file'")
+                elif f.startswith("file:"):
+                    # File extension filter (format: "file:pdf", "file:docx", etc.)
+                    ext = f[5:]  # Remove "file:" prefix
+                    type_filters.append("type LIKE ?")
+                    query_params.append(f"%{ext}%")
                 elif f.startswith("."):
-                    # File extension filter
+                    # File extension filter (format: ".pdf", ".docx", etc.)
                     type_filters.append("type LIKE ?")
                     query_params.append(f"%{f}%")
                 else:
@@ -655,13 +660,14 @@ class ClipboardDB:
             )
         return items
 
-    def search_items(self, query: str, limit: int = 100) -> List[Dict]:
+    def search_items(self, query: str, limit: int = 100, filters: List[str] = None) -> List[Dict]:
         """
         Search clipboard items using full-text search
 
         Args:
             query: Search query string
             limit: Maximum number of results to return
+            filters: List of filter strings (e.g., ["text", "image", "file:pdf", "MyTag"])
 
         Returns:
             List of matching items sorted by relevance (BM25 rank)
@@ -673,10 +679,67 @@ class ClipboardDB:
         # This treats the query as a phrase search and escapes special chars
         fts_query = f'"{query}"'
 
+        # Build WHERE clause from filters (same logic as get_items)
+        where_clauses = ["clipboard_fts MATCH ?"]
+        query_params = [fts_query]
+
+        if filters:
+            # Separate filters into categories
+            type_filters = []
+            tag_filters = []
+
+            for f in filters:
+                if f in ["text", "image", "url", "file"]:
+                    # Content type filters
+                    if f == "text":
+                        type_filters.append("ci.type = 'text'")
+                    elif f == "image":
+                        type_filters.append("(ci.type LIKE 'image/%' OR ci.type = 'screenshot')")
+                    elif f == "url":
+                        type_filters.append("ci.type = 'url'")
+                    elif f == "file":
+                        type_filters.append("ci.type = 'file'")
+                elif f.startswith("file:"):
+                    # File extension filter (format: "file:pdf", "file:docx", etc.)
+                    ext = f[5:]  # Remove "file:" prefix
+                    type_filters.append("ci.type LIKE ?")
+                    query_params.append(f"%{ext}%")
+                elif f.startswith("."):
+                    # File extension filter (format: ".pdf", ".docx", etc.)
+                    type_filters.append("ci.type LIKE ?")
+                    query_params.append(f"%{f}%")
+                else:
+                    # Custom tag filter
+                    tag_filters.append(f)
+
+            # Combine type filters with OR
+            if type_filters:
+                where_clauses.append(f"({' OR '.join(type_filters)})")
+
+            # Handle tag filters
+            if tag_filters:
+                # Build subquery for tags
+                tag_placeholders = ",".join("?" * len(tag_filters))
+                where_clauses.append(f"""ci.id IN (
+                    SELECT item_id FROM item_tags
+                    WHERE tag_id IN (
+                        SELECT id FROM tags WHERE name IN ({tag_placeholders})
+                    )
+                )""")
+                query_params.extend(tag_filters)
+
+        # Build final WHERE clause
+        where_clause = " AND ".join(where_clauses)
+
+        # Debug logging
+        import logging
+        logging.info(f"[SEARCH DB] Query: '{query}', Filters: {filters}")
+        logging.info(f"[SEARCH DB] WHERE clause: {where_clause}")
+        logging.info(f"[SEARCH DB] Query params: {query_params}")
+
         cursor = self.conn.cursor()
         # Use FTS5 MATCH with BM25 ranking (negative rank = best matches first)
-        cursor.execute(
-            """
+        query_sql = f"""
             SELECT
                 ci.id,
                 ci.timestamp,
@@ -687,12 +750,13 @@ class ClipboardDB:
                 -fts.rank as relevance
             FROM clipboard_fts fts
             INNER JOIN clipboard_items ci ON fts.rowid = ci.id
-            WHERE clipboard_fts MATCH ?
+            WHERE {where_clause}
             ORDER BY fts.rank
             LIMIT ?
-            """,
-            (fts_query, limit),
-        )
+        """
+        query_params.append(limit)
+
+        cursor.execute(query_sql, tuple(query_params))
 
         items = []
         for row in cursor.fetchall():

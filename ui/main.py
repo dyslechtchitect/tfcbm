@@ -2111,13 +2111,30 @@ class ClipboardWindow(Adw.ApplicationWindow):
             return False
 
     def _on_key_pressed(self, controller, keyval, keycode, state):
-        """Handle Return/Space key press to copy item"""
-        # Check if Return or Space was pressed
+        """Handle keyboard shortcuts: Return/Space to copy item, alphanumeric to focus search"""
+        # Get the currently focused widget
+        focused_widget = self.get_focus()
+
+        # Feature 1: Auto-focus search bar on alphanumeric keypress
+        # Check if this is an alphanumeric key (a-z, A-Z, 0-9)
+        is_alphanumeric = False
+        if (Gdk.KEY_a <= keyval <= Gdk.KEY_z or
+            Gdk.KEY_A <= keyval <= Gdk.KEY_Z or
+            Gdk.KEY_0 <= keyval <= Gdk.KEY_9):
+            is_alphanumeric = True
+
+        # If alphanumeric and search bar is NOT focused, focus it and let the key be typed
+        if is_alphanumeric:
+            if focused_widget != self.search_entry:
+                logger.info(f"[KEYBOARD] Auto-focusing search bar on alphanumeric key")
+                self.search_entry.grab_focus()
+                # Return False to let the key event propagate to the search entry
+                return False
+
+        # Handle Return/Space key press to copy item
         if keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
             return False  # Let other handlers process this key
 
-        # Get the currently focused widget
-        focused_widget = self.get_focus()
         if not focused_widget:
             return False
 
@@ -3114,6 +3131,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
                     max_size = 5 * 1024 * 1024  # 5MB
                     async with websockets.connect(uri, max_size=max_size) as websocket:
                         request = {"action": "search", "query": query, "limit": 100}
+                        # Feature 2: Include active filters in search request
+                        if self.active_filters:
+                            request["filters"] = list(self.active_filters)
+                            print(f"[UI] Searching with filters: {list(self.active_filters)}")
                         await websocket.send(json.dumps(request))
 
                         response = await websocket.recv()

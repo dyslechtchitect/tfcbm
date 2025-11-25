@@ -466,11 +466,12 @@ async def websocket_handler(websocket):
                 elif action == "search":
                     query = data.get("query", "").strip()
                     limit = data.get("limit", 100)
+                    filters = data.get("filters", [])
 
                     if query:
-                        logging.info(f"Searching for: '{query}' (limit={limit})")
+                        logging.info(f"Searching for: '{query}' (limit={limit}, filters={filters})")
                         with db_lock:
-                            results = db.search_items(query, limit)
+                            results = db.search_items(query, limit, filters)
 
                         # Prepare items for UI (same as get_page)
                         ui_items = []
