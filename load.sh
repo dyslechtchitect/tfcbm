@@ -112,8 +112,8 @@ echo "    - UNIX socket (for GNOME extension)"
 echo "    - WebSocket (for UI)"
 echo "    - SQLite database"
 
-# Start server and redirect output to both log file and terminal
-.venv/bin/python3 -u tfcbm_server.py 2>&1 | tee /tmp/tfcbm_server.log &
+# Start server and redirect output to log file
+.venv/bin/python3 -u tfcbm_server.py > /tmp/tfcbm_server_v2.log 2>&1 &
 SERVER_PID=$!
 echo "Server started with PID $SERVER_PID"
 

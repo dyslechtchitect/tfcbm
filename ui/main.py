@@ -24,7 +24,7 @@ import traceback
 from datetime import datetime
 
 import websockets
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
 
 gi.require_version("Gtk", "4.0")
@@ -60,6 +60,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         main_box.set_vexpand(False)  # Fixed height only - CRITICAL
         main_box.set_size_request(-1, item_height)  # Force fixed height, natural width
 
+        # Add margins for proper indentation
+        main_box.set_margin_start(12)
+        main_box.set_margin_end(12)
+        main_box.set_margin_top(8)
+        main_box.set_margin_bottom(8)
+
         # Create size group to enforce exact height
         main_box.set_valign(Gtk.Align.FILL)
 
@@ -85,6 +91,22 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         click_gesture.connect("released", self._on_card_clicked)
         card_frame.add_controller(click_gesture)
 
+        # Add drag source for drag-and-drop to other applications
+        drag_source = Gtk.DragSource.new()
+        drag_source.set_actions(Gdk.DragAction.COPY)
+        drag_source.connect("prepare", self._on_drag_prepare)
+        drag_source.connect("drag-begin", self._on_drag_begin)
+        card_frame.add_controller(drag_source)
+        print(f"[DND] Drag source added to card for item {item.get('id', 'unknown')}")
+
+        # Pre-fetch file content for drag-and-drop if this is a file or folder item
+        self._file_temp_path = None
+        if item.get("type") == "file":
+            # This includes both files and folders (folders have is_directory=True in metadata)
+            print(f"[DND] Item {item.get('id')} has keys: {list(item.keys())}")
+            print(f"[DND] Item file_metadata: {item.get('file_metadata', 'MISSING')}")
+            self._prefetch_file_for_dnd()
+
         # Header box with timestamp and buttons
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         header_box.set_hexpand(False)  # Prevent horizontal expansion
@@ -104,6 +126,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             time_label.set_halign(Gtk.Align.START)
             # Removed time_label.set_hexpand(True)
             header_box.append(time_label)
+
+        # Spacer to push buttons to the right
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        header_box.append(spacer)
 
         # Button box
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -150,6 +177,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         tags_button.add_css_class("flat")
         tags_button.set_tooltip_text("Manage tags")
         self.tags_button = tags_button
+
+        # Force icon to be black/visible
+        css_provider = Gtk.CssProvider()
+        css_data = "button { color: #2e3436 !important; -gtk-icon-palette: error #2e3436; }"
+        css_provider.load_from_data(css_data.encode())
+        tags_button.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
         # Use click gesture to stop propagation
         tags_gesture = Gtk.GestureClick.new()
@@ -236,14 +269,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             # Display file with icon, name, and metadata
             try:
                 file_metadata = item.get("content", {})
-                print(f"[UI] Rendering file item {item.get('id')}: metadata type = {type(file_metadata)}")
                 if isinstance(file_metadata, dict):
                     file_name = file_metadata.get("name", "Unknown file")
                     file_size = file_metadata.get("size", 0)
                     mime_type = file_metadata.get("mime_type", "application/octet-stream")
                     extension = file_metadata.get("extension", "")
                     is_directory = file_metadata.get("is_directory", False)
-                    print(f"[UI] File: {file_name}, is_dir: {is_directory}, ext: {extension}, mime: {mime_type}")
 
                     # Format file size nicely
                     def format_size(size_bytes):
@@ -265,28 +296,44 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     if is_directory:
                         # Use folder icon for directories
                         icon_name = "folder"
-                        print(f"[UI] Using folder icon for directory")
                     else:
+                        # Try to get icon using GIO content type system
+                        # This works best with actual filename
                         try:
-                            content_type = Gio.content_type_from_mime_type(mime_type)
-                            print(f"[UI] Content type from mime '{mime_type}': {content_type}")
+                            # Use the actual filename for better type detection
+                            content_type = Gio.content_type_guess(file_name, None)[0]
                             if content_type:
                                 icon = Gio.content_type_get_icon(content_type)
                                 if isinstance(icon, Gio.ThemedIcon):
                                     icon_names = icon.get_names()
-                                    if icon_names:
-                                        icon_name = icon_names[0]
-                                        print(f"[UI] Icon names: {icon_names}")
-                        except Exception as e:
-                            print(f"[UI] Error getting icon: {e}")
+                                    # Try each icon name until we find one that exists
+                                    theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+                                    for name in icon_names:
+                                        if theme.has_icon(name):
+                                            icon_name = name
+                                            break
+                        except Exception:
                             pass
 
-                    # Fallback icon
+                        # Fallback to mime-based icon
+                        if not icon_name and mime_type:
+                            try:
+                                content_type = Gio.content_type_from_mime_type(mime_type)
+                                if content_type:
+                                    icon = Gio.content_type_get_icon(content_type)
+                                    if isinstance(icon, Gio.ThemedIcon):
+                                        icon_names = icon.get_names()
+                                        theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+                                        for name in icon_names:
+                                            if theme.has_icon(name):
+                                                icon_name = name
+                                                break
+                            except Exception:
+                                pass
+
+                    # Final fallback icon
                     if not icon_name:
                         icon_name = "text-x-generic"
-                        print(f"[UI] Using fallback icon")
-
-                    print(f"[UI] Final icon name: {icon_name}")
 
                     # File icon (larger size)
                     file_icon = Gtk.Image.new_from_icon_name(icon_name)
@@ -381,16 +428,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         main_box.append(content_clamp)
 
-        # Create overlay to position tags at bottom right
+        # Create overlay to position tags at right side
         overlay = Gtk.Overlay()
         overlay.set_child(card_frame)
 
-        # Tags display box (bottom right, small, semi-transparent)
-        tags_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
-        tags_box.set_halign(Gtk.Align.END)
+        # Tags display box (bottom left) - aligned with card content
+        tags_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        tags_box.set_halign(Gtk.Align.START)
         tags_box.set_valign(Gtk.Align.END)
-        tags_box.set_margin_end(6)
-        tags_box.set_margin_bottom(6)
+        tags_box.set_margin_start(24)  # 12px card margin + 12px to align with content
+        tags_box.set_margin_bottom(16)  # 8px card margin + 8px to align with content
         self.tags_display_box = tags_box
         overlay.add_overlay(tags_box)
 
@@ -428,6 +475,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                         if data.get("type") == "item_tags":
                             tags = data.get("tags", [])
+                            # Store tags in item for filtering
+                            self.item["tags"] = tags
                             # Update UI on main thread
                             GLib.idle_add(self._display_tags, tags)
 
@@ -451,23 +500,235 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Only show user-defined tags (not system tags)
         user_tags = [tag for tag in tags if not tag.get("is_system", False)]
 
-        # Display up to 3 tags
-        for tag in user_tags[:3]:
+        # Display all user tags
+        for tag in user_tags:
             tag_name = tag.get("name", "")
             tag_color = tag.get("color", "#9a9996")
 
-            # Create small tag label
+            # Create tag label with just colored text (no background)
             label = Gtk.Label(label=tag_name)
 
-            # Apply very small, semi-transparent styling with thin border
+            # Apply colored text styling (no background)
             css_provider = Gtk.CssProvider()
-            css_data = f"label {{ background-color: alpha({tag_color}, 0.15); color: alpha({tag_color}, 0.8); font-size: 7pt; font-weight: normal; padding: 1px 4px; border: 1px solid alpha({tag_color}, 0.3); border-radius: 2px; }}"
+            css_data = f"label {{ color: {tag_color}; font-size: 9pt; font-weight: 600; }}"
             css_provider.load_from_data(css_data.encode())
             label.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
             self.tags_display_box.append(label)
 
         return False
+
+    def _on_drag_prepare(self, drag_source, x, y):
+        """Prepare data for drag operation"""
+        import os
+        item_type = self.item.get("type", "")
+        item_id = self.item.get("id")
+
+        print(f"[DND] _on_drag_prepare called for type: {item_type}, id: {item_id}")
+
+        # Handle different content types
+        if item_type == "text" or item_type == "url":
+            # Text content - provide as text/plain
+            content = self.item.get("content", "")
+            if isinstance(content, bytes):
+                content = content.decode("utf-8", errors="ignore")
+            value = GObject.Value(str, content)
+            return Gdk.ContentProvider.new_for_value(value)
+
+        elif item_type.startswith("image/") or item_type == "screenshot":
+            # Image content - provide multiple formats for maximum compatibility
+            try:
+                # Use thumbnail data (already loaded) instead of full image
+                thumbnail_b64 = self.item.get("thumbnail")
+                print(f"[DND] Thumbnail data available: {thumbnail_b64 is not None}, length: {len(thumbnail_b64) if thumbnail_b64 else 0}")
+                if thumbnail_b64:
+                    # Thumbnail is base64-encoded, decode it first
+                    import base64
+                    import tempfile
+                    import os
+                    image_bytes = base64.b64decode(thumbnail_b64)
+
+                    # Convert PNG bytes to Gdk.Texture
+                    pixbuf = GdkPixbuf.Pixbuf.new_from_stream(
+                        Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(image_bytes)),
+                        None
+                    )
+                    texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+
+                    # Create JPEG version using temp file (for immediate use)
+                    jpeg_fd, jpeg_path = tempfile.mkstemp(suffix=".jpg")
+                    try:
+                        os.close(jpeg_fd)
+                        pixbuf.savev(jpeg_path, "jpeg", [], [])
+                        with open(jpeg_path, 'rb') as f:
+                            jpeg_bytes = f.read()
+                    finally:
+                        try:
+                            os.unlink(jpeg_path)
+                        except:
+                            pass
+
+                    # Create BMP version using temp file (for immediate use)
+                    bmp_fd, bmp_path = tempfile.mkstemp(suffix=".bmp")
+                    try:
+                        os.close(bmp_fd)
+                        pixbuf.savev(bmp_path, "bmp", [], [])
+                        with open(bmp_path, 'rb') as f:
+                            bmp_bytes = f.read()
+                    finally:
+                        try:
+                            os.unlink(bmp_path)
+                        except:
+                            pass
+
+                    # Provide MULTIPLE formats for maximum compatibility:
+                    # NOTE: We do NOT provide file:// URIs because browsers block them
+                    # 1. PNG bytes (lossless) - for web browsers
+                    # 2. JPEG bytes (most widely supported)
+                    # 3. BMP bytes (universal compatibility)
+                    # 4. Texture for GTK apps
+                    # 5. GdkPixbuf for some GTK apps
+                    providers = []
+
+                    # PNG bytes (lossless) - FIRST for web browsers like Google Docs
+                    providers.append(Gdk.ContentProvider.new_for_bytes("image/png", GLib.Bytes.new(image_bytes)))
+
+                    # JPEG bytes (most compatible)
+                    providers.append(Gdk.ContentProvider.new_for_bytes("image/jpeg", GLib.Bytes.new(jpeg_bytes)))
+
+                    # BMP bytes (universal)
+                    providers.append(Gdk.ContentProvider.new_for_bytes("image/bmp", GLib.Bytes.new(bmp_bytes)))
+
+                    # Texture provider (GTK4)
+                    tex_value = GObject.Value()
+                    tex_value.init(Gdk.Texture)
+                    tex_value.set_object(texture)
+                    providers.append(Gdk.ContentProvider.new_for_value(tex_value))
+
+                    # Pixbuf provider (GTK3/4)
+                    pb_value = GObject.Value()
+                    pb_value.init(GdkPixbuf.Pixbuf)
+                    pb_value.set_object(pixbuf)
+                    providers.append(Gdk.ContentProvider.new_for_value(pb_value))
+
+                    # Union all providers
+                    provider = Gdk.ContentProvider.new_union(providers)
+                    print(f"[DND] Created multi-format content provider ({pixbuf.get_width()}x{pixbuf.get_height()}, PNG:{len(image_bytes)}, JPEG:{len(jpeg_bytes)}, BMP:{len(bmp_bytes)})")
+                    return provider
+                else:
+                    print(f"[DND] No thumbnail data in item! Keys: {list(self.item.keys())}")
+            except Exception as e:
+                print(f"[DND] Error preparing image: {e}")
+                import traceback
+                traceback.print_exc()
+
+        elif item_type == "file":
+            # Use pre-fetched temp file/folder for drag-and-drop
+            # (folders are also type="file" but have is_directory=True in metadata)
+            if self._file_temp_path and os.path.exists(self._file_temp_path):
+                file_uri = f"file://{self._file_temp_path}"
+                uri_list_bytes = file_uri.encode('utf-8')
+                provider = Gdk.ContentProvider.new_for_bytes("text/uri-list", GLib.Bytes.new(uri_list_bytes))
+                print(f"[DND] Providing file/folder URI: {file_uri}")
+                return provider
+            else:
+                print(f"[DND] File/folder not ready for drag (temp file not available)")
+                return None
+
+        return None
+
+    def _prefetch_file_for_dnd(self):
+        """Pre-fetch file content and save to temp location for drag-and-drop"""
+        import threading
+        import tempfile
+        import os
+
+        def fetch_and_save():
+            print(f"[DND] Background thread started for pre-fetch")
+            try:
+                import asyncio
+                import websockets
+                import json
+                import base64
+                import traceback
+
+                async def get_file():
+                    item_id = self.item.get("id")
+                    print(f"[DND] Async get_file() started for item {item_id}")
+                    uri = "ws://localhost:8765"
+                    max_size = 100 * 1024 * 1024  # 100MB for files
+
+                    print(f"[DND] Pre-fetching file for item {item_id}")
+
+                    try:
+                        async with websockets.connect(uri, max_size=max_size) as websocket:
+                            # Use same action as Save button: get_full_image
+                            request = {"action": "get_full_image", "id": item_id}
+                            await websocket.send(json.dumps(request))
+
+                            # Wait for response
+                            response = await websocket.recv()
+                            data = json.loads(response)
+
+                            if data.get("type") == "full_file" and data.get("id") == item_id:
+                                file_b64 = data.get("content")
+                                filename = data.get("filename", f"file_{item_id}")
+
+                                if file_b64:
+                                    # Decode file content
+                                    file_bytes = base64.b64decode(file_b64)
+
+                                    # Create temp file with original filename
+                                    fd, temp_path = tempfile.mkstemp(suffix=f"_{filename}")
+                                    try:
+                                        os.write(fd, file_bytes)
+                                    finally:
+                                        os.close(fd)
+
+                                    self._file_temp_path = temp_path
+                                    print(f"[DND] Pre-fetched file to: {temp_path} ({len(file_bytes)} bytes)")
+                                else:
+                                    # Empty content - likely a folder
+                                    # Check if item has original_path in metadata
+                                    # NOTE: For file items, metadata is sent in 'content' field by server
+                                    file_metadata = self.item.get("content", {})
+                                    original_path = file_metadata.get("original_path")
+                                    print(f"[DND] Checking for original_path in content field: {original_path}")
+                                    if original_path and os.path.exists(original_path):
+                                        self._file_temp_path = original_path
+                                        print(f"[DND] Using original folder path: {original_path}")
+                                    else:
+                                        print(f"[DND] No file content - original_path not available or doesn't exist: {original_path}")
+                            else:
+                                print(f"[DND] Unexpected response type: {data.get('type')}")
+
+                    except Exception as e:
+                        print(f"[DND] Websocket error during pre-fetch: {e}")
+                        traceback.print_exc()
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(get_file())
+                finally:
+                    loop.close()
+
+            except Exception as e:
+                print(f"[DND] Failed to pre-fetch file: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Run in background thread to avoid blocking UI
+        thread = threading.Thread(target=fetch_and_save, daemon=True)
+        thread.start()
+
+    def _on_drag_begin(self, drag_source, drag):
+        """Called when drag begins - set drag icon"""
+        print(f"[DND] _on_drag_begin called")
+        # Use a small preview of the item as drag icon
+        icon = Gtk.WidgetPaintable.new(self.card_frame)
+        drag_source.set_icon(icon, 0, 0)
+        print(f"[DND] Drag icon set")
 
     def _on_card_clicked(self, gesture, n_press, x, y):
         """Handle card clicks - single click copies, double click opens full view"""
@@ -477,6 +738,81 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         elif n_press == 2:
             # Double click - open full view
             self._do_view_full_item()
+
+    def _show_name_editor(self, button):
+        """Show popover to edit item name"""
+        popover = Gtk.Popover()
+        popover.set_parent(button)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_margin_start(12)
+        box.set_margin_end(12)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+
+        entry = Gtk.Entry()
+        entry.set_text(self.item.get("name", ""))
+        entry.set_placeholder_text("Enter name...")
+        entry.set_width_chars(30)
+
+        def save_name():
+            new_name = entry.get_text().strip()
+            item_id = self.item.get("id")
+
+            # Update button label
+            button.set_label(new_name if new_name else "Add name...")
+            if new_name:
+                button.remove_css_class("dim-label")
+            else:
+                button.add_css_class("dim-label")
+
+            # Update item dict
+            self.item["name"] = new_name if new_name else None
+
+            # Send to server
+            def send_update():
+                try:
+                    async def update_name():
+                        uri = "ws://localhost:8765"
+                        async with websockets.connect(uri) as websocket:
+                            request = {
+                                "action": "update_item_name",
+                                "item_id": item_id,
+                                "name": new_name if new_name else None
+                            }
+                            await websocket.send(json.dumps(request))
+                            response = await websocket.recv()
+                            data = json.loads(response)
+
+                            if data.get("success"):
+                                print(f"[UI] Successfully updated name for item {item_id}")
+                            else:
+                                print(f"[UI] Failed to update name: {data.get('error', 'Unknown error')}")
+
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(update_name())
+                except Exception as e:
+                    print(f"[UI] Error updating name: {e}")
+
+            threading.Thread(target=send_update, daemon=True).start()
+            popover.popdown()
+
+        # Save on Enter
+        entry.connect("activate", lambda e: save_name())
+
+        # Save button
+        save_btn = Gtk.Button(label="Save")
+        save_btn.add_css_class("suggested-action")
+        save_btn.connect("clicked", lambda b: save_name())
+
+        box.append(entry)
+        box.append(save_btn)
+        popover.set_child(box)
+        popover.popup()
+
+        # Focus entry after showing
+        GLib.idle_add(entry.grab_focus)
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked"""
@@ -761,18 +1097,39 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Create file chooser dialog
         dialog = Gtk.FileDialog()
 
+        # Get custom name if available
+        custom_name = self.item.get("name")
+
         if item_type == "text":
-            dialog.set_initial_name("clipboard.txt")
+            # Use custom name if available, otherwise default
+            if custom_name:
+                # Ensure .txt extension
+                filename = custom_name if custom_name.endswith(".txt") else f"{custom_name}.txt"
+            else:
+                filename = "clipboard.txt"
+            dialog.set_initial_name(filename)
         elif item_type == "file":
-            # Use original filename from metadata
+            # Use original filename from metadata (custom name not used for files)
             file_metadata = self.item.get("content", {})
             file_name = file_metadata.get("name", "clipboard_file")
             dialog.set_initial_name(file_name)
         elif item_type.startswith("image/"):
             ext = item_type.split("/")[-1]
-            dialog.set_initial_name(f"clipboard.{ext}")
+            # Use custom name if available, otherwise default
+            if custom_name:
+                # Ensure proper extension
+                filename = custom_name if custom_name.endswith(f".{ext}") else f"{custom_name}.{ext}"
+            else:
+                filename = f"clipboard.{ext}"
+            dialog.set_initial_name(filename)
         elif item_type == "screenshot":
-            dialog.set_initial_name("screenshot.png")
+            # Use custom name if available, otherwise default
+            if custom_name:
+                # Ensure .png extension
+                filename = custom_name if custom_name.endswith(".png") else f"{custom_name}.png"
+            else:
+                filename = "screenshot.png"
+            dialog.set_initial_name(filename)
 
         # Get the window
         window = self.get_root()
@@ -1325,6 +1682,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         self.page_size = self.settings.max_page_length
 
+        # Sort state
+        self.copied_sort_order = "DESC"  # Default: newest first
+        self.pasted_sort_order = "DESC"  # Default: newest first
+
         # Window icon is set through the desktop file and application
         # GTK4/Adwaita doesn't use set_icon() anymore
 
@@ -1334,20 +1695,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Header bar with settings and close buttons
         header = Adw.HeaderBar()
 
-        # Add small logo to header (left side)
-        try:
-            icon_path = Path(__file__).parent.parent / "resouces" / "tfcbm.svg"
-            if icon_path.exists():
-                # Create image from PNG
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 24, 24, True)
-                texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-                logo_image = Gtk.Image.new_from_paintable(texture)
-                logo_image.set_margin_start(4)
-                logo_image.set_margin_end(4)
-                logo_image.set_tooltip_text("TFCBM - The F*cking Clipboard Manager")
-                header.pack_start(logo_image)
-        except Exception as e:
-            print(f"Warning: Could not load header logo: {e}")
+        # Style the header bar with yellow-green background
+        header.add_css_class("tfcbm-header")
+
+        # Add custom title with white bold text
+        title_label = Gtk.Label(label="TFCBM")
+        title_label.add_css_class("title")
+        title_label.add_css_class("tfcbm-title")
+        header.set_title_widget(title_label)
 
         # Settings button (placeholder for now)
         settings_button = Gtk.Button()
@@ -1434,9 +1789,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         tab_bar.set_view(self.tab_view)
         main_box.append(tab_bar)
 
-        # Filter bar (system content types + file extensions)
+        # Create filter bar (will be added to toolbar later)
         self._create_filter_bar()
-        main_box.append(self.filter_bar)
 
         # Tab 1: Recently Copied
         copied_scrolled = Gtk.ScrolledWindow()
@@ -1446,12 +1800,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         copied_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
-        # Header bar with status and jump to top button
-        copied_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        copied_header.set_margin_top(8)
-        copied_header.set_margin_bottom(4)
-        copied_header.set_margin_start(8)
-        copied_header.set_margin_end(8)
+        # BOTTOM footer with status label
+        copied_footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        copied_footer.set_margin_top(8)
+        copied_footer.set_margin_bottom(4)
+        copied_footer.set_margin_start(8)
+        copied_footer.set_margin_end(8)
 
         # Status label for copied items
         self.copied_status_label = Gtk.Label()
@@ -1459,15 +1813,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.copied_status_label.add_css_class("caption")
         self.copied_status_label.set_hexpand(True)
         self.copied_status_label.set_halign(Gtk.Align.START)
-        copied_header.append(self.copied_status_label)
-
-        # Jump to top button for copied items
-        copied_jump_btn = Gtk.Button()
-        copied_jump_btn.set_icon_name("go-top-symbolic")
-        copied_jump_btn.set_tooltip_text("Jump to top")
-        copied_jump_btn.add_css_class("flat")
-        copied_jump_btn.connect("clicked", lambda btn: self._jump_to_top("copied"))
-        copied_header.append(copied_jump_btn)
+        copied_footer.append(self.copied_status_label)
 
         self.copied_listbox = Gtk.ListBox()
         self.copied_listbox.add_css_class("boxed-list")
@@ -1479,8 +1825,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.copied_loader.set_visible(False)
         copied_box.append(self.copied_loader)
 
-        # Footer with status and jump to top (moved to bottom)
-        copied_box.append(copied_header)
+        # Footer with status label (at bottom)
+        copied_box.append(copied_footer)
 
         copied_scrolled.set_child(copied_box)
 
@@ -1500,12 +1846,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         pasted_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
-        # Header bar with status and jump to top button
-        pasted_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        pasted_header.set_margin_top(8)
-        pasted_header.set_margin_bottom(4)
-        pasted_header.set_margin_start(8)
-        pasted_header.set_margin_end(8)
+        # Sticky filter bar at top (shared with copied tab)
+
+        # BOTTOM footer with status label
+        pasted_footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pasted_footer.set_margin_top(8)
+        pasted_footer.set_margin_bottom(4)
+        pasted_footer.set_margin_start(8)
+        pasted_footer.set_margin_end(8)
 
         # Status label for pasted items
         self.pasted_status_label = Gtk.Label()
@@ -1513,15 +1861,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.pasted_status_label.add_css_class("caption")
         self.pasted_status_label.set_hexpand(True)
         self.pasted_status_label.set_halign(Gtk.Align.START)
-        pasted_header.append(self.pasted_status_label)
-
-        # Jump to top button for pasted items
-        pasted_jump_btn = Gtk.Button()
-        pasted_jump_btn.set_icon_name("go-top-symbolic")
-        pasted_jump_btn.set_tooltip_text("Jump to top")
-        pasted_jump_btn.add_css_class("flat")
-        pasted_jump_btn.connect("clicked", lambda btn: self._jump_to_top("pasted"))
-        pasted_header.append(pasted_jump_btn)
+        pasted_footer.append(self.pasted_status_label)
 
         self.pasted_listbox = Gtk.ListBox()
         self.pasted_listbox.add_css_class("boxed-list")
@@ -1533,8 +1873,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.pasted_loader.set_visible(False)
         pasted_box.append(self.pasted_loader)
 
-        # Footer with status and jump to top (moved to bottom)
-        pasted_box.append(pasted_header)
+        # Footer with status label (at bottom)
+        pasted_box.append(pasted_footer)
 
         pasted_scrolled.set_child(pasted_box)
 
@@ -1673,6 +2013,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Connect tab switch event
         self.tab_view.connect("notify::selected-page", self._on_tab_switched)
 
+        # Add sticky filter bar (contains filters, sort, jump)
+        main_box.append(self.filter_bar)
+        print(f"[DEBUG] Filter bar added to main_box, visible: {self.filter_bar.get_visible()}", flush=True)
+        print(f"[DEBUG] Filter toggle button visible: {self.filter_toggle_btn.get_visible()}", flush=True)
+        print(f"[DEBUG] Filter bar has {len(list(self.filter_bar))} children", flush=True)
+
         main_box.append(self.tab_view)
 
         # Add tag filter at the bottom (footer)
@@ -1766,8 +2112,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 # Request history
                 request = {"action": "get_history", "limit": self.page_size}
+                if self.active_filters:
+                    request["filters"] = list(self.active_filters)
+                    print(f"[FILTER] Sending filters to server: {list(self.active_filters)}")
                 await websocket.send(json.dumps(request))
-                print("Requested history")
+                print(f"Requested history with filters: {request.get('filters', 'none')}")
 
                 # Listen for messages
                 async for message in websocket:
@@ -1919,10 +2268,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 break
             self.copied_listbox.remove(row)
 
-        # Add items (already in reverse order from backend)
+        # Add items (database returns DESC order, append to maintain it)
         for item in items:
             row = ClipboardItemRow(item, self)
-            self.copied_listbox.prepend(row)  # Add to top
+            self.copied_listbox.append(row)  # Append to maintain DESC order
 
         # Update status label
         current_count = len(items)
@@ -2056,6 +2405,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         selected_page = tab_view.get_selected_page()
         if selected_page:
             title = selected_page.get_title()
+            print(f"[DEBUG] Tab switched to: {title}", flush=True)
             if title == "Recently Pasted":
                 self.current_tab = "pasted"
                 # Reset pagination and reload pasted items from the beginning
@@ -2063,8 +2413,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 self.pasted_has_more = True
                 # Load pasted items when switching to pasted tab
                 GLib.idle_add(self.load_pasted_history)
+                # Show filter bar on clipboard tabs
+                self.filter_bar.set_visible(True)
+                print(f"[DEBUG] Filter bar shown for Pasted tab, visible: {self.filter_bar.get_visible()}", flush=True)
+            elif title == "Recently Copied":
+                self.current_tab = "copied"
+                # Show filter bar on clipboard tabs
+                self.filter_bar.set_visible(True)
+                print(f"[DEBUG] Filter bar shown for Copied tab, visible: {self.filter_bar.get_visible()}", flush=True)
             else:
                 self.current_tab = "copied"
+                # Hide filter bar on other tabs (Settings, Tags)
+                self.filter_bar.set_visible(False)
+                print(f"[DEBUG] Filter bar hidden for {title} tab, visible: {self.filter_bar.get_visible()}", flush=True)
 
     def _jump_to_top(self, list_type):
         """Scroll to the top of the specified list"""
@@ -2074,6 +2435,117 @@ class ClipboardWindow(Adw.ApplicationWindow):
         elif list_type == "pasted":
             vadj = self.pasted_scrolled.get_vadjustment()
             vadj.set_value(0)
+
+    def _toggle_sort_from_toolbar(self):
+        """Toggle sort for the currently active tab"""
+        # Determine which tab is active
+        if self.current_tab == "copied":
+            self._toggle_sort("copied")
+        else:
+            self._toggle_sort("pasted")
+
+    def _jump_to_top_from_toolbar(self):
+        """Jump to top for the currently active tab"""
+        if self.current_tab == "copied":
+            self._jump_to_top("copied")
+        else:
+            self._jump_to_top("pasted")
+
+    def _toggle_sort(self, list_type):
+        """Toggle sort order for the specified list"""
+        if list_type == "copied":
+            # Toggle sort order
+            self.copied_sort_order = "ASC" if self.copied_sort_order == "DESC" else "DESC"
+
+            # Update toolbar button icon and tooltip
+            if self.copied_sort_order == "DESC":
+                self.filter_sort_btn.set_icon_name("view-sort-descending-symbolic")
+                self.filter_sort_btn.set_tooltip_text("Newest first ↓")
+            else:
+                self.filter_sort_btn.set_icon_name("view-sort-ascending-symbolic")
+                self.filter_sort_btn.set_tooltip_text("Oldest first ↑")
+
+            # Reload data with new sort order
+            self._reload_copied_with_sort()
+
+        elif list_type == "pasted":
+            # Toggle sort order
+            self.pasted_sort_order = "ASC" if self.pasted_sort_order == "DESC" else "DESC"
+
+            # Update toolbar button icon and tooltip
+            if self.pasted_sort_order == "DESC":
+                self.filter_sort_btn.set_icon_name("view-sort-descending-symbolic")
+                self.filter_sort_btn.set_tooltip_text("Newest first ↓")
+            else:
+                self.filter_sort_btn.set_icon_name("view-sort-ascending-symbolic")
+                self.filter_sort_btn.set_tooltip_text("Oldest first ↑")
+
+            # Reload data with new sort order
+            self._reload_pasted_with_sort()
+
+    def _reload_copied_with_sort(self):
+        """Reload copied items with current sort order"""
+        def reload():
+            try:
+                async def get_sorted_history():
+                    uri = "ws://localhost:8765"
+                    max_size = 5 * 1024 * 1024
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
+                        request = {
+                            "action": "get_history",
+                            "limit": self.page_size,
+                            "sort_order": self.copied_sort_order
+                        }
+                        if self.active_filters:
+                            request["filters"] = list(self.active_filters)
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "history":
+                            items = data.get("items", [])
+                            total_count = data.get("total_count", 0)
+                            offset = data.get("offset", 0)
+                            GLib.idle_add(self._initial_history_load, items, total_count, offset)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(get_sorted_history())
+            except Exception as e:
+                print(f"[UI] Error reloading sorted history: {e}")
+
+        threading.Thread(target=reload, daemon=True).start()
+
+    def _reload_pasted_with_sort(self):
+        """Reload pasted items with current sort order"""
+        def reload():
+            try:
+                async def get_sorted_pasted():
+                    uri = "ws://localhost:8765"
+                    max_size = 5 * 1024 * 1024
+                    async with websockets.connect(uri, max_size=max_size) as websocket:
+                        request = {
+                            "action": "get_recently_pasted",
+                            "limit": self.page_size,
+                            "sort_order": self.pasted_sort_order
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "recently_pasted":
+                            items = data.get("items", [])
+                            total_count = data.get("total_count", 0)
+                            offset = data.get("offset", 0)
+                            GLib.idle_add(self._initial_pasted_load, items, total_count, offset)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(get_sorted_pasted())
+            except Exception as e:
+                print(f"[UI] Error reloading sorted pasted: {e}")
+
+        threading.Thread(target=reload, daemon=True).start()
 
     def _on_scroll_changed(self, adjustment, list_type):
         """Handle scroll events for infinite scrolling"""
@@ -2123,6 +2595,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         "offset": self.copied_offset + self.page_size,
                         "limit": self.page_size,
                     }
+                    if self.active_filters:
+                        request["filters"] = list(self.active_filters)
                 else:  # pasted
                     request = {
                         "action": "get_recently_pasted",
@@ -2244,10 +2718,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
         return False  # Allow window to close
 
     def _create_filter_bar(self):
-        """Create the filter bar with system content types and file extensions"""
+        """Create the filter bar with system content types, file extensions, and controls"""
         # Store active filters
         self.active_filters = set()
         self.file_extensions = []
+        self.system_filters_visible = False  # Start collapsed
 
         # Main filter bar container
         self.filter_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -2256,6 +2731,34 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.filter_bar.set_margin_start(8)
         self.filter_bar.set_margin_end(8)
         self.filter_bar.add_css_class("toolbar")
+        self.filter_bar.set_visible(True)  # Ensure it's visible
+
+        # Filter toggle button (to show/hide system filters)
+        self.filter_toggle_btn = Gtk.ToggleButton()
+        # Try multiple icon names as fallback
+        icon_found = False
+        for icon_name in ["funnel-symbolic", "filter-symbolic", "view-filter-symbolic", "preferences-system-symbolic"]:
+            theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+            if theme.has_icon(icon_name):
+                self.filter_toggle_btn.set_icon_name(icon_name)
+                print(f"[DEBUG] Using icon: {icon_name}", flush=True)
+                icon_found = True
+                break
+
+        # If no icon found, use text label as fallback
+        if not icon_found:
+            self.filter_toggle_btn.set_label("⚙")
+            print("[DEBUG] No icon found, using text label fallback", flush=True)
+
+        self.filter_toggle_btn.set_tooltip_text("Show/hide system filters")
+        self.filter_toggle_btn.add_css_class("flat")
+        self.filter_toggle_btn.set_size_request(32, 32)  # Give it explicit size
+        self.filter_toggle_btn.set_visible(True)  # Ensure visible
+        self.filter_toggle_btn.set_sensitive(True)  # Ensure enabled
+        self.filter_toggle_btn.connect("toggled", self._on_filter_toggle)
+        self.filter_bar.append(self.filter_toggle_btn)
+
+        print("[DEBUG] Filter toggle button created and added to filter bar", flush=True)
 
         # Scrollable container for filter chips
         self.filter_scroll = Gtk.ScrolledWindow()
@@ -2281,7 +2784,28 @@ class ClipboardWindow(Adw.ApplicationWindow):
         clear_btn.connect("clicked", self._on_clear_filters)
         self.filter_bar.append(clear_btn)
 
-        # Add system content type filters
+        # Separator
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        self.filter_bar.append(separator)
+
+        # Sort toggle button (for current tab)
+        self.filter_sort_btn = Gtk.Button()
+        self.filter_sort_btn.set_icon_name("view-sort-descending-symbolic")
+        self.filter_sort_btn.set_tooltip_text("Newest first ↓")
+        self.filter_sort_btn.add_css_class("flat")
+        self.filter_sort_btn.add_css_class("sort-toggle")
+        self.filter_sort_btn.connect("clicked", lambda btn: self._toggle_sort_from_toolbar())
+        self.filter_bar.append(self.filter_sort_btn)
+
+        # Jump to top button (for current tab)
+        jump_btn = Gtk.Button()
+        jump_btn.set_icon_name("go-top-symbolic")
+        jump_btn.set_tooltip_text("Jump to top")
+        jump_btn.add_css_class("flat")
+        jump_btn.connect("clicked", lambda btn: self._jump_to_top_from_toolbar())
+        self.filter_bar.append(jump_btn)
+
+        # Add system content type filters (initially hidden)
         self._add_system_filters()
 
         # Load file extensions
@@ -2289,6 +2813,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _add_system_filters(self):
         """Add system content type filter buttons"""
+        self.system_filter_chips = []  # Track system filter chips
         system_filters = [
             ("text", "Text", "text-x-generic-symbolic"),
             ("image", "Images", "image-x-generic-symbolic"),
@@ -2297,9 +2822,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         ]
 
         for filter_type, label, icon_name in system_filters:
-            self._create_filter_chip(filter_type, label, icon_name)
+            chip = self._create_filter_chip(filter_type, label, icon_name, is_system=True)
+            self.system_filter_chips.append(chip)
 
-    def _create_filter_chip(self, filter_id, label, icon_name=None):
+    def _create_filter_chip(self, filter_id, label, icon_name=None, is_system=False):
         """Create a small filter chip button"""
         chip = Gtk.ToggleButton()
         chip.set_has_frame(False)
@@ -2322,9 +2848,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Wrap in FlowBoxChild
         flow_child = Gtk.FlowBoxChild()
         flow_child.set_child(chip)
+
+        # Hide system filters initially
+        if is_system:
+            flow_child.set_visible(False)
+
         self.filter_box.append(flow_child)
 
-        return chip
+        return flow_child
 
     def _load_file_extensions(self):
         """Load available file extensions from server"""
@@ -2384,8 +2915,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
         else:
             self.active_filters.discard(filter_id)
 
+        print(f"[FILTER] Toggled filter '{filter_id}', active: {button.get_active()}")
+        print(f"[FILTER] Current active filters: {self.active_filters}")
+
         # Apply filters
         self._apply_filters()
+
+    def _on_filter_toggle(self, button):
+        """Toggle visibility of system filter chips"""
+        self.system_filters_visible = button.get_active()
+
+        # Show/hide system filter chips
+        for chip in self.system_filter_chips:
+            chip.set_visible(self.system_filters_visible)
 
     def _on_clear_filters(self, button):
         """Clear all active filters"""
@@ -2401,48 +2943,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self._apply_filters()
 
     def _apply_filters(self):
-        """Apply active filters to the item list"""
-        if not self.active_filters:
-            # No filters active, reload all items
-            self._reload_current_tab()
-            return
-
-        # Filter logic
-        # Check which tab is active
-        current_page = self.tab_view.get_selected_page()
-        if not current_page:
-            return
-
-        is_copied_tab = current_page.get_title() == "Recently Copied"
-        listbox = self.copied_listbox if is_copied_tab else self.pasted_listbox
-
-        # Hide/show items based on filters
-        for row in list(listbox):
-            if isinstance(row, ClipboardItemRow):
-                item_type = row.item.get("type", "")
-                should_show = False
-
-                for filter_id in self.active_filters:
-                    if filter_id == "text" and item_type == "text":
-                        should_show = True
-                    elif filter_id == "image" and (item_type.startswith("image/") or item_type == "screenshot"):
-                        should_show = True
-                    elif filter_id == "url" and item_type == "url":
-                        should_show = True
-                    elif filter_id == "file" and item_type == "file":
-                        # General file filter - matches any file
-                        should_show = True
-                    elif filter_id.startswith("file:"):
-                        # Specific file extension filter
-                        ext = filter_id.replace("file:", "")
-                        if item_type == "file":
-                            file_metadata = row.item.get("content", {})
-                            if isinstance(file_metadata, dict):
-                                file_ext = file_metadata.get("extension", "")
-                                if file_ext == ext:
-                                    should_show = True
-
-                row.set_visible(should_show)
+        """Apply active filters to the item list - reload from DB with filters"""
+        # Always reload from database when filters change
+        # This ensures we get a fresh set of items matching the current filters
+        # and can load more filtered items when scrolling
+        self._reload_current_tab()
 
     def _reload_current_tab(self):
         """Reload items in the current tab"""
@@ -2534,7 +3039,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             except Exception as e:
                 print(f"[UI] Search error: {e}")
                 traceback.print_exc()
-                GLib.idle_add(lambda: self.show_toast(f"Search error: {str(e)}") or False)
+                GLib.idle_add(lambda: self.show_notification(f"Search error: {str(e)}") or False)
 
         threading.Thread(target=run_search, daemon=True).start()
         return False  # Don't repeat timer
@@ -2604,6 +3109,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         max_size = 5 * 1024 * 1024
                         async with websockets.connect(uri, max_size=max_size) as websocket:
                             request = {"action": "get_history", "limit": self.page_size}
+                            if self.active_filters:
+                                request["filters"] = list(self.active_filters)
                             await websocket.send(json.dumps(request))
                             response = await websocket.recv()
                             data = json.loads(response)
@@ -2686,8 +3193,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         self.tag_buttons = {}
 
+        # Filter out system tags - only show custom user tags
+        user_tags = [tag for tag in self.all_tags if not tag.get("is_system", False)]
+
         # Add tag buttons
-        for tag in self.all_tags:
+        for tag in user_tags:
             tag_id = tag.get("id")
             tag_name = tag.get("name", "")
             tag_color = tag.get("color", "#9a9996")
@@ -2809,7 +3319,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             i += 1
 
         self.filter_active = True
-        self.show_toast(f"Showing {visible_count} filtered items")
+        self.show_notification(f"Showing {visible_count} filtered items")
 
     def _restore_filtered_view(self):
         """Restore normal unfiltered view by making all rows visible"""
@@ -2853,9 +3363,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         data = json.loads(response)
 
                         if data.get("type") == "tags":
-                            tags = data.get("tags", [])
-                            # Only user-defined tags (not system tags)
-                            GLib.idle_add(self._refresh_user_tags_display, tags)
+                            all_tags = data.get("tags", [])
+                            # Only user-defined tags (filter out system tags)
+                            user_tags = [tag for tag in all_tags if not tag.get("is_system", False)]
+                            GLib.idle_add(self._refresh_user_tags_display, user_tags)
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -3060,7 +3571,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 break
 
         if not tag:
-            self.show_toast("Tag not found")
+            self.show_notification("Tag not found")
             return
 
         dialog = Adw.MessageDialog.new(self)

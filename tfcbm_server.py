@@ -368,6 +368,7 @@ def prepare_item_for_ui(item: dict) -> dict:
         "content": content,  # None for images
         "thumbnail": thumbnail_b64,
         "timestamp": item["timestamp"],
+        "name": item.get("name"),  # Include name field
     }
 
 
@@ -387,11 +388,16 @@ async def websocket_handler(websocket):
                 if action == "get_history":
                     limit = data.get("limit", settings.max_page_length)
                     offset = data.get("offset", 0)
+                    sort_order = data.get("sort_order", "DESC")
+                    filters = data.get("filters", None)
+
+                    logging.info(f"[FILTER] get_history request with filters: {filters}")
 
                     # Use lock for thread-safe database access
                     with db_lock:
-                        items = db.get_items(limit=limit, offset=offset)
+                        items = db.get_items(limit=limit, offset=offset, sort_order=sort_order, filters=filters)
                         total_count = db.get_total_count()
+                        logging.info(f"[FILTER] Returned {len(items)} items (total: {total_count})")
 
                     # Convert to UI format
                     ui_items = [prepare_item_for_ui(item) for item in items]
@@ -432,10 +438,11 @@ async def websocket_handler(websocket):
                 elif action == "get_recently_pasted":
                     limit = data.get("limit", settings.max_page_length)
                     offset = data.get("offset", 0)
+                    sort_order = data.get("sort_order", "DESC")
 
                     # Get recently pasted items with JOIN
                     with db_lock:
-                        items = db.get_recently_pasted(limit=limit, offset=offset)
+                        items = db.get_recently_pasted(limit=limit, offset=offset, sort_order=sort_order)
                         total_count = db.get_pasted_count()
 
                     # Convert to UI format
@@ -616,6 +623,25 @@ async def websocket_handler(websocket):
                         response = {"type": "items_by_tags", "items": [], "count": 0}
                         await websocket.send(json.dumps(response))
 
+                elif action == "update_item_name":
+                    item_id = data.get("item_id")
+                    name = data.get("name")
+
+                    if item_id is not None:
+                        logging.info(f"Updating name for item {item_id}: '{name}'")
+                        with db_lock:
+                            success = db.update_item_name(item_id, name)
+                        response = {"type": "item_name_updated", "item_id": item_id, "name": name, "success": success}
+                        await websocket.send(json.dumps(response))
+
+                        # Broadcast to all clients that item was updated
+                        if success:
+                            await broadcast_ws({"type": "item_updated", "item_id": item_id, "name": name})
+                        logging.info(f"Updated name for item {item_id}: {success}")
+                    else:
+                        response = {"type": "item_name_updated", "success": False, "error": "item_id is required"}
+                        await websocket.send(json.dumps(response))
+
                 elif action == "get_file_extensions":
                     logging.info("Fetching file extensions")
                     with db_lock:
@@ -772,14 +798,20 @@ def start_server():
                         text_hash = ClipboardDB.calculate_hash(text_bytes)
 
                         # Check if hash already exists in database
+                        timestamp = datetime.now().isoformat()
+
                         with db_lock:
-                            hash_exists = db.hash_exists(text_hash)
+                            existing_item_id = db.get_item_by_hash(text_hash)
 
-                        if hash_exists:
-                            logging.info(f"⊘ Skipping duplicate {item_type} ({len(text)} characters)\n")
+                        if existing_item_id:
+                            # Duplicate found - update timestamp to move to top
+                            logging.info(f"↻ Updating duplicate {item_type} ({len(text)} characters) - moving to top\n")
+                            with db_lock:
+                                db.update_timestamp(existing_item_id, timestamp)
+                                # Get the updated item to broadcast
+                                item = db.get_item(existing_item_id)
                         else:
-                            timestamp = datetime.now().isoformat()
-
+                            # New item - add to database
                             history.append(
                                 {
                                     "type": item_type,
@@ -790,7 +822,8 @@ def start_server():
 
                             # Save to database with hash (thread-safe)
                             with db_lock:
-                                db.add_item(item_type, text_bytes, timestamp, data_hash=text_hash)
+                                item_id = db.add_item(item_type, text_bytes, timestamp, data_hash=text_hash)
+                                item = db.get_item(item_id)
 
                             # Log clipboard event (no content for privacy)
                             logging.info(f"✓ Copied {item_type} ({len(text)} characters)")
@@ -808,14 +841,20 @@ def start_server():
                         image_hash = ClipboardDB.calculate_hash(image_bytes)
 
                         # Check if hash already exists in database
-                        with db_lock:
-                            hash_exists = db.hash_exists(image_hash)
+                        timestamp = datetime.now().isoformat()
 
-                        if hash_exists:
+                        with db_lock:
+                            existing_item_id = db.get_item_by_hash(image_hash)
+
+                        if existing_item_id:
+                            # Duplicate found - update timestamp to move to top
                             logging.info(
-                                f"⊘ Skipping duplicate image ({message['type']}, {len(image_bytes)} bytes)\n"
+                                f"↻ Updating duplicate image ({message['type']}, {len(image_bytes)} bytes) - moving to top\n"
                             )
+                            with db_lock:
+                                db.update_timestamp(existing_item_id, timestamp)
                         else:
+                            # New item - add to database
                             timestamp = datetime.now().isoformat()
 
                             history.append(
@@ -853,19 +892,29 @@ def start_server():
                             # Calculate hash for deduplication
                             from database import ClipboardDB
 
-                            file_hash = ClipboardDB.calculate_hash(file_content)
+                            # For directories, hash the path instead of empty content
+                            if metadata.get('is_directory'):
+                                hash_input = metadata['original_path'].encode('utf-8')
+                            else:
+                                hash_input = file_content
+
+                            file_hash = ClipboardDB.calculate_hash(hash_input)
 
                             # Check if hash already exists in database
+                            timestamp = datetime.now().isoformat()
+
                             with db_lock:
-                                hash_exists = db.hash_exists(file_hash)
+                                existing_item_id = db.get_item_by_hash(file_hash)
 
-                            if hash_exists:
+                            if existing_item_id:
+                                # Duplicate found - update timestamp to move to top
                                 logging.info(
-                                    f"⊘ Skipping duplicate file ({metadata['name']}, {metadata['size']} bytes)\n"
+                                    f"↻ Updating duplicate file ({metadata['name']}, {metadata['size']} bytes) - moving to top\n"
                                 )
+                                with db_lock:
+                                    db.update_timestamp(existing_item_id, timestamp)
                             else:
-                                timestamp = datetime.now().isoformat()
-
+                                # New item - add to database
                                 # Store metadata as JSON in the data field along with content
                                 # We'll store: metadata JSON + separator + file content
                                 metadata_json = json.dumps(metadata)

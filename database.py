@@ -98,6 +98,42 @@ class ClipboardDB:
         """
         )
 
+        # Migration: Add name column to existing databases
+        cursor.execute("PRAGMA table_info(clipboard_items)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "name" not in columns:
+            cursor.execute("ALTER TABLE clipboard_items ADD COLUMN name TEXT")
+            logging.info("Added name column to existing database")
+            # Auto-populate names for files
+            self._migrate_populate_file_names()
+
+        # Migration: Update FTS table to include name column
+        # Check if FTS table needs migration by trying to query the name column
+        try:
+            cursor.execute("SELECT name FROM clipboard_fts LIMIT 1")
+        except Exception:
+            # FTS table doesn't have name column, need to rebuild
+            logging.info("Migrating FTS table to include name column")
+            cursor.execute("DROP TABLE IF EXISTS clipboard_fts")
+            cursor.execute(
+                """
+                CREATE VIRTUAL TABLE clipboard_fts
+                USING fts5(content, name, tokenize="unicode61 separators './:?=&#@'")
+                """
+            )
+            # Rebuild FTS index from existing data
+            cursor.execute(
+                """
+                INSERT INTO clipboard_fts (rowid, content, name)
+                SELECT id,
+                       CASE WHEN type IN ('text', 'url') THEN data ELSE '' END,
+                       COALESCE(name, '')
+                FROM clipboard_items
+                """
+            )
+            logging.info("FTS table migration complete")
+            self.conn.commit()
+
         # Create recently_pasted table
         cursor.execute(
             """
@@ -208,8 +244,33 @@ class ClipboardDB:
             self.conn.commit()
             logging.info(f"Calculated hashes for {len(items)} existing items")
 
+    def _migrate_populate_file_names(self):
+        """Auto-populate names for existing file items"""
+        import json
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, type, data FROM clipboard_items WHERE type = 'file' AND name IS NULL")
+        items = cursor.fetchall()
+
+        for row in items:
+            item_id, item_type, data = row["id"], row["type"], row["data"]
+            # Extract filename from file metadata
+            try:
+                separator = b'\n---FILE_CONTENT---\n'
+                if separator in data:
+                    metadata_bytes, _ = data.split(separator, 1)
+                    metadata = json.loads(metadata_bytes.decode('utf-8'))
+                    filename = metadata.get('filename', metadata.get('name', ''))
+                    if filename:
+                        cursor.execute("UPDATE clipboard_items SET name = ? WHERE id = ?", (filename, item_id))
+            except Exception as e:
+                logging.warning(f"Could not extract filename for item {item_id}: {e}")
+
+        if items:
+            self.conn.commit()
+            logging.info(f"Populated names for {len(items)} existing file items")
+
     def add_item(
-        self, item_type: str, data: bytes, timestamp: str = None, thumbnail: bytes = None, data_hash: str = None
+        self, item_type: str, data: bytes, timestamp: str = None, thumbnail: bytes = None, data_hash: str = None, name: str = None
     ) -> int:
         """
         Add a clipboard item to the database
@@ -220,6 +281,7 @@ class ClipboardDB:
             timestamp: ISO format timestamp (defaults to now)
             thumbnail: Optional thumbnail data for images
             data_hash: Optional pre-calculated hash (will be calculated if not provided)
+            name: Optional custom name for the item
 
         Returns:
             The ID of the inserted item
@@ -234,10 +296,10 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash, name)
+            VALUES (?, ?, ?, ?, ?, ?)
         """,
-            (timestamp, item_type, data, thumbnail, data_hash),
+            (timestamp, item_type, data, thumbnail, data_hash, name),
         )
         item_id = cursor.lastrowid
 
@@ -247,10 +309,10 @@ class ClipboardDB:
                 text_content = data.decode("utf-8")
                 cursor.execute(
                     """
-                    INSERT INTO clipboard_fts (rowid, content)
-                    VALUES (?, ?)
+                    INSERT INTO clipboard_fts (rowid, content, name)
+                    VALUES (?, ?, ?)
                     """,
-                    (item_id, text_content),
+                    (item_id, text_content, name if name else ''),
                 )
             except Exception as e:
                 logging.warning(f"Failed to index text item {item_id} in FTS: {e}")
@@ -276,27 +338,131 @@ class ClipboardDB:
         row = cursor.fetchone()
         return row["count"] > 0
 
-    def get_items(self, limit: int = 100, offset: int = 0) -> List[Dict]:
+    def get_item_by_hash(self, data_hash: str) -> Optional[int]:
         """
-        Get clipboard items (newest first)
+        Get item ID by hash
+
+        Args:
+            data_hash: SHA256 hash to look up
+
+        Returns:
+            Item ID if found, None otherwise
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM clipboard_items WHERE hash = ? ORDER BY id DESC LIMIT 1", (data_hash,))
+        row = cursor.fetchone()
+        return row["id"] if row else None
+
+    def update_timestamp(self, item_id: int, new_timestamp: str = None) -> bool:
+        """
+        Update the timestamp of an existing item
+
+        Args:
+            item_id: ID of the item to update
+            new_timestamp: New timestamp (defaults to now)
+
+        Returns:
+            True if updated, False otherwise
+        """
+        if new_timestamp is None:
+            new_timestamp = datetime.now().isoformat()
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE clipboard_items
+            SET timestamp = ?
+            WHERE id = ?
+            """,
+            (new_timestamp, item_id),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def get_items(self, limit: int = 100, offset: int = 0, sort_order: str = "DESC", filters: List[str] = None) -> List[Dict]:
+        """
+        Get clipboard items (sorted by timestamp)
 
         Args:
             limit: Maximum number of items to return
             offset: Number of items to skip
+            sort_order: "DESC" for newest first, "ASC" for oldest first
+            filters: List of filter strings (e.g., ["text", "image", ".pdf", "MyTag"])
 
         Returns:
             List of items as dicts with 'id', 'timestamp', 'type', 'data', 'thumbnail', 'tags'
         """
         cursor = self.conn.cursor()
-        cursor.execute(
-            """
+        # Validate sort_order to prevent SQL injection
+        if sort_order not in ["DESC", "ASC"]:
+            sort_order = "DESC"
+
+        # Build WHERE clause from filters
+        where_clauses = []
+        query_params = []
+
+        if filters:
+            # Separate filters into categories
+            type_filters = []
+            tag_filters = []
+
+            for f in filters:
+                if f in ["text", "image", "url", "file"]:
+                    # Content type filters
+                    if f == "text":
+                        type_filters.append("type = 'text'")
+                    elif f == "image":
+                        type_filters.append("(type LIKE 'image/%' OR type = 'screenshot')")
+                    elif f == "url":
+                        type_filters.append("type = 'url'")
+                    elif f == "file":
+                        type_filters.append("type = 'file'")
+                elif f.startswith("."):
+                    # File extension filter
+                    type_filters.append("type LIKE ?")
+                    query_params.append(f"%{f}%")
+                else:
+                    # Custom tag filter
+                    tag_filters.append(f)
+
+            # Combine type filters with OR
+            if type_filters:
+                where_clauses.append(f"({' OR '.join(type_filters)})")
+
+            # Handle tag filters
+            if tag_filters:
+                # Build subquery for tags
+                tag_placeholders = ",".join("?" * len(tag_filters))
+                where_clauses.append(f"""id IN (
+                    SELECT item_id FROM item_tags
+                    WHERE tag_id IN (
+                        SELECT id FROM tags WHERE name IN ({tag_placeholders})
+                    )
+                )""")
+                query_params.extend(tag_filters)
+
+        # Build final query
+        where_clause = ""
+        if where_clauses:
+            where_clause = "WHERE " + " AND ".join(where_clauses)
+
+        query = f"""
             SELECT id, timestamp, type, data, thumbnail
             FROM clipboard_items
-            ORDER BY id DESC
+            {where_clause}
+            ORDER BY timestamp {sort_order}
             LIMIT ? OFFSET ?
-        """,
-            (limit, offset),
-        )
+        """
+
+        query_params.extend([limit, offset])
+
+        # Debug logging
+        import logging
+        logging.info(f"[FILTER DB] Filters: {filters}")
+        logging.info(f"[FILTER DB] WHERE clause: {where_clause}")
+        logging.info(f"[FILTER DB] Query params: {query_params}")
+
+        cursor.execute(query, tuple(query_params))
 
         items = []
         for row in cursor.fetchall():
@@ -359,6 +525,26 @@ class ClipboardDB:
         self.conn.commit()
         return cursor.rowcount > 0
 
+    def update_item_name(self, item_id: int, name: str) -> bool:
+        """Update the name of an item"""
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE clipboard_items SET name = ? WHERE id = ?", (name if name else None, item_id))
+
+        # Also update FTS table if this is a text item
+        cursor.execute("SELECT type FROM clipboard_items WHERE id = ?", (item_id,))
+        row = cursor.fetchone()
+        if row and row["type"] == "text":
+            try:
+                cursor.execute(
+                    "UPDATE clipboard_fts SET name = ? WHERE rowid = ?",
+                    (name if name else '', item_id)
+                )
+            except Exception as e:
+                logging.warning(f"Failed to update FTS name for item {item_id}: {e}")
+
+        self.conn.commit()
+        return cursor.rowcount > 0
+
     def clear_all(self):
         """Clear all items from database"""
         cursor = self.conn.cursor()
@@ -415,20 +601,25 @@ class ClipboardDB:
         )
         return pasted_id
 
-    def get_recently_pasted(self, limit: int = 100, offset: int = 0) -> List[Dict]:
+    def get_recently_pasted(self, limit: int = 100, offset: int = 0, sort_order: str = "DESC") -> List[Dict]:
         """
-        Get recently pasted items (newest first) with JOIN to clipboard_items
+        Get recently pasted items (sorted by pasted timestamp) with JOIN to clipboard_items
 
         Args:
             limit: Maximum number of items to return
             offset: Number of items to skip
+            sort_order: "DESC" for newest first, "ASC" for oldest first
 
         Returns:
             List of pasted items with full clipboard item data
         """
         cursor = self.conn.cursor()
+        # Validate sort_order to prevent SQL injection
+        if sort_order not in ["DESC", "ASC"]:
+            sort_order = "DESC"
+
         cursor.execute(
-            """
+            f"""
             SELECT
                 rp.id as paste_id,
                 rp.pasted_timestamp,
@@ -439,7 +630,7 @@ class ClipboardDB:
                 ci.thumbnail
             FROM recently_pasted rp
             INNER JOIN clipboard_items ci ON rp.clipboard_item_id = ci.id
-            ORDER BY rp.pasted_timestamp DESC
+            ORDER BY rp.pasted_timestamp {sort_order}
             LIMIT ? OFFSET ?
         """,
             (limit, offset),
@@ -492,6 +683,7 @@ class ClipboardDB:
                 ci.type,
                 ci.data,
                 ci.thumbnail,
+                ci.name,
                 -fts.rank as relevance
             FROM clipboard_fts fts
             INNER JOIN clipboard_items ci ON fts.rowid = ci.id
@@ -511,6 +703,7 @@ class ClipboardDB:
                     "type": row["type"],
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
+                    "name": row["name"],
                     "relevance": row["relevance"],
                 }
             )

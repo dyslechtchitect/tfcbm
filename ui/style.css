@@ -126,3 +126,32 @@ button.pill image {
 button.pill label {
     font-weight: 500;
 }
+
+/* Header bar styling - yellow-green background */
+.tfcbm-header {
+    background: linear-gradient(to right, #9ACD32, #7FBA00); /* Yellow-green gradient */
+    color: white;
+}
+
+/* Title styling - white and bold */
+.tfcbm-title {
+    color: white;
+    font-weight: 900; /* Extra bold/black */
+    font-size: 1.3em;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Subtle shadow for depth */
+}
+
+/* Sort toggle button - cute and subtle */
+button.sort-toggle {
+    opacity: 0.7;
+    transition: opacity 0.2s ease-in-out, transform 0.1s ease-in-out;
+}
+
+button.sort-toggle:hover {
+    opacity: 1;
+    transform: scale(1.1); /* Slight bounce effect */
+}
+
+button.sort-toggle:active {
+    transform: scale(0.95);
+}
