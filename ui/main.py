@@ -86,6 +86,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.set_vexpand(False)
         self.set_hexpand(True)
 
+        # Add drop target for receiving tags
+        drop_target = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.COPY)
+        drop_target.connect("drop", self._on_tag_drop)
+        card_frame.add_controller(drop_target)
+
         # Add click gesture for single click (copy) and double click (open full view)
         click_gesture = Gtk.GestureClick.new()
         click_gesture.connect("released", self._on_card_clicked)
@@ -173,7 +178,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Manage Tags button (with event controller to stop propagation)
         tags_button = Gtk.Button()
-        tags_button.set_icon_name("tag-symbolic")
+        tags_button.set_icon_name("bookmark-new-symbolic")
         tags_button.add_css_class("flat")
         tags_button.set_tooltip_text("Manage tags")
         self.tags_button = tags_button
@@ -487,6 +492,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 print(f"[UI] Error loading item tags: {e}")
 
         threading.Thread(target=run_load, daemon=True).start()
+
+    def _on_tag_drop(self, drop_target, value, x, y):
+        """Handle drop event for tags"""
+        tag_id = value
+        item_id = self.item.get("id")
+        self.window._on_tag_dropped_on_item(tag_id, item_id)
+        return True
 
     def _display_tags(self, tags):
         """Display tags in the tags box (small, semi-transparent)"""
@@ -1669,8 +1681,23 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.connect("close-request", self._on_close_request)
 
         # Set window properties
-        self.set_default_size(350, 800)
+        display = Gdk.Display.get_default()
+        if display:
+            monitors = display.get_monitors()
+            if monitors and monitors.get_n_items() > 0:
+                primary_monitor = monitors.get_item(0)
+                monitor_geometry = primary_monitor.get_geometry()
+                width = monitor_geometry.width // 3
+                self.set_default_size(width, 800)
+            else:
+                self.set_default_size(350, 800)
+        else:
+            self.set_default_size(350, 800)
+
         self.set_resizable(True)
+
+        # Position window to the left
+        self.position_window_left()
 
         # Pagination state
         self.copied_offset = 0
@@ -2064,6 +2091,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.tag_buttons = {}  # Dict of tag_id -> button widget
         self.filter_active = False  # Track if tag filtering is active
         self.filtered_items = []  # Filtered items when tag filter is active
+        self.dragged_tag = None
 
         # Position window to the left
         self.position_window_left()
@@ -2831,7 +2859,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Store active filters
         self.active_filters = set()
         self.file_extensions = []
-        self.system_filters_visible = False  # Start collapsed
+        self.system_filters_visible = True  # Start expanded
 
         # Main filter bar container
         self.filter_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -2864,8 +2892,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.filter_toggle_btn.set_size_request(32, 32)  # Give it explicit size
         self.filter_toggle_btn.set_visible(True)  # Ensure visible
         self.filter_toggle_btn.set_sensitive(True)  # Ensure enabled
-        self.filter_toggle_btn.connect("toggled", self._on_filter_toggle)
-        self.filter_bar.append(self.filter_toggle_btn)
+        # self.filter_bar.append(self.filter_toggle_btn)
 
         print("[DEBUG] Filter toggle button created and added to filter bar", flush=True)
 
@@ -2960,7 +2987,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Hide system filters initially
         if is_system:
-            flow_child.set_visible(False)
+            flow_child.set_visible(True)
 
         self.filter_box.append(flow_child)
 
@@ -3030,13 +3057,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Apply filters
         self._apply_filters()
 
-    def _on_filter_toggle(self, button):
-        """Toggle visibility of system filter chips"""
-        self.system_filters_visible = button.get_active()
 
-        # Show/hide system filter chips
-        for chip in self.system_filter_chips:
-            chip.set_visible(self.system_filters_visible)
 
     def _on_clear_filters(self, button):
         """Clear all active filters"""
@@ -3330,6 +3351,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
             css_provider.load_from_data(css_data.encode())
             btn.get_style_context().add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
+            # Add drag source for drag-and-drop
+            drag_source = Gtk.DragSource.new()
+            drag_source.set_actions(Gdk.DragAction.COPY)
+            drag_source.connect("prepare", self._on_tag_drag_prepare, tag)
+            drag_source.connect("drag-begin", self._on_tag_drag_begin)
+            btn.add_controller(drag_source)
+
             btn.connect("clicked", lambda b, tid=tag_id: self._on_tag_clicked(tid))
 
             self.tag_buttons[tag_id] = btn
@@ -3489,6 +3517,55 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         threading.Thread(target=run_load, daemon=True).start()
 
+    def _on_tag_drag_prepare(self, drag_source, x, y, tag):
+        """Prepare data for tag drag operation"""
+        self.dragged_tag = tag
+        # We'll pass the tag ID as a string
+        tag_id = str(tag.get("id"))
+        value = GObject.Value(str, tag_id)
+        return Gdk.ContentProvider.new_for_value(value)
+
+    def _on_tag_drag_begin(self, drag_source, drag):
+        """Called when tag drag begins - set drag icon"""
+        widget = drag_source.get_widget()
+        drag_source.set_icon(Gtk.WidgetPaintable.new(widget), 0, 0)
+    
+    def _on_tag_dropped_on_item(self, tag_id, item_id):
+        """Handle tag drop on an item"""
+        print(f"[UI] Tag {tag_id} dropped on item {item_id}")
+
+        def run_add_tag():
+            try:
+                async def add_tag():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {"action": "add_item_tag", "item_id": item_id, "tag_id": int(tag_id)}
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("success"):
+                            print(f"[UI] Successfully added tag {tag_id} to item {item_id}")
+                            # Find the row and reload its tags
+                            for row in self.copied_listbox:
+                                if row.item.get("id") == item_id:
+                                    row._load_item_tags()
+                                    break
+                            for row in self.pasted_listbox:
+                                if row.item.get("id") == item_id:
+                                    row._load_item_tags()
+                                    break
+                        else:
+                            print(f"[UI] Failed to add tag: {data.get('error', 'Unknown error')}")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(add_tag())
+            except Exception as e:
+                print(f"[UI] Error adding tag: {e}")
+
+        threading.Thread(target=run_add_tag, daemon=True).start()
+
     def _refresh_user_tags_display(self, tags):
         """Refresh the user tags display in the tag manager"""
         if hasattr(self, "user_tags_load_start_time"):
@@ -3547,6 +3624,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 delete_button.add_css_class("destructive-action")
                 delete_button.connect("clicked", lambda b, tid=tag_id: self._on_delete_tag(tid))
                 tag_row.add_suffix(delete_button)
+
+                # Add drag source for drag-and-drop
+                drag_source = Gtk.DragSource.new()
+                drag_source.set_actions(Gdk.DragAction.COPY)
+                drag_source.connect("prepare", self._on_tag_drag_prepare, tag)
+                drag_source.connect("drag-begin", self._on_tag_drag_begin)
+                tag_row.add_controller(drag_source)
 
                 self.user_tags_group.add(tag_row)
                 self._user_tag_rows.append(tag_row)
