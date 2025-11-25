@@ -444,6 +444,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         tags_box.set_margin_start(24)  # 12px card margin + 12px to align with content
         tags_box.set_margin_bottom(16)  # 8px card margin + 8px to align with content
         self.tags_display_box = tags_box
+        tags_gesture = Gtk.GestureClick.new()
+        tags_gesture.connect("released", lambda g, n, x, y: self._show_tags_popover())
+        tags_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        self.tags_display_box.add_controller(tags_gesture)
         overlay.add_overlay(tags_box)
 
         self.set_child(overlay)  # Set the overlay as the child of the row
