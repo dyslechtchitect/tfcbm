@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from settings import get_settings
+from ui.splash import SplashWindow
 import gi
 import argparse
 import asyncio
@@ -1726,25 +1727,50 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Create main box
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
-        # Header bar with settings and close buttons
-        header = Adw.HeaderBar()
+        self.header = Adw.HeaderBar()
+        self.header.add_css_class("tfcbm-header")
 
-        # Style the header bar with yellow-green background
-        header.add_css_class("tfcbm-header")
+        # Title stack
+        self.title_stack = Gtk.Stack()
+        self.header.set_title_widget(self.title_stack)
 
-        # Add custom title with white bold text
-        title_label = Gtk.Label(label="TFCBM")
-        title_label.add_css_class("title")
-        title_label.add_css_class("tfcbm-title")
-        header.set_title_widget(title_label)
+        self.title_label = Gtk.Label(label="TFCBM")
+        self.title_label.add_css_class("title")
+        self.title_label.add_css_class("tfcbm-title")
+        self.title_stack.add_named(self.title_label, "main")
 
-        # Settings button (placeholder for now)
+        self.settings_title_label = Gtk.Label(label="Settings")
+        self.settings_title_label.add_css_class("title")
+        self.settings_title_label.add_css_class("tfcbm-title")
+        self.title_stack.add_named(self.settings_title_label, "settings")
+
+        # Button stack
+        self.button_stack = Gtk.Stack()
+        self.header.pack_end(self.button_stack)
+
+        main_buttons = Gtk.Box()
+        info_button = Gtk.Button()
+        info_button.set_icon_name("help-about-symbolic")
+        info_button.add_css_class("flat")
+        info_button.connect("clicked", self._show_splash_screen)
+        main_buttons.append(info_button)
+
         settings_button = Gtk.Button()
         settings_button.set_icon_name("emblem-system-symbolic")
         settings_button.add_css_class("flat")
-        header.pack_end(settings_button)
+        settings_button.connect("clicked", self._show_settings_page)
+        main_buttons.append(settings_button)
+        self.button_stack.add_named(main_buttons, "main")
 
-        main_box.append(header)
+        settings_buttons = Gtk.Box()
+        back_button = Gtk.Button()
+        back_button.set_icon_name("go-previous-symbolic")
+        back_button.add_css_class("flat")
+        back_button.connect("clicked", self._show_tabs_page)
+        settings_buttons.append(back_button)
+        self.button_stack.add_named(settings_buttons, "settings")
+
+        main_box.append(self.header)
 
         # Search bar container
         search_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -1811,9 +1837,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
         tag_container.append(clear_btn)
         tag_frame.set_child(tag_container)
 
+        # Create a stack to manage main content (tabs vs settings)
+        self.main_stack = Gtk.Stack()
+        self.main_stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+
         # Create TabView for Recently Copied and Recently Pasted
         self.tab_view = Adw.TabView()
         self.tab_view.set_vexpand(True)
+        self.main_stack.add_named(self.tab_view, "tabs")
 
         # Prevent tabs from being closed by the user
         self.tab_view.connect("close-page", self._on_close_page)
@@ -1920,90 +1951,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_page.set_title("Recently Pasted")
         pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
 
-        # Tab 3: Settings
-        settings_scrolled = Gtk.ScrolledWindow()
-        settings_scrolled.set_vexpand(True)
-        settings_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        # Create settings page using PreferencesPage
-        settings_page = Adw.PreferencesPage()
-
-        # Display Settings Group
-        display_group = Adw.PreferencesGroup()
-        display_group.set_title("Display Settings")
-        display_group.set_description("Configure how clipboard items are displayed")
-
-        # Item Width setting
-        item_width_row = Adw.SpinRow()
-        item_width_row.set_title("Item Width")
-        item_width_row.set_subtitle("Width of clipboard item cards in pixels (50-1000)")
-        item_width_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.settings.item_width, lower=50, upper=1000, step_increment=10, page_increment=50, page_size=0
-            )
-        )
-        item_width_row.set_digits(0)
-        self.item_width_spin = item_width_row
-        display_group.add(item_width_row)
-
-        # Item Height setting
-        item_height_row = Adw.SpinRow()
-        item_height_row.set_title("Item Height")
-        item_height_row.set_subtitle("Height of clipboard item cards in pixels (50-1000)")
-        item_height_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.settings.item_height, lower=50, upper=1000, step_increment=10, page_increment=50, page_size=0
-            )
-        )
-        item_height_row.set_digits(0)
-        self.item_height_spin = item_height_row
-        display_group.add(item_height_row)
-
-        # Max Page Length setting
-        page_length_row = Adw.SpinRow()
-        page_length_row.set_title("Max Page Length")
-        page_length_row.set_subtitle("Maximum number of items to load per page (1-100)")
-        page_length_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.settings.max_page_length,
-                lower=1,
-                upper=100,
-                step_increment=1,
-                page_increment=10,
-                page_size=0,
-            )
-        )
-        page_length_row.set_digits(0)
-        self.page_length_spin = page_length_row
-        display_group.add(page_length_row)
-
-        settings_page.add(display_group)
-
-
-        # Actions Group (for Save button)
-        actions_group = Adw.PreferencesGroup()
-        actions_group.set_title("Actions")
-
-        # Create a button row for saving settings
-        save_row = Adw.ActionRow()
-        save_row.set_title("Save Settings")
-        save_row.set_subtitle("Apply changes and save to settings.yml")
-
-        save_button = Gtk.Button()
-        save_button.set_label("Apply & Save")
-        save_button.add_css_class("suggested-action")
-        save_button.set_valign(Gtk.Align.CENTER)
-        save_button.connect("clicked", self._on_save_settings)
-        save_row.add_suffix(save_button)
-
-        actions_group.add(save_row)
-        settings_page.add(actions_group)
-
-        settings_scrolled.set_child(settings_page)
-
-        settings_tab = self.tab_view.append(settings_scrolled)
-        settings_tab.set_title("Settings")
-        settings_tab.set_icon(Gio.ThemedIcon.new("preferences-system-symbolic"))
+        # Create settings page
+        settings_page = self._create_settings_page()
+        self.main_stack.add_named(settings_page, "settings")
 
         # Tab 4: Tag Manager
         tag_manager_scrolled = Gtk.ScrolledWindow()
@@ -2053,7 +2003,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         print(f"[DEBUG] Filter toggle button visible: {self.filter_toggle_btn.get_visible()}", flush=True)
         print(f"[DEBUG] Filter bar has {len(list(self.filter_bar))} children", flush=True)
 
-        main_box.append(self.tab_view)
+        main_box.append(self.main_stack)
 
         # Add tag filter at the bottom (footer)
         main_box.append(tag_frame)
@@ -2811,6 +2761,99 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         return False  # Don't repeat
 
+
+    def _show_splash_screen(self, button):
+        """Show the splash screen"""
+        splash = SplashWindow()
+        splash.set_transient_for(self)
+        splash.set_modal(True)
+        splash.show()
+
+    def _show_settings_page(self, button):
+        self.main_stack.set_visible_child_name("settings")
+        self.title_stack.set_visible_child_name("settings")
+        self.button_stack.set_visible_child_name("settings")
+
+    def _show_tabs_page(self, button):
+        self.main_stack.set_visible_child_name("tabs")
+        self.title_stack.set_visible_child_name("main")
+        self.button_stack.set_visible_child_name("main")
+
+    def _create_settings_page(self):
+        """Create the settings page"""
+        settings_page = Adw.PreferencesPage()
+
+        # Display Settings Group
+        display_group = Adw.PreferencesGroup()
+        display_group.set_title("Display Settings")
+        display_group.set_description("Configure how clipboard items are displayed")
+
+        # Item Width setting
+        item_width_row = Adw.SpinRow()
+        item_width_row.set_title("Item Width")
+        item_width_row.set_subtitle("Width of clipboard item cards in pixels (50-1000)")
+        item_width_row.set_adjustment(
+            Gtk.Adjustment.new(
+                value=self.settings.item_width, lower=50, upper=1000, step_increment=10, page_increment=50, page_size=0
+            )
+        )
+        item_width_row.set_digits(0)
+        self.item_width_spin = item_width_row
+        display_group.add(item_width_row)
+
+        # Item Height setting
+        item_height_row = Adw.SpinRow()
+        item_height_row.set_title("Item Height")
+        item_height_row.set_subtitle("Height of clipboard item cards in pixels (50-1000)")
+        item_height_row.set_adjustment(
+            Gtk.Adjustment.new(
+                value=self.settings.item_height, lower=50, upper=1000, step_increment=10, page_increment=50, page_size=0
+            )
+        )
+        item_height_row.set_digits(0)
+        self.item_height_spin = item_height_row
+        display_group.add(item_height_row)
+
+        # Max Page Length setting
+        page_length_row = Adw.SpinRow()
+        page_length_row.set_title("Max Page Length")
+        page_length_row.set_subtitle("Maximum number of items to load per page (1-100)")
+        page_length_row.set_adjustment(
+            Gtk.Adjustment.new(
+                value=self.settings.max_page_length,
+                lower=1,
+                upper=100,
+                step_increment=1,
+                page_increment=10,
+                page_size=0,
+            )
+        )
+        page_length_row.set_digits(0)
+        self.page_length_spin = page_length_row
+        display_group.add(page_length_row)
+
+        settings_page.add(display_group)
+
+        # Actions Group (for Save button)
+        actions_group = Adw.PreferencesGroup()
+        actions_group.set_title("Actions")
+
+        # Create a button row for saving settings
+        save_row = Adw.ActionRow()
+        save_row.set_title("Save Settings")
+        save_row.set_subtitle("Apply changes and save to settings.yml")
+
+        save_button = Gtk.Button()
+        save_button.set_label("Apply & Save")
+        save_button.add_css_class("suggested-action")
+        save_button.set_valign(Gtk.Align.CENTER)
+        save_button.connect("clicked", self._on_save_settings)
+        save_row.add_suffix(save_button)
+
+        actions_group.add(save_row)
+        settings_page.add(actions_group)
+
+        return settings_page
 
     def _on_save_settings(self, button):
         """Save settings changes to YAML file and apply them"""
