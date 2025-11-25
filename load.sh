@@ -47,6 +47,32 @@ if ! command -v npm &> /dev/null || ! command -v pip &> /dev/null; then
     echo "For Debian/Ubuntu: sudo apt install npm python3-pip"
 fi
 
+# Check and install xdotool (required for keyboard shortcut auto-paste feature)
+if ! command -v xdotool &> /dev/null && ! command -v ydotool &> /dev/null; then
+    echo ""
+    echo "Installing xdotool for keyboard shortcut auto-paste feature..."
+
+    # Detect package manager and install
+    if command -v dnf &> /dev/null; then
+        sudo dnf install -y xdotool
+    elif command -v apt &> /dev/null; then
+        sudo apt install -y xdotool
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -S --noconfirm xdotool
+    else
+        echo "WARNING: Could not detect package manager."
+        echo "Please manually install xdotool for full keyboard shortcut functionality."
+    fi
+
+    # Verify installation
+    if command -v xdotool &> /dev/null; then
+        echo "xdotool successfully installed!"
+    else
+        echo "WARNING: xdotool installation failed. Auto-paste feature will not work."
+    fi
+    echo ""
+fi
+
 # --- 2. Install GNOME Extension Dependencies ---
 echo ""
 echo "--> Installing GNOME extension dependencies..."
