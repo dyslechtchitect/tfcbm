@@ -155,3 +155,46 @@ button.sort-toggle:hover {
 button.sort-toggle:active {
     transform: scale(0.95);
 }
+
+/* Keyboard key styling - embossed and chiseled appearance */
+.keyboard-key {
+    background: linear-gradient(to bottom,
+        #fafafa 0%,      /* Very light top */
+        #f0f0f0 20%,     /* Light */
+        #e8e8e8 50%,     /* Mid */
+        #d8d8d8 80%,     /* Darker */
+        #c8c8c8 100%);   /* Darkest bottom */
+
+    border-top: 2px solid #ffffff;           /* Bright highlight on top */
+    border-left: 2px solid #e0e0e0;         /* Light on left */
+    border-right: 3px solid #a0a0a0;        /* Dark on right */
+    border-bottom: 4px solid #909090;       /* Darkest on bottom */
+    border-radius: 10px;
+
+    box-shadow:
+        /* Outer shadows for depth */
+        0 6px 0 #808080,                     /* Bottom edge - chiseled */
+        0 8px 12px rgba(0, 0, 0, 0.4),       /* Main drop shadow */
+
+        /* Inner shadows for embossing */
+        inset 0 2px 3px rgba(255, 255, 255, 0.8),  /* Top inner highlight */
+        inset 0 -3px 5px rgba(0, 0, 0, 0.15),      /* Bottom inner shadow */
+        inset 2px 0 2px rgba(255, 255, 255, 0.3),  /* Left inner highlight */
+        inset -2px 0 2px rgba(0, 0, 0, 0.1);       /* Right inner shadow */
+
+    padding: 0;
+    min-width: 70px;
+    min-height: 70px;
+    transition: all 0.1s ease-in-out;
+}
+
+.keyboard-key label {
+    color: #2a2a2a;
+    font-weight: 700;
+    /* Chiseled text effect - looks carved into the key */
+    text-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.9),    /* White highlight below */
+        0 -1px 0 rgba(0, 0, 0, 0.2),         /* Dark shadow above */
+        1px 0 0 rgba(255, 255, 255, 0.4),    /* Right highlight */
+        -1px 0 0 rgba(0, 0, 0, 0.1);         /* Left shadow */
+}

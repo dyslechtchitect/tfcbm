@@ -7,7 +7,7 @@ import gi
 from pathlib import Path
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GdkPixbuf, Gdk
+from gi.repository import Gtk, GdkPixbuf, Gdk, GLib
 
 # Version information
 VERSION = "1.0.0"
@@ -96,17 +96,44 @@ class AboutWindow(Gtk.Window):
         separator2.set_margin_bottom(10)
         content_box.append(separator2)
 
-        # Haiku
-        haiku_label = Gtk.Label()
-        haiku_label.set_markup(
-            "<i>Copy, paste, remember—\n"
-            "Your clipboard never forgets now,\n"
-            "F*cking brilliant tool.</i>"
+        # Keyboard shortcut section
+        shortcut_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        shortcut_box.set_halign(Gtk.Align.CENTER)
+
+        # Keys container
+        keys_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        keys_box.set_halign(Gtk.Align.CENTER)
+
+        # Ctrl key
+        ctrl_key = self._create_key_widget("Ctrl")
+        keys_box.append(ctrl_key)
+        self.ctrl_key = ctrl_key  # Store for animation
+
+        # Plus sign
+        plus_label = Gtk.Label(label="+")
+        plus_label.add_css_class("title-1")
+        keys_box.append(plus_label)
+
+        # Backtick/Tilde key
+        backtick_key = self._create_key_widget("`\n~", is_dual=True)
+        keys_box.append(backtick_key)
+        self.backtick_key = backtick_key  # Store for animation
+
+        shortcut_box.append(keys_box)
+
+        # Instruction text
+        instruction_label = Gtk.Label()
+        instruction_label.set_markup(
+            "<b>Hit Ctrl + ` to bring TFCBM to life.</b>"
         )
-        haiku_label.set_wrap(True)
-        haiku_label.set_justify(Gtk.Justification.CENTER)
-        haiku_label.add_css_class("dim-label")
-        content_box.append(haiku_label)
+        instruction_label.set_justify(Gtk.Justification.CENTER)
+        shortcut_box.append(instruction_label)
+
+        content_box.append(shortcut_box)
+
+        # Start animation
+        self.animation_state = 0
+        GLib.timeout_add(100, self._animate_keys)
 
         main_box.append(content_box)
 
@@ -129,6 +156,55 @@ class AboutWindow(Gtk.Window):
         click_gesture = Gtk.GestureClick.new()
         click_gesture.connect("released", self._on_content_clicked)
         content_box.add_controller(click_gesture)
+
+    def _create_key_widget(self, text, is_dual=False):
+        """Create a keyboard key widget"""
+        # Frame for the key
+        key_frame = Gtk.Frame()
+        key_frame.add_css_class("keyboard-key")
+
+        # Inner box with padding - vertically centered
+        key_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        key_box.set_margin_top(16)
+        key_box.set_margin_bottom(16)
+        key_box.set_margin_start(24)
+        key_box.set_margin_end(24)
+        key_box.set_valign(Gtk.Align.CENTER)
+
+        # Label - vertically centered
+        key_label = Gtk.Label(label=text)
+        key_label.set_valign(Gtk.Align.CENTER)
+        key_label.set_halign(Gtk.Align.CENTER)
+        if is_dual:
+            key_label.add_css_class("title-2")
+        else:
+            key_label.add_css_class("title-3")
+        key_box.append(key_label)
+
+        key_frame.set_child(key_box)
+        return key_frame
+
+    def _animate_keys(self):
+        """Animate the keyboard keys with a pulsing effect"""
+        import math
+
+        # Increment animation state
+        self.animation_state += 1
+
+        # Calculate scale using sine wave for smooth pulsing
+        # Period of ~20 iterations (2 seconds at 100ms intervals)
+        scale = 1.0 + 0.1 * math.sin(self.animation_state * 0.3)
+
+        # Apply scaling effect by adjusting opacity
+        # We'll pulse between 0.7 and 1.0 opacity
+        opacity = 0.85 + 0.15 * math.sin(self.animation_state * 0.3)
+
+        # Apply opacity to keys
+        self.ctrl_key.set_opacity(opacity)
+        self.backtick_key.set_opacity(opacity)
+
+        # Continue animation
+        return True
 
     def _on_content_clicked(self, gesture, n_press, x, y):
         """Close window when content area is clicked"""
