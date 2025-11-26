@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from settings import get_settings
 from ui.splash import SplashWindow
+from ui.about import AboutWindow
 import gi
 import argparse
 import asyncio
@@ -2763,11 +2764,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
 
     def _show_splash_screen(self, button):
-        """Show the splash screen"""
-        splash = SplashWindow()
-        splash.set_transient_for(self)
-        splash.set_modal(True)
-        splash.show()
+        """Show the about dialog"""
+        about = AboutWindow()
+        about.set_transient_for(self)
+        about.set_modal(True)
+        about.show()
 
     def _show_settings_page(self, button):
         self.main_stack.set_visible_child_name("settings")
