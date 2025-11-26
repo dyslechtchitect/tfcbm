@@ -1300,7 +1300,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         dialog = Adw.Window(modal=True, transient_for=window)
         dialog.set_title("Full Clipboard Item")
-        dialog.set_default_size(600, 400)
+        # Larger size for folder browsing
+        dialog.set_default_size(800, 600)
         dialog.add_css_class("full-item-dialog")
 
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -1322,19 +1323,21 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Button box for save, delete, and close
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
 
-        save_button = Gtk.Button()
-        save_button.set_icon_name("document-save-symbolic")
-        save_button.set_tooltip_text("Save to file")
-        save_button.connect("clicked", lambda btn: self._do_save())
-        button_box.append(save_button)
+        # Only show save/delete buttons for text and images, not for file/folder items
+        if item_type != "file":
+            save_button = Gtk.Button()
+            save_button.set_icon_name("document-save-symbolic")
+            save_button.set_tooltip_text("Save to file")
+            save_button.connect("clicked", lambda btn: self._do_save())
+            button_box.append(save_button)
 
-        delete_button = Gtk.Button()
-        delete_button.set_icon_name("user-trash-symbolic")
-        delete_button.set_tooltip_text("Delete item")
-        delete_button.connect("clicked", lambda btn: self._on_delete_clicked(btn, dialog))
-        button_box.append(delete_button)
+            delete_button = Gtk.Button()
+            delete_button.set_icon_name("user-trash-symbolic")
+            delete_button.set_tooltip_text("Delete item")
+            delete_button.connect("clicked", lambda btn: self._on_delete_clicked(btn, dialog))
+            button_box.append(delete_button)
 
-        # Close button
+        # Close button (always shown)
         close_button = Gtk.Button()
         close_button.set_icon_name("window-close-symbolic")
         close_button.set_tooltip_text("Close")
@@ -1439,6 +1442,82 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     GLib.idle_add(lambda: spinner.set_visible(False))
 
             threading.Thread(target=fetch_and_display_full_image, daemon=True).start()
+
+        elif item_type == "file":
+            # Handle file/folder items
+            file_metadata = self.item.get("content", {})
+            is_directory = file_metadata.get("is_directory", False)
+            original_path = file_metadata.get("original_path", "")
+
+            if is_directory and original_path and Path(original_path).exists():
+                # Show folder contents with FileChooserWidget
+                folder_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+
+                # Info label
+                info_label = Gtk.Label()
+                folder_name = file_metadata.get("name", "Folder")
+                info_label.set_markup(f"<b>Folder:</b> {GLib.markup_escape_text(folder_name)}")
+                info_label.set_halign(Gtk.Align.START)
+                folder_box.append(info_label)
+
+                # Path label
+                path_label = Gtk.Label(label=original_path)
+                path_label.add_css_class("caption")
+                path_label.add_css_class("dim-label")
+                path_label.set_halign(Gtk.Align.START)
+                path_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+                folder_box.append(path_label)
+
+                # FileChooserWidget to show folder tree
+                file_chooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
+                file_chooser.set_current_folder(Gio.File.new_for_path(original_path))
+                file_chooser.set_vexpand(True)
+                file_chooser.set_hexpand(True)
+
+                folder_box.append(file_chooser)
+                content_scrolled_window.set_child(folder_box)
+            else:
+                # Regular file or folder doesn't exist
+                file_info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+                file_info_box.set_valign(Gtk.Align.CENTER)
+                file_info_box.set_halign(Gtk.Align.CENTER)
+
+                file_name = file_metadata.get("name", "Unknown file")
+                name_label = Gtk.Label()
+                name_label.set_markup(f"<b>{GLib.markup_escape_text(file_name)}</b>")
+                file_info_box.append(name_label)
+
+                if original_path:
+                    if not Path(original_path).exists():
+                        error_label = Gtk.Label(label="File/folder no longer exists at original location")
+                        error_label.add_css_class("dim-label")
+                        file_info_box.append(error_label)
+
+                    path_label = Gtk.Label(label=original_path)
+                    path_label.add_css_class("caption")
+                    path_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+                    path_label.set_max_width_chars(50)
+                    file_info_box.append(path_label)
+
+                # File metadata details
+                details_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+                details_box.set_margin_top(12)
+
+                file_size = file_metadata.get("size", 0)
+                if file_size > 0:
+                    size_mb = file_size / (1024 * 1024)
+                    size_label = Gtk.Label(label=f"Size: {size_mb:.2f} MB")
+                    size_label.add_css_class("caption")
+                    details_box.append(size_label)
+
+                mime_type = file_metadata.get("mime_type", "")
+                if mime_type:
+                    type_label = Gtk.Label(label=f"Type: {mime_type}")
+                    type_label.add_css_class("caption")
+                    details_box.append(type_label)
+
+                file_info_box.append(details_box)
+                content_scrolled_window.set_child(file_info_box)
 
         main_box.append(content_scrolled_window)
 
@@ -3136,8 +3215,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Add system content type filters (initially hidden)
         self._add_system_filters()
 
-        # Load file extensions
-        self._load_file_extensions()
+        # Load file extensions - DISABLED to only show basic filters
+        # self._load_file_extensions()
 
     def _add_system_filters(self):
         """Add system content type filter buttons"""
