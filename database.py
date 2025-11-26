@@ -5,6 +5,7 @@ Handles SQLite storage of clipboard items
 """
 
 import hashlib
+import json
 import logging
 import random
 import sqlite3
@@ -303,7 +304,7 @@ class ClipboardDB:
         )
         item_id = cursor.lastrowid
 
-        # If it's a text item, also insert into FTS for search
+        # Insert into FTS for searchability
         if item_type == "text":
             try:
                 text_content = data.decode("utf-8")
@@ -316,6 +317,26 @@ class ClipboardDB:
                 )
             except Exception as e:
                 logging.warning(f"Failed to index text item {item_id} in FTS: {e}")
+        elif item_type == "file":
+            # Index file items with their file name
+            try:
+                # Extract file name from metadata
+                separator = b'\n---FILE_CONTENT---\n'
+                if separator in data:
+                    metadata_bytes, _ = data.split(separator, 1)
+                    metadata = json.loads(metadata_bytes.decode("utf-8"))
+                    file_name = metadata.get("name", "")
+
+                    # Index with file name as content and custom name (if any)
+                    cursor.execute(
+                        """
+                        INSERT INTO clipboard_fts (rowid, content, name)
+                        VALUES (?, ?, ?)
+                        """,
+                        (item_id, file_name, name if name else ''),
+                    )
+            except Exception as e:
+                logging.warning(f"Failed to index file item {item_id} in FTS: {e}")
 
         self.conn.commit()
         logging.info(
@@ -526,6 +547,12 @@ class ClipboardDB:
     def delete_item(self, item_id: int) -> bool:
         """Delete an item by ID"""
         cursor = self.conn.cursor()
+        # Delete from FTS first (if exists)
+        try:
+            cursor.execute("DELETE FROM clipboard_fts WHERE rowid = ?", (item_id,))
+        except Exception as e:
+            logging.warning(f"Failed to delete FTS entry for item {item_id}: {e}")
+        # Delete from main table
         cursor.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
         self.conn.commit()
         return cursor.rowcount > 0
@@ -535,10 +562,10 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute("UPDATE clipboard_items SET name = ? WHERE id = ?", (name if name else None, item_id))
 
-        # Also update FTS table if this is a text item
+        # Also update FTS table if this is a text or file item
         cursor.execute("SELECT type FROM clipboard_items WHERE id = ?", (item_id,))
         row = cursor.fetchone()
-        if row and row["type"] == "text":
+        if row and (row["type"] == "text" or row["type"] == "file"):
             try:
                 cursor.execute(
                     "UPDATE clipboard_fts SET name = ? WHERE rowid = ?",
@@ -553,6 +580,12 @@ class ClipboardDB:
     def clear_all(self):
         """Clear all items from database"""
         cursor = self.conn.cursor()
+        # Clear FTS table first
+        try:
+            cursor.execute("DELETE FROM clipboard_fts")
+        except Exception as e:
+            logging.warning(f"Failed to clear FTS table: {e}")
+        # Clear main table
         cursor.execute("DELETE FROM clipboard_items")
         self.conn.commit()
 
