@@ -18,6 +18,7 @@ import base64
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -37,14 +38,37 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(leve
 logger = logging.getLogger("TFCBM.UI")
 
 
+def highlight_text(text, query):
+    """
+    Highlight matching text with yellow background using Pango markup.
+    Returns escaped markup with highlights.
+    """
+    if not query or not text:
+        # Escape the text for markup but don't highlight
+        return GLib.markup_escape_text(text)
+
+    # Escape the text first
+    escaped_text = GLib.markup_escape_text(text)
+    escaped_query = re.escape(query)
+
+    # Use regex to find all matches (case-insensitive)
+    def replace_match(match):
+        return f'<span background="yellow" foreground="black">{match.group(0)}</span>'
+
+    # Highlight all matches
+    highlighted = re.sub(f'({escaped_query})', replace_match, escaped_text, flags=re.IGNORECASE)
+    return highlighted
+
+
 class ClipboardItemRow(Gtk.ListBoxRow):
     """A row displaying a single clipboard item (text or image)"""
 
-    def __init__(self, item, window, show_pasted_time=False):
+    def __init__(self, item, window, show_pasted_time=False, search_query=""):
         super().__init__()
         self.item = item
         self.window = window
         self.show_pasted_time = show_pasted_time
+        self.search_query = search_query
         self._last_paste_time = 0  # Track last paste to prevent duplicates
 
         # Get item dimensions from settings
@@ -242,7 +266,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             text_box.append(open_quote)
 
             # Actual content with proper width constraint
-            content_label = Gtk.Label(label=item["content"])
+            content_label = Gtk.Label()
+            # Apply highlighting if search query exists
+            if self.search_query:
+                highlighted_content = highlight_text(item["content"], self.search_query)
+                content_label.set_markup(highlighted_content)
+            else:
+                content_label.set_text(item["content"])
             content_label.set_wrap(True)
             content_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
             content_label.set_ellipsize(Pango.EllipsizeMode.END)  # Show ... at end
@@ -353,7 +383,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     info_box.set_valign(Gtk.Align.CENTER)
 
                     # File name (bold, larger)
-                    name_label = Gtk.Label(label=file_name)
+                    name_label = Gtk.Label()
+                    # Apply highlighting if search query exists
+                    if self.search_query:
+                        highlighted_name = highlight_text(file_name, self.search_query)
+                        name_label.set_markup(highlighted_name)
+                    else:
+                        name_label.set_text(file_name)
                     name_label.set_halign(Gtk.Align.START)
                     name_label.add_css_class("title-4")
                     name_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
@@ -524,7 +560,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             tag_color = tag.get("color", "#9a9996")
 
             # Create tag label with just colored text (no background)
-            label = Gtk.Label(label=tag_name)
+            label = Gtk.Label()
+            # Apply highlighting if search query exists
+            if self.search_query:
+                highlighted_tag = highlight_text(tag_name, self.search_query)
+                label.set_markup(highlighted_tag)
+            else:
+                label.set_text(tag_name)
 
             # Apply colored text styling (no background)
             css_provider = Gtk.CssProvider()
@@ -2320,7 +2362,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add items (already in reverse order from backend)
         for item in history:
-            row = ClipboardItemRow(item, self)
+            row = ClipboardItemRow(item, self, search_query=self.search_query)
             self.copied_listbox.prepend(row)  # Add to top
 
         return False  # Don't repeat
@@ -2336,7 +2378,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add items (database returns DESC order, append to maintain it)
         for item in history:
-            row = ClipboardItemRow(item, self, show_pasted_time=True)
+            row = ClipboardItemRow(item, self, show_pasted_time=True, search_query=self.search_query)
             self.pasted_listbox.append(row)  # Append to maintain DESC order
 
         return False  # Don't repeat
@@ -2362,7 +2404,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add items (database returns DESC order, append to maintain it)
         for item in items:
-            row = ClipboardItemRow(item, self)
+            row = ClipboardItemRow(item, self, search_query=self.search_query)
             self.copied_listbox.append(row)  # Append to maintain DESC order
 
         # Update status label
@@ -2391,7 +2433,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add items (database returns DESC order, append to maintain it)
         for item in items:
-            row = ClipboardItemRow(item, self, show_pasted_time=True)
+            row = ClipboardItemRow(item, self, show_pasted_time=True, search_query=self.search_query)
             self.pasted_listbox.append(row)  # Append to maintain DESC order
 
         # Update status label
@@ -2741,7 +2783,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             self.pasted_loading = False
 
         for item in items:
-            row = ClipboardItemRow(item, self, show_pasted_time=(list_type == "pasted"))
+            row = ClipboardItemRow(item, self, show_pasted_time=(list_type == "pasted"), search_query=self.search_query)
             listbox.append(row)
 
         # Count current rows in listbox
@@ -3280,7 +3322,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Display search results or empty message
         if items:
             for item in items:
-                row = ClipboardItemRow(item, self, show_pasted_time=show_pasted_time)
+                row = ClipboardItemRow(item, self, show_pasted_time=show_pasted_time, search_query=self.search_query)
                 listbox.append(row)
             status_label.set_label(f"Search: {len(items)} results for '{query}'")
         else:
