@@ -2835,6 +2835,27 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         settings_page.add(display_group)
 
+        # Storage Settings Group
+        storage_group = Adw.PreferencesGroup()
+        storage_group.set_title("Storage")
+        storage_group.set_description("Database storage information")
+
+        # Database size row
+        db_size_row = Adw.ActionRow()
+        db_size_row.set_title("Database Size")
+
+        # Calculate database size
+        db_path = Path.home() / ".local" / "share" / "tfcbm" / "clipboard.db"
+        if db_path.exists():
+            size_bytes = os.path.getsize(db_path)
+            size_mb = size_bytes / (1024 * 1024)  # Convert to MB
+            db_size_row.set_subtitle(f"{size_mb:.2f} MB")
+        else:
+            db_size_row.set_subtitle("Database not found")
+
+        storage_group.add(db_size_row)
+        settings_page.add(storage_group)
+
         # Actions Group (for Save button)
         actions_group = Adw.PreferencesGroup()
         actions_group.set_title("Actions")
