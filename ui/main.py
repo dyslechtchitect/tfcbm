@@ -1774,11 +1774,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
         main_box.append(self.header)
 
         # Search bar container
-        search_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        search_container.set_margin_start(8)
-        search_container.set_margin_end(8)
-        search_container.set_margin_top(8)
-        search_container.set_margin_bottom(4)
+        self.search_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.search_container.set_margin_start(8)
+        self.search_container.set_margin_end(8)
+        self.search_container.set_margin_top(8)
+        self.search_container.set_margin_bottom(4)
 
         # Search entry
         self.search_entry = Gtk.SearchEntry()
@@ -1786,9 +1786,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.search_entry.set_placeholder_text("Search clipboard items...")
         self.search_entry.connect("search-changed", self._on_search_changed)
         self.search_entry.connect("activate", self._on_search_activate)
-        search_container.append(self.search_entry)
+        self.search_container.append(self.search_entry)
 
-        main_box.append(search_container)
+        main_box.append(self.search_container)
 
         # Tag filter area
         tag_frame = Gtk.Frame()
@@ -1851,9 +1851,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.tab_view.connect("close-page", self._on_close_page)
 
         # Tab bar
-        tab_bar = Adw.TabBar()
-        tab_bar.set_view(self.tab_view)
-        main_box.append(tab_bar)
+        self.tab_bar = Adw.TabBar()
+        self.tab_bar.set_view(self.tab_view)
+        main_box.append(self.tab_bar)
 
         # Create filter bar (will be added to toolbar later)
         self._create_filter_bar()
@@ -2774,11 +2774,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.main_stack.set_visible_child_name("settings")
         self.title_stack.set_visible_child_name("settings")
         self.button_stack.set_visible_child_name("settings")
+        # Hide tab bar, filter bar, and search when in settings
+        self.tab_bar.set_visible(False)
+        self.filter_bar.set_visible(False)
+        self.search_container.set_visible(False)
 
     def _show_tabs_page(self, button):
         self.main_stack.set_visible_child_name("tabs")
         self.title_stack.set_visible_child_name("main")
         self.button_stack.set_visible_child_name("main")
+        # Show tab bar and search when returning to main view
+        self.tab_bar.set_visible(True)
+        self.search_container.set_visible(True)
+        # Filter bar visibility is handled by tab selection logic
 
     def _create_settings_page(self):
         """Create the settings page"""
