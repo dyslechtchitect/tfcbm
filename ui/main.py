@@ -158,6 +158,27 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             # Removed time_label.set_hexpand(True)
             header_box.append(time_label)
 
+        # Name entry (inline editable, top left after timestamp)
+        self.name_entry = Gtk.Entry()
+        # Handle None explicitly - get() returns None if key exists with None value
+        item_name = item.get("name") or ""
+        self.name_entry.set_text(item_name)
+        self.name_entry.set_placeholder_text("Add name...")
+        self.name_entry.set_width_chars(15)
+        self.name_entry.set_max_width_chars(30)
+        self.name_entry.set_halign(Gtk.Align.START)
+        self.name_entry.add_css_class("flat")
+
+        # Save name on Enter or focus-out
+        self.name_entry.connect("activate", self._save_name_inline)
+
+        # Create focus controller for save on focus-out
+        focus_controller = Gtk.EventControllerFocus()
+        focus_controller.connect("leave", self._save_name_inline)
+        self.name_entry.add_controller(focus_controller)
+
+        header_box.append(self.name_entry)
+
         # Spacer to push buttons to the right
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
@@ -811,7 +832,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         box.set_margin_bottom(12)
 
         entry = Gtk.Entry()
-        entry.set_text(self.item.get("name", ""))
+        # Handle None explicitly - get() returns None if key exists with None value
+        current_name = self.item.get("name") or ""
+        entry.set_text(current_name)
         entry.set_placeholder_text("Enter name...")
         entry.set_width_chars(30)
 
@@ -820,10 +843,18 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             item_id = self.item.get("id")
 
             # Update button label
-            button.set_label(new_name if new_name else "Add name...")
             if new_name:
+                # If there's a search query, apply highlighting
+                if self.search_query:
+                    name_label = Gtk.Label()
+                    highlighted_name = highlight_text(new_name, self.search_query)
+                    name_label.set_markup(highlighted_name)
+                    button.set_child(name_label)
+                else:
+                    button.set_label(new_name)
                 button.remove_css_class("dim-label")
             else:
+                button.set_label("Add name...")
                 button.add_css_class("dim-label")
 
             # Update item dict
@@ -873,6 +904,48 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Focus entry after showing
         GLib.idle_add(entry.grab_focus)
+
+    def _save_name_inline(self, widget):
+        """Save the name from inline entry"""
+        new_name = self.name_entry.get_text().strip()
+        item_id = self.item.get("id")
+
+        # Update item dict
+        self.item["name"] = new_name if new_name else None
+
+        # Remove focus from entry (move focus to parent window)
+        # This happens when Enter is pressed
+        root = self.get_root()
+        if root:
+            root.set_focus(None)
+
+        # Send to server
+        def send_update():
+            try:
+                async def update_name():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "update_item_name",
+                            "item_id": item_id,
+                            "name": new_name if new_name else None
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("success"):
+                            print(f"[UI] Successfully updated name for item {item_id}")
+                        else:
+                            print(f"[UI] Failed to update name: {data.get('error', 'Unknown error')}")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(update_name())
+            except Exception as e:
+                print(f"[UI] Error updating name: {e}")
+
+        threading.Thread(target=send_update, daemon=True).start()
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked"""
