@@ -71,9 +71,7 @@ def test_item_header_name_save_callback():
 
     item = {"id": 42, "timestamp": "2024-01-01T12:00:00", "name": "Old"}
 
-    header = ItemHeader(
-        item=item, on_name_save=save_callback, search_query=""
-    )
+    header = ItemHeader(item=item, on_name_save=save_callback, search_query="")
 
     header._save_name("New Name")
 

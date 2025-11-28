@@ -16,12 +16,14 @@ class ItemActions:
         on_view: Callable[[], None],
         on_save: Callable[[], None],
         on_tags: Callable[[], None],
+        on_delete: Callable[[], None],
     ):
         self.item = item
         self.on_copy = on_copy
         self.on_view = on_view
         self.on_save = on_save
         self.on_tags = on_tags
+        self.on_delete = on_delete
 
     def build(self) -> Gtk.Widget:
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -38,6 +40,7 @@ class ItemActions:
         self._add_view_button(button_box)
         self._add_save_button(button_box)
         self._add_tags_button(button_box)
+        self._add_delete_button(button_box)
 
         header_box.append(button_box)
         return header_box
@@ -104,6 +107,19 @@ class ItemActions:
 
         container.append(button)
 
+    def _add_delete_button(self, container: Gtk.Box) -> None:
+        button = Gtk.Button()
+        button.set_icon_name("user-trash-symbolic")
+        button.add_css_class("flat")
+        button.set_tooltip_text("Delete item")
+
+        gesture = Gtk.GestureClick.new()
+        gesture.connect("released", lambda *_: self._trigger_delete())
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        button.add_controller(gesture)
+
+        container.append(button)
+
     def _trigger_copy(self) -> None:
         self.on_copy()
 
@@ -115,3 +131,6 @@ class ItemActions:
 
     def _trigger_tags(self) -> None:
         self.on_tags()
+
+    def _trigger_delete(self) -> None:
+        self.on_delete()

@@ -13,7 +13,12 @@ def test_container_create_with_defaults():
 
 
 def test_container_create_with_custom_settings(tmp_path: Path):
-    from ui.config import AppPaths, AppSettings, DisplaySettings, WindowSettings
+    from ui.config import (
+        AppPaths,
+        AppSettings,
+        DisplaySettings,
+        WindowSettings,
+    )
     from ui.core.di_container import AppContainer
 
     settings = AppSettings(
@@ -73,6 +78,7 @@ def test_container_db_service_singleton(tmp_path: Path):
 
 def test_container_clipboard_service():
     import pytest
+
     from ui.core.di_container import AppContainer
 
     try:

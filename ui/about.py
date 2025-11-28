@@ -3,14 +3,16 @@
 TFCBM About Dialog - Shows version and information
 """
 
-import gi
 from pathlib import Path
 
+import gi
+
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GdkPixbuf, Gdk, GLib
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
 # Version information
 VERSION = "1.0.0"
+
 
 class AboutWindow(Gtk.Window):
     """About dialog showing version, description, and haiku"""
@@ -39,10 +41,16 @@ class AboutWindow(Gtk.Window):
             svg_path = Path(__file__).parent.parent / "resouces" / "tfcbm.svg"
             png_path = Path(__file__).parent.parent / "resouces" / "tfcbm.png"
 
-            icon_path = svg_path if svg_path.exists() else (png_path if png_path.exists() else None)
+            icon_path = (
+                svg_path
+                if svg_path.exists()
+                else (png_path if png_path.exists() else None)
+            )
 
             if icon_path:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 200, 200, True)
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    str(icon_path), 200, 200, True
+                )
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 logo = Gtk.Picture.new_for_paintable(texture)
                 logo.set_size_request(200, 200)
@@ -97,7 +105,9 @@ class AboutWindow(Gtk.Window):
         content_box.append(separator2)
 
         # Keyboard shortcut section
-        shortcut_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        shortcut_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=16
+        )
         shortcut_box.set_halign(Gtk.Align.CENTER)
 
         # Keys container
@@ -193,7 +203,7 @@ class AboutWindow(Gtk.Window):
 
         # Calculate scale using sine wave for smooth pulsing
         # Period of ~20 iterations (2 seconds at 100ms intervals)
-        scale = 1.0 + 0.1 * math.sin(self.animation_state * 0.3)
+        1.0 + 0.1 * math.sin(self.animation_state * 0.3)
 
         # Apply scaling effect by adjusting opacity
         # We'll pulse between 0.7 and 1.0 opacity

@@ -7,7 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from ui.utils import format_timestamp, highlight_text
+from ui.utils import format_timestamp
 
 
 class ItemHeader:

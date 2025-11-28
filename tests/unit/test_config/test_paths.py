@@ -32,8 +32,9 @@ def test_app_paths_custom(tmp_path: Path):
 
 
 def test_app_paths_immutable():
-    from ui.config.paths import AppPaths
     import pytest
+
+    from ui.config.paths import AppPaths
 
     paths = AppPaths.default()
 

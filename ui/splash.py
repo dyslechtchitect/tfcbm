@@ -3,12 +3,14 @@
 TFCBM Splash Screen - Shows during startup
 """
 
-import gi
 import sys
 from pathlib import Path
 
+import gi
+
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GdkPixbuf, Gdk, GLib
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
+
 
 class SplashWindow(Gtk.Window):
     """Standalone splash screen window"""
@@ -35,10 +37,16 @@ class SplashWindow(Gtk.Window):
             svg_path = Path(__file__).parent.parent / "resouces" / "tfcbm.svg"
             png_path = Path(__file__).parent.parent / "resouces" / "tfcbm.png"
 
-            icon_path = svg_path if svg_path.exists() else (png_path if png_path.exists() else None)
+            icon_path = (
+                svg_path
+                if svg_path.exists()
+                else (png_path if png_path.exists() else None)
+            )
 
             if icon_path:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 256, 256, True)
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    str(icon_path), 256, 256, True
+                )
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 logo = Gtk.Picture.new_for_paintable(texture)
                 logo.set_size_request(256, 256)

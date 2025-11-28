@@ -7,6 +7,16 @@ def test_clipboard_item_row_text():
     pytest.importorskip("gi.repository.Gtk")
     from ui.rows.clipboard_item_row import ClipboardItemRow
 
+    # Mock window object
+    class MockWindow:
+        class MockSettings:
+            item_height = 150
+
+        settings = MockSettings()
+
+        def show_notification(self, msg):
+            pass
+
     item = {
         "id": 1,
         "type": "text",
@@ -15,40 +25,25 @@ def test_clipboard_item_row_text():
         "tags": [],
     }
 
-    callbacks_called = []
+    window = MockWindow()
+    row = ClipboardItemRow(item=item, window=window, search_query="")
 
-    def on_copy():
-        callbacks_called.append("copy")
-
-    def on_view():
-        callbacks_called.append("view")
-
-    def on_save():
-        callbacks_called.append("save")
-
-    def on_tags():
-        callbacks_called.append("tags")
-
-    def on_name_save(item_id, name):
-        callbacks_called.append(("name_save", item_id, name))
-
-    row = ClipboardItemRow(
-        item=item,
-        on_copy=on_copy,
-        on_view=on_view,
-        on_save=on_save,
-        on_tags=on_tags,
-        on_name_save=on_name_save,
-    )
-
-    widget = row.build()
-
-    assert widget is not None
+    assert row is not None
+    assert row.item == item
 
 
 def test_clipboard_item_row_with_search():
     pytest.importorskip("gi.repository.Gtk")
     from ui.rows.clipboard_item_row import ClipboardItemRow
+
+    class MockWindow:
+        class MockSettings:
+            item_height = 150
+
+        settings = MockSettings()
+
+        def show_notification(self, msg):
+            pass
 
     item = {
         "id": 2,
@@ -58,15 +53,8 @@ def test_clipboard_item_row_with_search():
         "tags": [],
     }
 
-    row = ClipboardItemRow(
-        item=item,
-        search_query="search",
-        on_copy=lambda: None,
-        on_view=lambda: None,
-        on_save=lambda: None,
-        on_tags=lambda: None,
-        on_name_save=lambda item_id, name: None,
-    )
+    window = MockWindow()
+    row = ClipboardItemRow(item=item, window=window, search_query="search")
 
     assert row.search_query == "search"
 
@@ -74,6 +62,15 @@ def test_clipboard_item_row_with_search():
 def test_clipboard_item_row_with_tags():
     pytest.importorskip("gi.repository.Gtk")
     from ui.rows.clipboard_item_row import ClipboardItemRow
+
+    class MockWindow:
+        class MockSettings:
+            item_height = 150
+
+        settings = MockSettings()
+
+        def show_notification(self, msg):
+            pass
 
     item = {
         "id": 3,
@@ -83,15 +80,8 @@ def test_clipboard_item_row_with_tags():
         "tags": [{"id": 1, "name": "work", "color": "#ff0000"}],
     }
 
-    row = ClipboardItemRow(
-        item=item,
-        on_copy=lambda: None,
-        on_view=lambda: None,
-        on_save=lambda: None,
-        on_tags=lambda: None,
-        on_name_save=lambda item_id, name: None,
-    )
+    window = MockWindow()
+    row = ClipboardItemRow(item=item, window=window)
 
-    widget = row.build()
-
-    assert widget is not None
+    assert row is not None
+    assert len(row.item["tags"]) == 1

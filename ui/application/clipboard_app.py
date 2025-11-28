@@ -178,7 +178,7 @@ class ClipboardApp(Adw.Application):
         """Activate the application"""
         win = self.props.active_window
         if not win:
-            from ui.main import ClipboardWindow
+            from ui.windows.clipboard_window import ClipboardWindow
 
             win = ClipboardWindow(self, self.server_pid)
         else:

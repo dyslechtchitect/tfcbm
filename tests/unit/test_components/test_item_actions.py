@@ -14,6 +14,7 @@ def test_item_actions_creation():
         on_view=lambda: None,
         on_save=lambda: None,
         on_tags=lambda: None,
+        on_delete=lambda: None,
     )
 
     assert actions.item == item
@@ -30,6 +31,7 @@ def test_item_actions_build_widget():
         on_view=lambda: None,
         on_save=lambda: None,
         on_tags=lambda: None,
+        on_delete=lambda: None,
     )
 
     widget = actions.build()
@@ -45,6 +47,7 @@ def test_item_actions_callbacks_invoked():
     view_called = False
     save_called = False
     tags_called = False
+    delete_called = False
 
     def on_copy():
         nonlocal copy_called
@@ -62,6 +65,10 @@ def test_item_actions_callbacks_invoked():
         nonlocal tags_called
         tags_called = True
 
+    def on_delete():
+        nonlocal delete_called
+        delete_called = True
+
     item = {"id": 1, "type": "text", "content": "test"}
     actions = ItemActions(
         item=item,
@@ -69,14 +76,17 @@ def test_item_actions_callbacks_invoked():
         on_view=on_view,
         on_save=on_save,
         on_tags=on_tags,
+        on_delete=on_delete,
     )
 
     actions._trigger_copy()
     actions._trigger_view()
     actions._trigger_save()
     actions._trigger_tags()
+    actions._trigger_delete()
 
     assert copy_called
     assert view_called
     assert save_called
     assert tags_called
+    assert delete_called
