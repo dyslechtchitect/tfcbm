@@ -125,6 +125,9 @@ class ItemActions:
         gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         button.add_controller(gesture)
 
+        # Store reference for popover anchoring
+        self.tags_button = button
+
         container.append(button)
 
     def _add_delete_button(self, container: Gtk.Box) -> None:

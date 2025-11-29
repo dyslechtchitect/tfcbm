@@ -23,7 +23,7 @@ gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gio", "2.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
 from ui.components.items import ItemActions, ItemContent, ItemHeader, ItemTags
 
@@ -110,7 +110,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             self._prefetch_file_for_dnd()
 
         # Build actions first
-        actions = ItemActions(
+        self.actions = ItemActions(
             item=self.item,
             on_copy=self._on_copy_action,
             on_view=self._on_view_action,
@@ -118,7 +118,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             on_tags=self._on_tags_action,
             on_delete=self._on_delete_action,
         )
-        actions_widget = actions.build()
+        actions_widget = self.actions.build()
 
         # Build header with actions on the right
         header = ItemHeader(
@@ -309,14 +309,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             return
 
         try:
-            if item_type == "text":
+            if item_type == "text" or item_type == "url":
                 if content:
                     clipboard.set(content)
-                    self.window.show_notification("Text copied to clipboard")
+                    self.window.show_notification(
+                        f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
+                    )
                     self._record_paste(item_id)
                 else:
                     self.window.show_notification(
-                        "Error copying text: content is empty."
+                        "Error copying: content is empty."
                     )
             elif item_type == "file":
                 self.window.show_notification("Loading file...")
@@ -652,7 +654,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         """Show popover to manage tags for this item."""
         # Create popover
         popover = Gtk.Popover()
-        popover.set_parent(self)
+        # Anchor to the tags button if available, otherwise the row
+        if hasattr(self, "actions") and hasattr(self.actions, "tags_button"):
+            popover.set_parent(self.actions.tags_button)
+            popover.set_position(Gtk.PositionType.BOTTOM)
+        else:
+            popover.set_parent(self)
         popover.set_autohide(True)
 
         # Content box
@@ -1074,11 +1081,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Set default filename based on type
         custom_name = self.item.get("name")
-        if item_type == "text":
+        if item_type == "text" or item_type == "url":
             filename = (
                 f"{custom_name}.txt"
                 if custom_name and not custom_name.endswith(".txt")
-                else custom_name or "clipboard.txt"
+                else custom_name
+                or ("url.txt" if item_type == "url" else "clipboard.txt")
             )
             dialog.set_initial_name(filename)
         elif item_type.startswith("image/"):
@@ -1104,10 +1112,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 file = dialog_obj.save_finish(result)
                 if file:
                     path = file.get_path()
-                    if item_type == "text":
+                    if item_type == "text" or item_type == "url":
                         with open(path, "w") as f:
                             f.write(self.item["content"])
-                        logger.info(f"Saved text to {path}")
+                        logger.info(
+                            f"Saved {'URL' if item_type == 'url' else 'text'} to {path}"
+                        )
                     elif (
                         item_type.startswith("image/")
                         or item_type == "screenshot"
@@ -1158,7 +1168,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         content_scroll.set_vexpand(True)
         content_scroll.set_hexpand(True)
 
-        if item_type == "text":
+        if item_type == "text" or item_type == "url":
             content_label = Gtk.Label(label=self.item["content"])
             content_label.set_wrap(True)
             content_label.set_selectable(True)
@@ -1182,27 +1192,94 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         elif item_type == "file":
             file_metadata = self.item.get("content", {})
-            file_name = file_metadata.get("name", "Unknown file")
+            is_directory = file_metadata.get("is_directory", False)
+            original_path = file_metadata.get("original_path", "")
 
-            file_info_box = Gtk.Box(
-                orientation=Gtk.Orientation.VERTICAL, spacing=12
-            )
-            file_info_box.set_valign(Gtk.Align.CENTER)
-            file_info_box.set_halign(Gtk.Align.CENTER)
+            if is_directory and original_path and Path(original_path).exists():
+                # Show folder contents with FileChooserWidget
+                folder_box = Gtk.Box(
+                    orientation=Gtk.Orientation.VERTICAL, spacing=12
+                )
 
-            name_label = Gtk.Label()
-            name_label.set_markup(
-                f"<b>{GLib.markup_escape_text(file_name)}</b>"
-            )
-            file_info_box.append(name_label)
+                # Info label
+                info_label = Gtk.Label()
+                folder_name = file_metadata.get("name", "Folder")
+                info_label.set_markup(
+                    f"<b>Folder:</b> {GLib.markup_escape_text(folder_name)}"
+                )
+                info_label.set_halign(Gtk.Align.START)
+                folder_box.append(info_label)
 
-            size = file_metadata.get("size", 0)
-            if size > 0:
-                size_mb = size / (1024 * 1024)
-                size_label = Gtk.Label(label=f"Size: {size_mb:.2f} MB")
-                file_info_box.append(size_label)
+                # Path label
+                path_label = Gtk.Label(label=original_path)
+                path_label.add_css_class("caption")
+                path_label.add_css_class("dim-label")
+                path_label.set_halign(Gtk.Align.START)
+                path_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+                folder_box.append(path_label)
 
-            content_scroll.set_child(file_info_box)
+                # FileChooserWidget to show folder tree
+                file_chooser = Gtk.FileChooserWidget(
+                    action=Gtk.FileChooserAction.OPEN
+                )
+                file_chooser.set_current_folder(
+                    Gio.File.new_for_path(original_path)
+                )
+                file_chooser.set_vexpand(True)
+                file_chooser.set_hexpand(True)
+
+                folder_box.append(file_chooser)
+                content_scroll.set_child(folder_box)
+            else:
+                # Regular file or folder doesn't exist
+                file_info_box = Gtk.Box(
+                    orientation=Gtk.Orientation.VERTICAL, spacing=12
+                )
+                file_info_box.set_valign(Gtk.Align.CENTER)
+                file_info_box.set_halign(Gtk.Align.CENTER)
+
+                file_name = file_metadata.get("name", "Unknown file")
+                name_label = Gtk.Label()
+                name_label.set_markup(
+                    f"<b>{GLib.markup_escape_text(file_name)}</b>"
+                )
+                file_info_box.append(name_label)
+
+                if original_path:
+                    if not Path(original_path).exists():
+                        error_label = Gtk.Label(
+                            label="File/folder no longer exists at original location"
+                        )
+                        error_label.add_css_class("dim-label")
+                        file_info_box.append(error_label)
+
+                    path_label = Gtk.Label(label=original_path)
+                    path_label.add_css_class("caption")
+                    path_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+                    path_label.set_max_width_chars(50)
+                    file_info_box.append(path_label)
+
+                # File metadata details
+                details_box = Gtk.Box(
+                    orientation=Gtk.Orientation.VERTICAL, spacing=6
+                )
+                details_box.set_margin_top(12)
+
+                file_size = file_metadata.get("size", 0)
+                if file_size > 0:
+                    size_mb = file_size / (1024 * 1024)
+                    size_label = Gtk.Label(label=f"Size: {size_mb:.2f} MB")
+                    size_label.add_css_class("caption")
+                    details_box.append(size_label)
+
+                mime_type = file_metadata.get("mime_type", "")
+                if mime_type:
+                    type_label = Gtk.Label(label=f"Type: {mime_type}")
+                    type_label.add_css_class("caption")
+                    details_box.append(type_label)
+
+                file_info_box.append(details_box)
+                content_scroll.set_child(file_info_box)
 
         main_box.append(content_scroll)
         dialog.set_content(main_box)

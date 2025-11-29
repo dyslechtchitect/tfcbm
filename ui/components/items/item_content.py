@@ -24,7 +24,7 @@ class ItemContent:
         content_clamp.set_hexpand(True)
         content_clamp.set_overflow(Gtk.Overflow.HIDDEN)
 
-        if self.item_type == "text":
+        if self.item_type == "text" or self.item_type == "url":
             widget = self._build_text_content()
         elif self.item_type == "file":
             widget = self._build_file_content()
