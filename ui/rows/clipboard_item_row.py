@@ -50,21 +50,41 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         main_box.set_hexpand(True)
         main_box.set_vexpand(False)
-        main_box.set_size_request(-1, item_height)
         main_box.set_margin_start(12)
         main_box.set_margin_end(12)
         main_box.set_margin_top(8)
         main_box.set_margin_bottom(8)
-        main_box.set_valign(Gtk.Align.FILL)
-        main_box.set_overflow(Gtk.Overflow.HIDDEN)
+
+        # Create viewport to clip content to exact height
+        viewport = Gtk.Viewport()
+        viewport.set_child(main_box)
+        viewport.set_vexpand(False)
+        viewport.set_hexpand(True)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_child(viewport)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.EXTERNAL)
+        scrolled.set_size_request(-1, item_height - 16)  # Account for margins
+        scrolled.set_vexpand(False)
+        scrolled.set_hexpand(True)
+        scrolled.set_propagate_natural_height(False)
+        scrolled.set_propagate_natural_width(True)
 
         card_frame = Gtk.Frame()
         card_frame.set_vexpand(False)
         card_frame.set_hexpand(True)
-        card_frame.set_size_request(-1, item_height)
         card_frame.add_css_class("clipboard-item-card")
-        card_frame.set_child(main_box)
+        card_frame.set_child(scrolled)
+        card_frame.set_overflow(Gtk.Overflow.HIDDEN)
         self.card_frame = card_frame
+
+        # Apply CSS to set minimum height
+        css_provider = Gtk.CssProvider()
+        css_data = f"frame {{ min-height: {item_height}px; }}"
+        css_provider.load_from_data(css_data.encode())
+        card_frame.get_style_context().add_provider(
+            css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
 
         self.set_size_request(-1, item_height)
         self.set_vexpand(False)

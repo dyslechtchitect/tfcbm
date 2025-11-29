@@ -20,6 +20,9 @@ class ItemContent:
 
     def build(self) -> Gtk.Widget:
         content_clamp = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content_clamp.set_vexpand(False)
+        content_clamp.set_hexpand(True)
+        content_clamp.set_overflow(Gtk.Overflow.HIDDEN)
 
         if self.item_type == "text":
             widget = self._build_text_content()
@@ -38,9 +41,14 @@ class ItemContent:
 
     def _build_text_content(self) -> Gtk.Widget:
         overlay = Gtk.Overlay()
+        overlay.set_vexpand(False)
+        overlay.set_hexpand(True)
+        overlay.set_overflow(Gtk.Overflow.HIDDEN)
+
         text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         text_box.set_halign(Gtk.Align.START)
         text_box.set_valign(Gtk.Align.START)
+        text_box.set_vexpand(False)
 
         open_quote = Gtk.Label(label="\u201c")
         open_quote.add_css_class("big-quote")
@@ -58,7 +66,7 @@ class ItemContent:
         content_label.set_wrap(True)
         content_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         content_label.set_ellipsize(Pango.EllipsizeMode.END)
-        content_label.set_lines(5)
+        content_label.set_lines(3)
         content_label.set_halign(Gtk.Align.START)
         content_label.set_valign(Gtk.Align.START)
         content_label.add_css_class("clipboard-item-text")
@@ -95,6 +103,7 @@ class ItemContent:
         file_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         file_box.set_halign(Gtk.Align.START)
         file_box.set_valign(Gtk.Align.CENTER)
+        file_box.set_vexpand(False)
         file_box.set_margin_start(12)
         file_box.set_margin_top(12)
 
@@ -156,8 +165,9 @@ class ItemContent:
             picture.add_css_class("clipboard-item-image")
             picture.set_content_fit(Gtk.ContentFit.COVER)
             picture.set_hexpand(True)
-            picture.set_vexpand(True)
+            picture.set_vexpand(False)
             picture.set_can_shrink(True)
+            picture.set_overflow(Gtk.Overflow.HIDDEN)
 
             return picture
         except Exception as e:

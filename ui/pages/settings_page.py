@@ -54,7 +54,7 @@ class SettingsPage:
         display_group.add(item_width_row)
 
         item_height_row = Adw.SpinRow()
-        item_height_row.set_title("Item Height")
+        item_height_row.set_title("Card height")
         item_height_row.set_subtitle(
             "Height of clipboard item cards in pixels (50-1000)"
         )
