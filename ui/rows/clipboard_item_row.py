@@ -126,6 +126,64 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             self.item["type"], self.item["id"], self.item["content"]
         )
 
+        # If activated via keyboard shortcut, hide window and auto-paste
+        if hasattr(self.window, "activated_via_keyboard"):
+            if self.window.activated_via_keyboard:
+                logger.info(
+                    "[KEYBOARD] Auto-hiding window and pasting after click"
+                )
+                self.window.hide()
+                self.window.activated_via_keyboard = False
+
+                # Wait for focus to return, then simulate paste
+                GLib.timeout_add(150, self._simulate_paste)
+
+    def _simulate_paste(self):
+        """Simulate Ctrl+V paste after window is hidden."""
+        import shutil
+        import subprocess
+
+        # Try xdotool first (X11)
+        if shutil.which("xdotool"):
+            try:
+                subprocess.run(
+                    ["xdotool", "key", "ctrl+v"],
+                    check=False,
+                    timeout=2,
+                )
+                logger.info("[KEYBOARD] Simulated Ctrl+V paste with xdotool")
+                return False
+            except Exception as e:
+                logger.error(f"[KEYBOARD] xdotool failed: {e}")
+
+        # Try ydotool (Wayland)
+        if shutil.which("ydotool"):
+            try:
+                # ydotool uses different key codes: 29=Ctrl, 47=v
+                subprocess.run(
+                    [
+                        "ydotool",
+                        "key",
+                        "29:1",
+                        "47:1",
+                        "47:0",
+                        "29:0",
+                    ],
+                    check=False,
+                    timeout=2,
+                )
+                logger.info("[KEYBOARD] Simulated Ctrl+V paste with ydotool")
+                return False
+            except Exception as e:
+                logger.error(f"[KEYBOARD] ydotool failed: {e}")
+
+        # No tool available
+        logger.warning(
+            "[KEYBOARD] Neither xdotool nor ydotool found. "
+            "Auto-paste disabled."
+        )
+        return False
+
     def _on_copy_action(self):
         """Handle copy button click."""
         self._perform_copy_to_clipboard(
@@ -514,8 +572,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         return True
 
     def _on_card_clicked(self, gesture, n_press, x, y):
-        """Handle card click."""
-        # Single click handled by row activation
+        """Handle card clicks - single click copies."""
+        if n_press == 1:
+            # Single click - copy to clipboard
+            self._on_row_clicked(self)
 
     def _on_drag_prepare(self, drag_source, x, y):
         """Prepare data for drag operation."""
