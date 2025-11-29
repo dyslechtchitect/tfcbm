@@ -15,14 +15,15 @@ export class ClipboardMonitorService {
         // Log mime types for debugging
         log(`[TFCBM] Available mime types: ${JSON.stringify(mimeTypes)}`);
 
-        const sendEvent = async (type, data) => {
-            const event = new ClipboardEvent(type, data);
+        const sendEvent = async (type, data, formattedContent = null, formatType = null) => {
+            const event = new ClipboardEvent(type, data, formattedContent, formatType);
             if (this.isDuplicate(event)) {
                 return;
             }
             // Log clipboard event (type and size only, no content)
             const size = typeof data === 'string' ? data.length : 0;
-            log(`[TFCBM] Clipboard event: ${type} (${size} bytes)`);
+            const formatInfo = formatType ? ` [${formatType}]` : '';
+            log(`[TFCBM] Clipboard event: ${type} (${size} bytes)${formatInfo}`);
             this.lastEvent = event;
             await this.notificationPort.send(event);
         };
@@ -97,7 +98,16 @@ export class ClipboardMonitorService {
                 return;
             }
 
-            await sendEvent('text', text);
+            // Check for formatted text (HTML/RTF)
+            const formattedText = await this.clipboardPort.getFormattedText();
+            if (formattedText) {
+                log(
+                    `[TFCBM] Detected formatted text: ${formattedText.formatType}, size: ${formattedText.content.length}`
+                );
+                await sendEvent('text', text, formattedText.content, formattedText.formatType);
+            } else {
+                await sendEvent('text', text);
+            }
             return;
         }
     }

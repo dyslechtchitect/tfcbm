@@ -57,6 +57,27 @@ export class GnomeClipboardAdapter extends ClipboardPort {
         }
     }
 
+    async getFormattedText() {
+        // Try to get HTML formatted text first, then RTF
+        const htmlContent = await this._getContentForMimeType('text/html');
+        if (htmlContent) {
+            return {
+                formatType: 'html',
+                content: htmlContent,
+            };
+        }
+
+        const rtfContent = await this._getContentForMimeType('text/rtf');
+        if (rtfContent) {
+            return {
+                formatType: 'rtf',
+                content: rtfContent,
+            };
+        }
+
+        return null;
+    }
+
     async _getContentForMimeType(mimeType) {
         log(`[TFCBM] Trying to get content for mime type: ${mimeType}`);
         return new Promise((resolve) => {

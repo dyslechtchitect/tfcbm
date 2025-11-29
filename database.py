@@ -111,6 +111,22 @@ class ClipboardDB:
             # Auto-populate names for files
             self._migrate_populate_file_names()
 
+        # Migration: Add formatted text columns
+        cursor.execute("PRAGMA table_info(clipboard_items)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "format_type" not in columns:
+            cursor.execute(
+                "ALTER TABLE clipboard_items ADD COLUMN format_type TEXT"
+            )
+            logging.info("Added format_type column to existing database")
+        if "formatted_content" not in columns:
+            cursor.execute(
+                "ALTER TABLE clipboard_items ADD COLUMN formatted_content BLOB"
+            )
+            logging.info(
+                "Added formatted_content column to existing database"
+            )
+
         # Migration: Update FTS table to include name column
         # Check if FTS table needs migration by trying to query the name column
         try:
@@ -300,6 +316,8 @@ class ClipboardDB:
         thumbnail: bytes = None,
         data_hash: str = None,
         name: str = None,
+        format_type: str = None,
+        formatted_content: bytes = None,
     ) -> int:
         """
         Add a clipboard item to the database
@@ -311,6 +329,8 @@ class ClipboardDB:
             thumbnail: Optional thumbnail data for images
             data_hash: Optional pre-calculated hash (will be calculated if not provided)
             name: Optional custom name for the item
+            format_type: Optional format type (e.g., 'html', 'rtf') for formatted text
+            formatted_content: Optional formatted content (HTML, RTF, etc.)
 
         Returns:
             The ID of the inserted item
@@ -325,10 +345,19 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash, name)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash, name, format_type, formatted_content)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-            (timestamp, item_type, data, thumbnail, data_hash, name),
+            (
+                timestamp,
+                item_type,
+                data,
+                thumbnail,
+                data_hash,
+                name,
+                format_type,
+                formatted_content,
+            ),
         )
         item_id = cursor.lastrowid
 
@@ -523,7 +552,7 @@ class ClipboardDB:
             where_clause = "WHERE " + " AND ".join(where_clauses)
 
         query = f"""
-            SELECT id, timestamp, type, data, thumbnail, name
+            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content
             FROM clipboard_items
             {where_clause}
             ORDER BY timestamp {sort_order}
@@ -554,6 +583,8 @@ class ClipboardDB:
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
                     "name": row["name"],
+                    "format_type": row["format_type"],
+                    "formatted_content": row["formatted_content"],
                     "tags": tags,
                 }
             )
@@ -564,7 +595,7 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            SELECT id, timestamp, type, data, thumbnail, name
+            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content
             FROM clipboard_items
             WHERE id = ?
         """,
@@ -580,6 +611,8 @@ class ClipboardDB:
                 "data": row["data"],
                 "thumbnail": row["thumbnail"],
                 "name": row["name"],
+                "format_type": row["format_type"],
+                "formatted_content": row["formatted_content"],
             }
         return None
 
@@ -855,6 +888,8 @@ class ClipboardDB:
                 ci.data,
                 ci.thumbnail,
                 ci.name,
+                ci.format_type,
+                ci.formatted_content,
                 -fts.rank as relevance
             FROM clipboard_fts fts
             INNER JOIN clipboard_items ci ON fts.rowid = ci.id
@@ -876,6 +911,8 @@ class ClipboardDB:
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
                     "name": row["name"],
+                    "format_type": row["format_type"],
+                    "formatted_content": row["formatted_content"],
                     "relevance": row["relevance"],
                 }
             )
@@ -1176,7 +1213,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name
+                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1192,7 +1229,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name
+                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1212,6 +1249,8 @@ class ClipboardDB:
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
                     "name": row["name"],
+                    "format_type": row["format_type"],
+                    "formatted_content": row["formatted_content"],
                 }
             )
         return items

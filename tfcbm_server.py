@@ -369,6 +369,8 @@ def prepare_item_for_ui(item: dict) -> dict:
         "thumbnail": thumbnail_b64,
         "timestamp": item["timestamp"],
         "name": item.get("name"),  # Include name field
+        "format_type": item.get("format_type"),  # Include format type if present
+        "formatted_content": base64.b64encode(item["formatted_content"]).decode("utf-8") if item.get("formatted_content") else None,  # Include formatted content if present
     }
 
 
@@ -788,6 +790,16 @@ def start_server():
                         text = message["content"]
                         text_bytes = text.encode("utf-8")
 
+                        # Extract formatted content if present
+                        format_type = message.get("format_type")
+                        formatted_content_b64 = message.get("formatted_content")
+                        formatted_content = None
+
+                        if format_type and formatted_content_b64:
+                            # Decode base64 formatted content
+                            formatted_content = base64.b64decode(formatted_content_b64)
+                            logging.info(f"  Detected {format_type} formatting ({len(formatted_content)} bytes)")
+
                         # Check for URL
                         url_pattern = re.compile(r'https?://\S+')
                         is_url = url_pattern.search(text) is not None
@@ -806,7 +818,8 @@ def start_server():
 
                         if existing_item_id:
                             # Duplicate found - update timestamp to move to top
-                            logging.info(f"↻ Updating duplicate {item_type} ({len(text)} characters) - moving to top\n")
+                            format_info = f" [{format_type}]" if format_type else ""
+                            logging.info(f"↻ Updating duplicate {item_type} ({len(text)} characters){format_info} - moving to top\n")
                             with db_lock:
                                 db.update_timestamp(existing_item_id, timestamp)
                                 # Get the updated item to broadcast
@@ -821,13 +834,21 @@ def start_server():
                                 }
                             )
 
-                            # Save to database with hash (thread-safe)
+                            # Save to database with hash and optional formatting (thread-safe)
                             with db_lock:
-                                item_id = db.add_item(item_type, text_bytes, timestamp, data_hash=text_hash)
+                                item_id = db.add_item(
+                                    item_type,
+                                    text_bytes,
+                                    timestamp,
+                                    data_hash=text_hash,
+                                    format_type=format_type,
+                                    formatted_content=formatted_content
+                                )
                                 item = db.get_item(item_id)
 
                             # Log clipboard event (no content for privacy)
-                            logging.info(f"✓ Copied {item_type} ({len(text)} characters)")
+                            format_info = f" [{format_type}]" if format_type else ""
+                            logging.info(f"✓ Copied {item_type} ({len(text)} characters){format_info}")
                             logging.info(f"  (History: {len(history)} items)\n")
 
                     elif message["type"].startswith("image/"):

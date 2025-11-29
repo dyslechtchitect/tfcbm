@@ -26,6 +26,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
 from ui.components.items import ItemActions, ItemContent, ItemHeader, ItemTags
+from ui.services.clipboard_service import ClipboardService
 
 logger = logging.getLogger("TFCBM.UI")
 
@@ -41,6 +42,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.search_query = search_query
         self._last_paste_time = 0
         self._file_temp_path = None
+        self.clipboard_service = ClipboardService()
 
         item_height = self.window.settings.item_height
 
@@ -311,10 +313,24 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         try:
             if item_type == "text" or item_type == "url":
                 if content:
-                    clipboard.set(content)
-                    self.window.show_notification(
-                        f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
-                    )
+                    # Check if item has formatted content
+                    format_type = self.item.get("format_type")
+                    formatted_content = self.item.get("formatted_content")
+
+                    if format_type and formatted_content:
+                        # Use formatted text copy
+                        self.clipboard_service.copy_formatted_text(
+                            content, formatted_content, format_type
+                        )
+                        self.window.show_notification(
+                            f"{'URL' if item_type == 'url' else 'Text'} with {format_type.upper()} formatting copied"
+                        )
+                    else:
+                        # Use plain text copy
+                        self.clipboard_service.copy_text(content)
+                        self.window.show_notification(
+                            f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
+                        )
                     self._record_paste(item_id)
                 else:
                     self.window.show_notification(

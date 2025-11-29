@@ -9,6 +9,7 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, Gtk, Pango
 
+from ui.components.items.item_formatting_indicator import FormattingIndicator
 from ui.utils import format_size, get_file_icon, highlight_text
 
 
@@ -40,11 +41,19 @@ class ItemContent:
         return content_clamp
 
     def _build_text_content(self) -> Gtk.Widget:
-        container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         container.set_vexpand(False)
         container.set_hexpand(True)
         container.set_overflow(Gtk.Overflow.HIDDEN)
         container.set_margin_bottom(40)  # Space for tags overlay
+
+        # Add formatting indicator if present
+        formatting_indicator = FormattingIndicator(self.item)
+        indicator_widget = formatting_indicator.build()
+        if indicator_widget:
+            indicator_widget.set_margin_start(12)
+            indicator_widget.set_margin_top(8)
+            container.append(indicator_widget)
 
         content_label = Gtk.Label()
 
