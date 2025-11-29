@@ -57,7 +57,10 @@ class ClipboardDB:
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_db()
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+        )
 
     def _init_db(self):
         """Initialize database schema"""
@@ -216,7 +219,9 @@ class ClipboardDB:
         )
 
         self.conn.commit()
-        logging.info(f"Database initialized or already exists at: {self.db_path}")
+        logging.info(
+            f"Database initialized or already exists at: {self.db_path}"
+        )
 
     @staticmethod
     def calculate_hash(data: bytes) -> str:
@@ -233,13 +238,18 @@ class ClipboardDB:
     def _migrate_calculate_hashes(self):
         """Calculate hashes for existing items without hashes"""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, type, data FROM clipboard_items WHERE hash IS NULL")
+        cursor.execute(
+            "SELECT id, type, data FROM clipboard_items WHERE hash IS NULL"
+        )
         items = cursor.fetchall()
 
         for row in items:
             item_id, item_type, data = row["id"], row["type"], row["data"]
             hash_val = self.calculate_hash(data)
-            cursor.execute("UPDATE clipboard_items SET hash = ? WHERE id = ?", (hash_val, item_id))
+            cursor.execute(
+                "UPDATE clipboard_items SET hash = ? WHERE id = ?",
+                (hash_val, item_id),
+            )
 
         if items:
             self.conn.commit()
@@ -248,30 +258,48 @@ class ClipboardDB:
     def _migrate_populate_file_names(self):
         """Auto-populate names for existing file items"""
         import json
+
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, type, data FROM clipboard_items WHERE type = 'file' AND name IS NULL")
+        cursor.execute(
+            "SELECT id, type, data FROM clipboard_items WHERE type = 'file' AND name IS NULL"
+        )
         items = cursor.fetchall()
 
         for row in items:
             item_id, item_type, data = row["id"], row["type"], row["data"]
             # Extract filename from file metadata
             try:
-                separator = b'\n---FILE_CONTENT---\n'
+                separator = b"\n---FILE_CONTENT---\n"
                 if separator in data:
                     metadata_bytes, _ = data.split(separator, 1)
-                    metadata = json.loads(metadata_bytes.decode('utf-8'))
-                    filename = metadata.get('filename', metadata.get('name', ''))
+                    metadata = json.loads(metadata_bytes.decode("utf-8"))
+                    filename = metadata.get(
+                        "filename", metadata.get("name", "")
+                    )
                     if filename:
-                        cursor.execute("UPDATE clipboard_items SET name = ? WHERE id = ?", (filename, item_id))
+                        cursor.execute(
+                            "UPDATE clipboard_items SET name = ? WHERE id = ?",
+                            (filename, item_id),
+                        )
             except Exception as e:
-                logging.warning(f"Could not extract filename for item {item_id}: {e}")
+                logging.warning(
+                    f"Could not extract filename for item {item_id}: {e}"
+                )
 
         if items:
             self.conn.commit()
-            logging.info(f"Populated names for {len(items)} existing file items")
+            logging.info(
+                f"Populated names for {len(items)} existing file items"
+            )
 
     def add_item(
-        self, item_type: str, data: bytes, timestamp: str = None, thumbnail: bytes = None, data_hash: str = None, name: str = None
+        self,
+        item_type: str,
+        data: bytes,
+        timestamp: str = None,
+        thumbnail: bytes = None,
+        data_hash: str = None,
+        name: str = None,
     ) -> int:
         """
         Add a clipboard item to the database
@@ -313,15 +341,17 @@ class ClipboardDB:
                     INSERT INTO clipboard_fts (rowid, content, name)
                     VALUES (?, ?, ?)
                     """,
-                    (item_id, text_content, name if name else ''),
+                    (item_id, text_content, name if name else ""),
                 )
             except Exception as e:
-                logging.warning(f"Failed to index text item {item_id} in FTS: {e}")
+                logging.warning(
+                    f"Failed to index text item {item_id} in FTS: {e}"
+                )
         elif item_type == "file":
             # Index file items with their file name
             try:
                 # Extract file name from metadata
-                separator = b'\n---FILE_CONTENT---\n'
+                separator = b"\n---FILE_CONTENT---\n"
                 if separator in data:
                     metadata_bytes, _ = data.split(separator, 1)
                     metadata = json.loads(metadata_bytes.decode("utf-8"))
@@ -333,10 +363,12 @@ class ClipboardDB:
                         INSERT INTO clipboard_fts (rowid, content, name)
                         VALUES (?, ?, ?)
                         """,
-                        (item_id, file_name, name if name else ''),
+                        (item_id, file_name, name if name else ""),
                     )
             except Exception as e:
-                logging.warning(f"Failed to index file item {item_id} in FTS: {e}")
+                logging.warning(
+                    f"Failed to index file item {item_id} in FTS: {e}"
+                )
 
         self.conn.commit()
         logging.info(
@@ -355,7 +387,10 @@ class ClipboardDB:
             True if hash exists, False otherwise
         """
         cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) as count FROM clipboard_items WHERE hash = ?", (data_hash,))
+        cursor.execute(
+            "SELECT COUNT(*) as count FROM clipboard_items WHERE hash = ?",
+            (data_hash,),
+        )
         row = cursor.fetchone()
         return row["count"] > 0
 
@@ -370,11 +405,16 @@ class ClipboardDB:
             Item ID if found, None otherwise
         """
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id FROM clipboard_items WHERE hash = ? ORDER BY id DESC LIMIT 1", (data_hash,))
+        cursor.execute(
+            "SELECT id FROM clipboard_items WHERE hash = ? ORDER BY id DESC LIMIT 1",
+            (data_hash,),
+        )
         row = cursor.fetchone()
         return row["id"] if row else None
 
-    def update_timestamp(self, item_id: int, new_timestamp: str = None) -> bool:
+    def update_timestamp(
+        self, item_id: int, new_timestamp: str = None
+    ) -> bool:
         """
         Update the timestamp of an existing item
 
@@ -400,7 +440,13 @@ class ClipboardDB:
         self.conn.commit()
         return cursor.rowcount > 0
 
-    def get_items(self, limit: int = 100, offset: int = 0, sort_order: str = "DESC", filters: List[str] = None) -> List[Dict]:
+    def get_items(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        sort_order: str = "DESC",
+        filters: List[str] = None,
+    ) -> List[Dict]:
         """
         Get clipboard items (sorted by timestamp)
 
@@ -433,7 +479,9 @@ class ClipboardDB:
                     if f == "text":
                         type_filters.append("type = 'text'")
                     elif f == "image":
-                        type_filters.append("(type LIKE 'image/%' OR type = 'screenshot')")
+                        type_filters.append(
+                            "(type LIKE 'image/%' OR type = 'screenshot')"
+                        )
                     elif f == "url":
                         type_filters.append("type = 'url'")
                     elif f == "file":
@@ -459,12 +507,14 @@ class ClipboardDB:
             if tag_filters:
                 # Build subquery for tags
                 tag_placeholders = ",".join("?" * len(tag_filters))
-                where_clauses.append(f"""id IN (
+                where_clauses.append(
+                    f"""id IN (
                     SELECT item_id FROM item_tags
                     WHERE tag_id IN (
                         SELECT id FROM tags WHERE name IN ({tag_placeholders})
                     )
-                )""")
+                )"""
+                )
                 query_params.extend(tag_filters)
 
         # Build final query
@@ -473,7 +523,7 @@ class ClipboardDB:
             where_clause = "WHERE " + " AND ".join(where_clauses)
 
         query = f"""
-            SELECT id, timestamp, type, data, thumbnail
+            SELECT id, timestamp, type, data, thumbnail, name
             FROM clipboard_items
             {where_clause}
             ORDER BY timestamp {sort_order}
@@ -484,6 +534,7 @@ class ClipboardDB:
 
         # Debug logging
         import logging
+
         logging.info(f"[FILTER DB] Filters: {filters}")
         logging.info(f"[FILTER DB] WHERE clause: {where_clause}")
         logging.info(f"[FILTER DB] Query params: {query_params}")
@@ -502,6 +553,7 @@ class ClipboardDB:
                     "type": row["type"],
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
+                    "name": row["name"],
                     "tags": tags,
                 }
             )
@@ -512,7 +564,7 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            SELECT id, timestamp, type, data, thumbnail
+            SELECT id, timestamp, type, data, thumbnail, name
             FROM clipboard_items
             WHERE id = ?
         """,
@@ -527,6 +579,7 @@ class ClipboardDB:
                 "type": row["type"],
                 "data": row["data"],
                 "thumbnail": row["thumbnail"],
+                "name": row["name"],
             }
         return None
 
@@ -549,9 +602,13 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         # Delete from FTS first (if exists)
         try:
-            cursor.execute("DELETE FROM clipboard_fts WHERE rowid = ?", (item_id,))
+            cursor.execute(
+                "DELETE FROM clipboard_fts WHERE rowid = ?", (item_id,)
+            )
         except Exception as e:
-            logging.warning(f"Failed to delete FTS entry for item {item_id}: {e}")
+            logging.warning(
+                f"Failed to delete FTS entry for item {item_id}: {e}"
+            )
         # Delete from main table
         cursor.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
         self.conn.commit()
@@ -560,19 +617,26 @@ class ClipboardDB:
     def update_item_name(self, item_id: int, name: str) -> bool:
         """Update the name of an item"""
         cursor = self.conn.cursor()
-        cursor.execute("UPDATE clipboard_items SET name = ? WHERE id = ?", (name if name else None, item_id))
+        cursor.execute(
+            "UPDATE clipboard_items SET name = ? WHERE id = ?",
+            (name if name else None, item_id),
+        )
 
         # Also update FTS table if this is a text or file item
-        cursor.execute("SELECT type FROM clipboard_items WHERE id = ?", (item_id,))
+        cursor.execute(
+            "SELECT type FROM clipboard_items WHERE id = ?", (item_id,)
+        )
         row = cursor.fetchone()
         if row and (row["type"] == "text" or row["type"] == "file"):
             try:
                 cursor.execute(
                     "UPDATE clipboard_fts SET name = ? WHERE rowid = ?",
-                    (name if name else '', item_id)
+                    (name if name else "", item_id),
                 )
             except Exception as e:
-                logging.warning(f"Failed to update FTS name for item {item_id}: {e}")
+                logging.warning(
+                    f"Failed to update FTS name for item {item_id}: {e}"
+                )
 
         self.conn.commit()
         return cursor.rowcount > 0
@@ -610,7 +674,9 @@ class ClipboardDB:
         row = cursor.fetchone()
         return row["count"] if row else 0
 
-    def add_pasted_item(self, clipboard_item_id: int, pasted_timestamp: str = None) -> int:
+    def add_pasted_item(
+        self, clipboard_item_id: int, pasted_timestamp: str = None
+    ) -> int:
         """
         Record when a clipboard item was pasted
 
@@ -639,7 +705,9 @@ class ClipboardDB:
         )
         return pasted_id
 
-    def get_recently_pasted(self, limit: int = 100, offset: int = 0, sort_order: str = "DESC") -> List[Dict]:
+    def get_recently_pasted(
+        self, limit: int = 100, offset: int = 0, sort_order: str = "DESC"
+    ) -> List[Dict]:
         """
         Get recently pasted items (sorted by pasted timestamp) with JOIN to clipboard_items
 
@@ -693,7 +761,9 @@ class ClipboardDB:
             )
         return items
 
-    def search_items(self, query: str, limit: int = 100, filters: List[str] = None) -> List[Dict]:
+    def search_items(
+        self, query: str, limit: int = 100, filters: List[str] = None
+    ) -> List[Dict]:
         """
         Search clipboard items using full-text search
 
@@ -727,7 +797,9 @@ class ClipboardDB:
                     if f == "text":
                         type_filters.append("ci.type = 'text'")
                     elif f == "image":
-                        type_filters.append("(ci.type LIKE 'image/%' OR ci.type = 'screenshot')")
+                        type_filters.append(
+                            "(ci.type LIKE 'image/%' OR ci.type = 'screenshot')"
+                        )
                     elif f == "url":
                         type_filters.append("ci.type = 'url'")
                     elif f == "file":
@@ -753,12 +825,14 @@ class ClipboardDB:
             if tag_filters:
                 # Build subquery for tags
                 tag_placeholders = ",".join("?" * len(tag_filters))
-                where_clauses.append(f"""ci.id IN (
+                where_clauses.append(
+                    f"""ci.id IN (
                     SELECT item_id FROM item_tags
                     WHERE tag_id IN (
                         SELECT id FROM tags WHERE name IN ({tag_placeholders})
                     )
-                )""")
+                )"""
+                )
                 query_params.extend(tag_filters)
 
         # Build final WHERE clause
@@ -766,6 +840,7 @@ class ClipboardDB:
 
         # Debug logging
         import logging
+
         logging.info(f"[SEARCH DB] Query: '{query}', Filters: {filters}")
         logging.info(f"[SEARCH DB] WHERE clause: {where_clause}")
         logging.info(f"[SEARCH DB] Query params: {query_params}")
@@ -816,9 +891,13 @@ class ClipboardDB:
     @staticmethod
     def get_system_tag_color(item_type: str) -> str:
         """Get the system tag color for an item type"""
-        return ClipboardDB.SYSTEM_TAG_COLORS.get(item_type, "#9a9996")  # Default to gray
+        return ClipboardDB.SYSTEM_TAG_COLORS.get(
+            item_type, "#9a9996"
+        )  # Default to gray
 
-    def create_tag(self, name: str, description: str = None, color: str = None) -> int:
+    def create_tag(
+        self, name: str, description: str = None, color: str = None
+    ) -> int:
         """
         Create a new tag
 
@@ -844,7 +923,9 @@ class ClipboardDB:
             )
             self.conn.commit()
             tag_id = cursor.lastrowid
-            logging.info(f"Created tag: ID={tag_id}, Name='{name}', Color={color}")
+            logging.info(
+                f"Created tag: ID={tag_id}, Name='{name}', Color={color}"
+            )
             return tag_id
         except sqlite3.IntegrityError as e:
             logging.error(f"Failed to create tag '{name}': {e}")
@@ -903,7 +984,11 @@ class ClipboardDB:
         return None
 
     def update_tag(
-        self, tag_id: int, name: str = None, description: str = None, color: str = None
+        self,
+        tag_id: int,
+        name: str = None,
+        description: str = None,
+        color: str = None,
     ) -> bool:
         """
         Update a tag's properties
@@ -1021,7 +1106,9 @@ class ClipboardDB:
         if success:
             logging.info(f"Committed remove tag {tag_id} from item {item_id}")
         else:
-            logging.warning(f"Attempted to remove non-existent tag {tag_id} from item {item_id}")
+            logging.warning(
+                f"Attempted to remove non-existent tag {tag_id} from item {item_id}"
+            )
         return success
 
     def get_tags_for_item(self, item_id: int) -> List[Dict]:
@@ -1060,7 +1147,11 @@ class ClipboardDB:
         return tags
 
     def get_items_by_tags(
-        self, tag_ids: List[int], match_all: bool = False, limit: int = 100, offset: int = 0
+        self,
+        tag_ids: List[int],
+        match_all: bool = False,
+        limit: int = 100,
+        offset: int = 0,
     ) -> List[Dict]:
         """
         Get clipboard items filtered by tags
@@ -1085,7 +1176,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail
+                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1101,7 +1192,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail
+                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1120,6 +1211,7 @@ class ClipboardDB:
                     "type": row["type"],
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
+                    "name": row["name"],
                 }
             )
         return items
@@ -1146,12 +1238,12 @@ class ClipboardDB:
             try:
                 data = row["data"]
                 # Extract metadata from file data
-                separator = b'\n---FILE_CONTENT---\n'
+                separator = b"\n---FILE_CONTENT---\n"
                 if separator in data:
                     metadata_bytes, _ = data.split(separator, 1)
-                    metadata_json = metadata_bytes.decode('utf-8')
+                    metadata_json = metadata_bytes.decode("utf-8")
                     metadata = json.loads(metadata_json)
-                    extension = metadata.get('extension', '')
+                    extension = metadata.get("extension", "")
                     if extension:
                         extensions.add(extension)
             except Exception:

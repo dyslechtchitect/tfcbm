@@ -565,6 +565,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _update_item_name(self, item_id, name):
         """Update item name on server."""
+        # Update local item data immediately
+        self.item["name"] = name
 
         def update():
             try:
@@ -574,17 +576,32 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     async with websockets.connect(uri) as websocket:
                         request = {
                             "action": "update_item_name",
-                            "id": item_id,
+                            "item_id": item_id,
                             "name": name,
                         }
                         await websocket.send(json.dumps(request))
-                        await websocket.recv()
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "item_name_updated":
+                            if data.get("success"):
+                                logger.info(
+                                    f"[UI] Name updated for item {item_id}: '{name}'"
+                                )
+                            else:
+                                logger.error(
+                                    f"[UI] Failed to update name for item {item_id}: {data.get('error', 'Unknown error')}"
+                                )
+                        else:
+                            logger.warning(
+                                f"[UI] Unexpected response updating name: {data}"
+                            )
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(send_update())
             except Exception as e:
-                print(f"Error updating name: {e}")
+                logger.error(f"[UI] Error updating name: {e}")
 
         threading.Thread(target=update, daemon=True).start()
 
