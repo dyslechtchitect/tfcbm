@@ -50,8 +50,14 @@ class ItemContent:
 
         # Add quotes inline with the text content
         text_content = self.item["content"]
-        open_quote = '<span size="larger" alpha="60%">\u201c</span>'
-        close_quote = '<span size="larger" alpha="60%">\u201d</span>'
+        open_quote = (
+            '<span font_family="serif" font_weight="heavy" '
+            'size="28pt" alpha="60%">\u201c</span>'
+        )
+        close_quote = (
+            '<span font_family="serif" font_weight="heavy" '
+            'size="28pt" alpha="60%">\u201d</span>'
+        )
 
         if self.search_query:
             # Highlight search terms in the content
