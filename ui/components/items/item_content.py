@@ -40,29 +40,33 @@ class ItemContent:
         return content_clamp
 
     def _build_text_content(self) -> Gtk.Widget:
-        overlay = Gtk.Overlay()
-        overlay.set_vexpand(False)
-        overlay.set_hexpand(True)
-        overlay.set_overflow(Gtk.Overflow.HIDDEN)
-
-        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        text_box.set_halign(Gtk.Align.START)
-        text_box.set_valign(Gtk.Align.START)
-        text_box.set_vexpand(False)
-
-        open_quote = Gtk.Label(label="\u201c")
-        open_quote.add_css_class("big-quote")
-        open_quote.set_valign(Gtk.Align.START)
-        text_box.append(open_quote)
+        container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        container.set_vexpand(False)
+        container.set_hexpand(True)
+        container.set_overflow(Gtk.Overflow.HIDDEN)
+        container.set_margin_bottom(40)  # Space for tags overlay
 
         content_label = Gtk.Label()
+
+        # Add quotes inline with the text content
+        text_content = self.item["content"]
+        open_quote = '<span size="larger" alpha="60%">\u201c</span>'
+        close_quote = '<span size="larger" alpha="60%">\u201d</span>'
+
         if self.search_query:
-            highlighted = highlight_text(
-                self.item["content"], self.search_query
-            )
-            content_label.set_markup(highlighted)
+            # Highlight search terms in the content
+            highlighted = highlight_text(text_content, self.search_query)
+            # Add quotes around the highlighted content
+            markup = f"{open_quote}{highlighted}{close_quote}"
+            content_label.set_markup(markup)
         else:
-            content_label.set_text(self.item["content"])
+            # Escape the content and add quotes
+            from gi.repository import GLib
+
+            escaped = GLib.markup_escape_text(text_content)
+            markup = f"{open_quote}{escaped}{close_quote}"
+            content_label.set_markup(markup)
+
         content_label.set_wrap(True)
         content_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         content_label.set_ellipsize(Pango.EllipsizeMode.END)
@@ -77,17 +81,9 @@ class ItemContent:
         content_label.set_hexpand(True)
         content_label.set_vexpand(False)
         content_label.set_max_width_chars(-1)
-        text_box.append(content_label)
 
-        overlay.set_child(text_box)
-
-        close_quote = Gtk.Label(label="\u201d")
-        close_quote.add_css_class("big-quote")
-        close_quote.set_halign(Gtk.Align.END)
-        close_quote.set_valign(Gtk.Align.END)
-        overlay.add_overlay(close_quote)
-
-        return overlay
+        container.append(content_label)
+        return container
 
     def _build_file_content(self) -> Gtk.Widget:
         file_metadata = self.item.get("content", {})
@@ -106,6 +102,7 @@ class ItemContent:
         file_box.set_vexpand(False)
         file_box.set_margin_start(12)
         file_box.set_margin_top(12)
+        file_box.set_margin_bottom(40)  # Space for tags overlay
 
         icon_name = get_file_icon(file_name, mime_type, is_directory)
         file_icon = Gtk.Image.new_from_icon_name(icon_name)
@@ -169,7 +166,12 @@ class ItemContent:
             picture.set_can_shrink(True)
             picture.set_overflow(Gtk.Overflow.HIDDEN)
 
-            return picture
+            # Wrap in container to add bottom margin for tags
+            container = Gtk.Box()
+            container.set_margin_bottom(40)  # Space for tags overlay
+            container.append(picture)
+
+            return container
         except Exception as e:
             return self._build_error(f"Failed to load image: {str(e)}")
 

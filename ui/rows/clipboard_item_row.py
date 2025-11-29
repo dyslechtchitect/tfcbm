@@ -109,17 +109,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         if item.get("type") == "file":
             self._prefetch_file_for_dnd()
 
-        header = ItemHeader(
-            item=self.item,
-            on_name_save=self._update_item_name,
-            show_pasted_time=self.show_pasted_time,
-            search_query=self.search_query,
-        )
-        main_box.append(header.build())
-
-        content = ItemContent(item=self.item, search_query=self.search_query)
-        main_box.append(content.build())
-
+        # Build actions first
         actions = ItemActions(
             item=self.item,
             on_copy=self._on_copy_action,
@@ -128,17 +118,34 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             on_tags=self._on_tags_action,
             on_delete=self._on_delete_action,
         )
-        main_box.append(actions.build())
+        actions_widget = actions.build()
 
-        overlay = Gtk.Overlay()
-        overlay.set_child(card_frame)
+        # Build header with actions on the right
+        header = ItemHeader(
+            item=self.item,
+            on_name_save=self._update_item_name,
+            show_pasted_time=self.show_pasted_time,
+            search_query=self.search_query,
+        )
+        main_box.append(header.build(actions_widget))
 
+        content = ItemContent(item=self.item, search_query=self.search_query)
+        main_box.append(content.build())
+
+        self.overlay = Gtk.Overlay()
+        self.overlay.set_child(card_frame)
+
+        # Build initial tags display
         tags = ItemTags(
             tags=self.item.get("tags", []), on_click=self._on_tags_action
         )
-        overlay.add_overlay(tags.build())
+        self.tags_widget = tags.build()
+        self.overlay.add_overlay(self.tags_widget)
 
-        self.set_child(overlay)
+        self.set_child(self.overlay)
+
+        # Load tags asynchronously from server
+        self._load_item_tags()
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked."""
@@ -211,16 +218,63 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         )
 
     def _on_view_action(self):
-        """Handle view button click."""
-        print(f"[UI] View item {self.item['id']}")
+        """Handle view button click - show full item dialog."""
+        self._show_view_dialog()
 
     def _on_save_action(self):
-        """Handle save button click."""
-        print(f"[UI] Save item {self.item['id']}")
+        """Handle save button click - show save file dialog."""
+        self._show_save_dialog()
 
     def _on_tags_action(self):
         """Handle tags button click - show tags popover."""
         self._show_tags_popover()
+
+    def _load_item_tags(self):
+        """Load and display tags for this item asynchronously."""
+
+        def run_load():
+            try:
+
+                async def fetch_tags():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "get_item_tags",
+                            "item_id": self.item.get("id"),
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "item_tags":
+                            tags = data.get("tags", [])
+                            # Store tags in item for filtering
+                            self.item["tags"] = tags
+                            # Update UI on main thread
+                            GLib.idle_add(self._display_tags, tags)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(fetch_tags())
+            except Exception as e:
+                logger.error(f"[UI] Error loading item tags: {e}")
+
+        threading.Thread(target=run_load, daemon=True).start()
+
+    def _display_tags(self, tags):
+        """Display tags in the tags overlay."""
+        # Remove old tags widget
+        if self.tags_widget:
+            self.overlay.remove_overlay(self.tags_widget)
+
+        # Create new tags widget
+        tags_component = ItemTags(tags=tags, on_click=self._on_tags_action)
+        self.tags_widget = tags_component.build()
+
+        # Add new tags widget to overlay
+        self.overlay.add_overlay(self.tags_widget)
+
+        return False  # For GLib.idle_add
 
     def _on_delete_action(self):
         """Handle delete button click - show confirmation dialog."""
@@ -578,10 +632,107 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         threading.Thread(target=send_delete, daemon=True).start()
 
     def _show_tags_popover(self):
-        """Show tags management popover - delegate to window."""
-        # Window has all tags list, handles this
-        if hasattr(self.window, "_show_tags_popover_for_item"):
-            self.window._show_tags_popover_for_item(self.item)
+        """Show popover to manage tags for this item."""
+        # Create popover
+        popover = Gtk.Popover()
+        popover.set_parent(self)
+        popover.set_autohide(True)
+
+        # Content box
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content_box.set_margin_top(12)
+        content_box.set_margin_bottom(12)
+        content_box.set_margin_start(12)
+        content_box.set_margin_end(12)
+
+        # Title
+        title = Gtk.Label()
+        title.set_markup("<b>Manage Tags</b>")
+        title.set_halign(Gtk.Align.START)
+        content_box.append(title)
+
+        # Scrollable tag list
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_max_content_height(300)
+        scroll.set_propagate_natural_height(True)
+
+        # Tag list box
+        tag_list = Gtk.ListBox()
+        tag_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        tag_list.add_css_class("boxed-list")
+
+        # Get item's current tags
+        item_id = self.item.get("id")
+        item_tags = self.item.get("tags", [])
+        item_tag_ids = [
+            tag.get("id") for tag in item_tags if isinstance(tag, dict)
+        ]
+
+        # Add all tags as checkbuttons
+        if hasattr(self.window, "all_tags"):
+            for tag in self.window.all_tags:
+                # Skip system tags
+                if tag.get("is_system"):
+                    continue
+
+                tag_id = tag.get("id")
+                tag_name = tag.get("name", "")
+                tag_color = tag.get("color", "#9a9996")
+
+                # Create row with checkbutton
+                row = Gtk.ListBoxRow()
+                row_box = Gtk.Box(
+                    orientation=Gtk.Orientation.HORIZONTAL, spacing=12
+                )
+                row_box.set_margin_top(6)
+                row_box.set_margin_bottom(6)
+                row_box.set_margin_start(6)
+                row_box.set_margin_end(6)
+
+                # Color indicator
+                color_box = Gtk.Box()
+                color_box.set_size_request(16, 16)
+                css_provider = Gtk.CssProvider()
+                css_data = f"box {{ background-color: {tag_color}; border-radius: 3px; }}"
+                css_provider.load_from_data(css_data.encode())
+                color_box.get_style_context().add_provider(
+                    css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+                )
+                row_box.append(color_box)
+
+                # Checkbutton with tag name
+                check = Gtk.CheckButton()
+                check.set_label(tag_name)
+                check.set_hexpand(True)
+                check.set_active(tag_id in item_tag_ids)
+                check.connect(
+                    "toggled",
+                    lambda cb, tid=tag_id, iid=item_id: self._on_tag_toggle(
+                        cb, tid, iid, popover
+                    ),
+                )
+                row_box.append(check)
+
+                row.set_child(row_box)
+                tag_list.append(row)
+
+            # No tags message
+            if not any(
+                not tag.get("is_system") for tag in self.window.all_tags
+            ):
+                no_tags_label = Gtk.Label()
+                no_tags_label.set_markup(
+                    "<i>No custom tags available.\nCreate tags in the Tags tab.</i>"
+                )
+                no_tags_label.set_justify(Gtk.Justification.CENTER)
+                content_box.append(no_tags_label)
+
+        scroll.set_child(tag_list)
+        content_box.append(scroll)
+
+        popover.set_child(content_box)
+        popover.popup()
 
     def _on_tag_drop(self, drop_target, value, x, y):
         """Handle tag drop on item."""
@@ -590,6 +741,45 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         if hasattr(self.window, "_on_tag_dropped_on_item"):
             self.window._on_tag_dropped_on_item(tag_id, item_id)
         return True
+
+    def _on_tag_toggle(self, checkbutton, tag_id, item_id, popover):
+        """Handle tag checkbox toggle."""
+        is_active = checkbutton.get_active()
+
+        def send_tag_update():
+            try:
+
+                async def update_tag():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        action = "add_tag" if is_active else "remove_tag"
+                        request = {
+                            "action": action,
+                            "item_id": item_id,
+                            "tag_id": tag_id,
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") in ["tag_added", "tag_removed"]:
+                            # Reload tags for this item
+                            GLib.idle_add(self._load_item_tags)
+                            # Notify window to refresh if needed
+                            if hasattr(self.window, "_on_item_tags_changed"):
+                                GLib.idle_add(
+                                    self.window._on_item_tags_changed, item_id
+                                )
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(update_tag())
+            except Exception as e:
+                logger.error(f"[UI] Error toggling tag: {e}")
+                # Revert checkbox on error
+                GLib.idle_add(lambda: checkbutton.set_active(not is_active))
+
+        threading.Thread(target=send_tag_update, daemon=True).start()
 
     def _on_card_clicked(self, gesture, n_press, x, y):
         """Handle card clicks - single click copies."""
@@ -856,3 +1046,147 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Run in background thread to avoid blocking UI
         thread = threading.Thread(target=fetch_and_save, daemon=True)
         thread.start()
+
+    def _show_save_dialog(self):
+        """Show file save dialog."""
+        item_type = self.item["type"]
+        self.item["id"]
+
+        # Create file chooser dialog
+        dialog = Gtk.FileDialog()
+
+        # Set default filename based on type
+        custom_name = self.item.get("name")
+        if item_type == "text":
+            filename = (
+                f"{custom_name}.txt"
+                if custom_name and not custom_name.endswith(".txt")
+                else custom_name or "clipboard.txt"
+            )
+            dialog.set_initial_name(filename)
+        elif item_type.startswith("image/"):
+            ext = item_type.split("/")[-1]
+            filename = (
+                f"{custom_name}.{ext}"
+                if custom_name and not custom_name.endswith(f".{ext}")
+                else custom_name or f"clipboard.{ext}"
+            )
+            dialog.set_initial_name(filename)
+        elif item_type == "screenshot":
+            filename = (
+                f"{custom_name}.png"
+                if custom_name and not custom_name.endswith(".png")
+                else custom_name or "screenshot.png"
+            )
+            dialog.set_initial_name(filename)
+
+        window = self.get_root()
+
+        def on_save_finish(dialog_obj, result):
+            try:
+                file = dialog_obj.save_finish(result)
+                if file:
+                    path = file.get_path()
+                    if item_type == "text":
+                        with open(path, "w") as f:
+                            f.write(self.item["content"])
+                        logger.info(f"Saved text to {path}")
+                    elif (
+                        item_type.startswith("image/")
+                        or item_type == "screenshot"
+                    ):
+                        # Save image from base64 data
+                        image_data = base64.b64decode(self.item["content"])
+                        with open(path, "wb") as f:
+                            f.write(image_data)
+                        logger.info(f"Saved image to {path}")
+            except Exception as e:
+                logger.error(f"Error saving file: {e}")
+
+        dialog.save(window, None, on_save_finish)
+
+    def _show_view_dialog(self):
+        """Show full item view dialog."""
+        item_type = self.item["type"]
+        window = self.get_root()
+
+        dialog = Adw.Window(modal=True, transient_for=window)
+        dialog.set_title("Full Clipboard Item")
+        dialog.set_default_size(800, 600)
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        main_box.set_margin_start(18)
+        main_box.set_margin_end(18)
+        main_box.set_margin_top(12)
+        main_box.set_margin_bottom(12)
+
+        # Header with close button
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        header_box.set_hexpand(True)
+
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        header_box.append(spacer)
+
+        close_button = Gtk.Button()
+        close_button.set_icon_name("window-close-symbolic")
+        close_button.set_tooltip_text("Close")
+        close_button.connect("clicked", lambda btn: dialog.close())
+        header_box.append(close_button)
+
+        main_box.append(header_box)
+
+        # Content area
+        content_scroll = Gtk.ScrolledWindow()
+        content_scroll.set_vexpand(True)
+        content_scroll.set_hexpand(True)
+
+        if item_type == "text":
+            content_label = Gtk.Label(label=self.item["content"])
+            content_label.set_wrap(True)
+            content_label.set_selectable(True)
+            content_label.set_halign(Gtk.Align.START)
+            content_label.set_valign(Gtk.Align.START)
+            content_scroll.set_child(content_label)
+
+        elif item_type.startswith("image/") or item_type == "screenshot":
+            image_data = base64.b64decode(self.item["content"])
+            loader = GdkPixbuf.PixbufLoader()
+            loader.write(image_data)
+            loader.close()
+            pixbuf = loader.get_pixbuf()
+            texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+
+            picture = Gtk.Picture.new_for_paintable(texture)
+            picture.set_halign(Gtk.Align.CENTER)
+            picture.set_valign(Gtk.Align.CENTER)
+            picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+            content_scroll.set_child(picture)
+
+        elif item_type == "file":
+            file_metadata = self.item.get("content", {})
+            file_name = file_metadata.get("name", "Unknown file")
+
+            file_info_box = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL, spacing=12
+            )
+            file_info_box.set_valign(Gtk.Align.CENTER)
+            file_info_box.set_halign(Gtk.Align.CENTER)
+
+            name_label = Gtk.Label()
+            name_label.set_markup(
+                f"<b>{GLib.markup_escape_text(file_name)}</b>"
+            )
+            file_info_box.append(name_label)
+
+            size = file_metadata.get("size", 0)
+            if size > 0:
+                size_mb = size / (1024 * 1024)
+                size_label = Gtk.Label(label=f"Size: {size_mb:.2f} MB")
+                file_info_box.append(size_label)
+
+            content_scroll.set_child(file_info_box)
+
+        main_box.append(content_scroll)
+        dialog.set_content(main_box)
+        dialog.present()

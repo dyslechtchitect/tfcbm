@@ -24,12 +24,19 @@ class ItemHeader:
         self.search_query = search_query
         self.name_entry = None
 
-    def build(self) -> Gtk.Widget:
+    def build(self, actions_widget: Gtk.Widget = None) -> Gtk.Widget:
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        header_box.set_hexpand(False)
+        header_box.set_hexpand(True)
 
         self._add_timestamp(header_box)
         self._add_name_entry(header_box)
+
+        # Add spacer to push actions to the right
+        if actions_widget:
+            spacer = Gtk.Box()
+            spacer.set_hexpand(True)
+            header_box.append(spacer)
+            header_box.append(actions_widget)
 
         return header_box
 

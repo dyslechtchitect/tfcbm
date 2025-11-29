@@ -51,8 +51,13 @@ class ItemActions:
         button.add_css_class("flat")
         button.set_tooltip_text("Copy to clipboard")
 
+        def on_click(gesture, n_press, x, y):
+            self._trigger_copy()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
         gesture = Gtk.GestureClick.new()
-        gesture.connect("released", lambda *_: self._trigger_copy())
+        gesture.connect("released", on_click)
         gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         button.add_controller(gesture)
 
@@ -64,8 +69,13 @@ class ItemActions:
         button.add_css_class("flat")
         button.set_tooltip_text("View full item")
 
+        def on_click(gesture, n_press, x, y):
+            self._trigger_view()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
         gesture = Gtk.GestureClick.new()
-        gesture.connect("released", lambda *_: self._trigger_view())
+        gesture.connect("released", on_click)
         gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         button.add_controller(gesture)
 
@@ -77,8 +87,13 @@ class ItemActions:
         button.add_css_class("flat")
         button.set_tooltip_text("Save to file")
 
+        def on_click(gesture, n_press, x, y):
+            self._trigger_save()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
         gesture = Gtk.GestureClick.new()
-        gesture.connect("released", lambda *_: self._trigger_save())
+        gesture.connect("released", on_click)
         gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         button.add_controller(gesture)
 
@@ -100,8 +115,13 @@ class ItemActions:
             css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
         )
 
+        def on_click(gesture, n_press, x, y):
+            self._trigger_tags()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
         gesture = Gtk.GestureClick.new()
-        gesture.connect("released", lambda *_: self._trigger_tags())
+        gesture.connect("released", on_click)
         gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         button.add_controller(gesture)
 
@@ -113,8 +133,13 @@ class ItemActions:
         button.add_css_class("flat")
         button.set_tooltip_text("Delete item")
 
+        def on_click(gesture, n_press, x, y):
+            self._trigger_delete()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
         gesture = Gtk.GestureClick.new()
-        gesture.connect("released", lambda *_: self._trigger_delete())
+        gesture.connect("released", on_click)
         gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         button.add_controller(gesture)
 
