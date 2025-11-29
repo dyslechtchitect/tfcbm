@@ -46,10 +46,30 @@ class ItemTags:
         label = Gtk.Label(label=tag_name)
         label.add_css_class("tag-label")
 
+        # Convert hex color to rgba with 20% opacity
+        # Parse hex color (supports #RGB and #RRGGBB)
+        color_hex = tag_color.lstrip("#")
+        if len(color_hex) == 3:
+            r = int(color_hex[0] * 2, 16)
+            g = int(color_hex[1] * 2, 16)
+            b = int(color_hex[2] * 2, 16)
+        else:
+            r = int(color_hex[0:2], 16)
+            g = int(color_hex[2:4], 16)
+            b = int(color_hex[4:6], 16)
+
+        bg_color = f"rgba({r}, {g}, {b}, 0.2)"
+
         css_provider = Gtk.CssProvider()
         css_data = (
-            f"label {{ color: {tag_color}; "
-            f"font-size: 9pt; font-weight: 600; }}"
+            f"label {{ "
+            f"color: {tag_color}; "
+            f"background-color: {bg_color}; "
+            f"border-radius: 4px; "
+            f"padding: 2px 6px; "
+            f"font-size: 8pt; "
+            f"font-weight: 600; "
+            f"}}"
         )
         css_provider.load_from_data(css_data.encode())
         label.get_style_context().add_provider(
