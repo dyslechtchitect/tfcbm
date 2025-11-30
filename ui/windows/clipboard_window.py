@@ -2870,6 +2870,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             GLib.idle_add(
                                 self.load_tags
                             )  # Refresh tag filter display
+                            GLib.idle_add(
+                                self._refresh_all_item_tags
+                            )  # Refresh tags on all visible items
                         else:
                             GLib.idle_add(
                                 self.show_notification, "Failed to delete tag"
@@ -2888,3 +2891,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 )
 
         threading.Thread(target=run_delete, daemon=True).start()
+
+    def _refresh_all_item_tags(self):
+        """Refresh tag displays on all visible clipboard items."""
+        print("[UI] Refreshing tags on all visible items")
+
+        # Refresh tags on all items in copied listbox
+        for row in self.copied_listbox:
+            if isinstance(row, ClipboardItemRow):
+                row._load_item_tags()
+
+        # Refresh tags on all items in pasted listbox
+        for row in self.pasted_listbox:
+            if isinstance(row, ClipboardItemRow):
+                row._load_item_tags()
+
+        print("[UI] Finished refreshing tags on all items")
