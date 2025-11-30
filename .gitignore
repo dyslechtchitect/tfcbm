@@ -316,7 +316,7 @@ $RECYCLE.BIN/
 *~
 .fuse_hidden*
 .directory
-.Trash-*
+.Trash-*f
 .nfs*
 
 # === Build and Package Managers ===
@@ -410,5 +410,7 @@ Thumbs.db
 output/
 output.txt
 
-# Claude Code
+# LLM TOOLS
 .claude/
+.grok/
+
