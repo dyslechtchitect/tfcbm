@@ -26,7 +26,9 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
 from ui.components.items import ItemActions, ItemContent, ItemHeader, ItemTags
+from ui.dialogs import SecretNamingDialog
 from ui.services.clipboard_service import ClipboardService
+from ui.services.password_service import PasswordService
 
 logger = logging.getLogger("TFCBM.UI")
 
@@ -43,6 +45,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self._last_paste_time = 0
         self._file_temp_path = None
         self.clipboard_service = ClipboardService()
+        self.password_service = PasswordService()
 
         item_height = self.window.settings.item_height
 
@@ -118,9 +121,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             on_view=self._on_view_action,
             on_save=self._on_save_action,
             on_tags=self._on_tags_action,
+            on_secret=self._on_secret_action,
             on_delete=self._on_delete_action,
         )
-        actions_widget = self.actions.build()
+        self.actions_widget = self.actions.build()
 
         # Build header with actions on the right
         header = ItemHeader(
@@ -129,10 +133,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             show_pasted_time=self.show_pasted_time,
             search_query=self.search_query,
         )
-        main_box.append(header.build(actions_widget))
+        self.header_widget = header.build(self.actions_widget)
+        main_box.append(self.header_widget)
 
+        # Build and store content widget for later updates
         content = ItemContent(item=self.item, search_query=self.search_query)
-        main_box.append(content.build())
+        self.content_widget = content.build()
+        main_box.append(self.content_widget)
+
+        # Store reference to main_box for rebuilding content
+        self.main_box = main_box
 
         self.overlay = Gtk.Overlay()
         self.overlay.set_child(card_frame)
@@ -148,6 +158,117 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Load tags asynchronously from server
         self._load_item_tags()
+
+    def _rebuild_content(self):
+        """Rebuild the content area to reflect updated item data."""
+        logger.info(f"_rebuild_content called for item {self.item.get('id')}, is_secret={self.item.get('is_secret')}")
+
+        # Remove old content widget
+        self.main_box.remove(self.content_widget)
+
+        # Build new content with updated item data
+        content = ItemContent(item=self.item, search_query=self.search_query)
+        self.content_widget = content.build()
+
+        # Append to main_box (it will be added at the end, which is correct)
+        self.main_box.append(self.content_widget)
+
+        # Force GTK to show and redraw the new widgets
+        self.content_widget.show()
+        self.main_box.queue_draw()
+        self.card_frame.queue_draw()
+
+        logger.info(f"_rebuild_content completed for item {self.item.get('id')}")
+        return False  # For GLib.idle_add
+
+    def _update_lock_button_icon(self):
+        """Update the lock button icon to reflect current secret status."""
+        logger.info(f"_update_lock_button_icon called for item {self.item.get('id')}, is_secret={self.item.get('is_secret')}")
+
+        # Rebuild actions with updated item data
+        self.actions = ItemActions(
+            item=self.item,
+            on_copy=self._on_copy_action,
+            on_view=self._on_view_action,
+            on_save=self._on_save_action,
+            on_tags=self._on_tags_action,
+            on_secret=self._on_secret_action,
+            on_delete=self._on_delete_action,
+        )
+
+        # Remove old header
+        self.main_box.remove(self.header_widget)
+
+        # Build new header with updated actions
+        new_actions_widget = self.actions.build()
+        header = ItemHeader(
+            item=self.item,
+            on_name_save=self._update_item_name,
+            show_pasted_time=self.show_pasted_time,
+            search_query=self.search_query,
+        )
+        self.header_widget = header.build(new_actions_widget)
+
+        # Insert header at the beginning (position 0)
+        self.main_box.prepend(self.header_widget)
+
+        # Force GTK to show and redraw the new widgets
+        self.header_widget.show()
+        self.main_box.queue_draw()
+        self.card_frame.queue_draw()
+
+        logger.info(f"_update_lock_button_icon completed for item {self.item.get('id')}")
+        return False  # For GLib.idle_add
+
+    def _fetch_secret_content(self, item_id):
+        """Fetch the actual content of a secret item from the server."""
+        content = [None]  # Use list to allow modification in nested function
+
+        def fetch_content():
+            try:
+                async def get_content():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "get_item",
+                            "item_id": item_id
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "item" and data.get("item"):
+                            item_data = data["item"]
+                            content[0] = item_data.get("content")
+                            logger.info(f"Fetched secret content for item {item_id}")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(get_content())
+                finally:
+                    loop.close()
+
+            except Exception as e:
+                logger.error(f"Error fetching secret content: {e}")
+
+        # Run synchronously in a thread and wait
+        import threading
+        thread = threading.Thread(target=fetch_content)
+        thread.start()
+        thread.join(timeout=5)  # Wait up to 5 seconds
+
+        return content[0]
+
+    def _show_auth_required_notification(self):
+        """Show notification that authentication is required."""
+        self.window.show_notification("Authentication required to drag secret item")
+        return False  # For GLib.idle_add
+
+    def _show_fetch_error_notification(self):
+        """Show notification that fetching secret content failed."""
+        self.window.show_notification("Failed to retrieve secret content")
+        return False  # For GLib.idle_add
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked."""
@@ -221,15 +342,198 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _on_view_action(self):
         """Handle view button click - show full item dialog."""
-        self._show_view_dialog()
+        # Check if item is secret and require authentication
+        is_secret = self.item.get("is_secret", False)
+        if is_secret:
+            logger.info(f"Item {self.item.get('id')} is secret, checking authentication for view")
+            if not self.password_service.is_authenticated():
+                logger.info("Not authenticated for view, prompting for password")
+                if not self.password_service.authenticate(self.get_root()):
+                    logger.info("Authentication failed or cancelled for view")
+                    self.window.show_notification("Authentication required to view secret")
+                    return
+                else:
+                    logger.info("Authentication successful for view")
+            else:
+                logger.info("Already authenticated for view")
+
+            # Fetch real content for viewing
+            logger.info(f"Fetching real content for secret item {self.item.get('id')} for view")
+            real_content = self._fetch_secret_content(self.item.get('id'))
+            if not real_content:
+                self.window.show_notification("Failed to retrieve secret content")
+                return
+            logger.info(f"Retrieved secret content for view (length: {len(str(real_content))})")
+
+            # Temporarily replace content for viewing
+            original_content = self.item.get("content")
+            self.item["content"] = real_content
+            self._show_view_dialog()
+            # Restore placeholder
+            self.item["content"] = original_content
+        else:
+            self._show_view_dialog()
 
     def _on_save_action(self):
         """Handle save button click - show save file dialog."""
-        self._show_save_dialog()
+        # Check if item is secret and require authentication
+        is_secret = self.item.get("is_secret", False)
+        if is_secret:
+            logger.info(f"Item {self.item.get('id')} is secret, checking authentication for save")
+            if not self.password_service.is_authenticated():
+                logger.info("Not authenticated for save, prompting for password")
+                if not self.password_service.authenticate(self.get_root()):
+                    logger.info("Authentication failed or cancelled for save")
+                    self.window.show_notification("Authentication required to save secret")
+                    return
+                else:
+                    logger.info("Authentication successful for save")
+            else:
+                logger.info("Already authenticated for save")
+
+            # Fetch real content for saving
+            logger.info(f"Fetching real content for secret item {self.item.get('id')} for save")
+            real_content = self._fetch_secret_content(self.item.get('id'))
+            if not real_content:
+                self.window.show_notification("Failed to retrieve secret content")
+                return
+            logger.info(f"Retrieved secret content for save (length: {len(str(real_content))})")
+
+            # Temporarily replace content for saving
+            original_content = self.item.get("content")
+            self.item["content"] = real_content
+            self._show_save_dialog()
+            # Restore placeholder
+            self.item["content"] = original_content
+        else:
+            self._show_save_dialog()
 
     def _on_tags_action(self):
         """Handle tags button click - show tags popover."""
         self._show_tags_popover()
+
+    def _on_secret_action(self):
+        """Handle secret button click - toggle secret status."""
+        item_id = self.item.get("id")
+        current_is_secret = self.item.get("is_secret", False)
+        item_name = self.item.get("name")
+
+        # If currently a secret, require authentication before unmarking
+        if current_is_secret:
+            logger.info(f"Item {item_id} is secret, checking authentication for unmark")
+            if not self.password_service.is_authenticated():
+                logger.info("Not authenticated for unmark, prompting for password")
+                if not self.password_service.authenticate(self.get_root()):
+                    logger.info("Authentication failed or cancelled for unmark")
+                    self.window.show_notification("Authentication required to unmark secret")
+                    return
+                else:
+                    logger.info("Authentication successful for unmark")
+            else:
+                logger.info("Already authenticated for unmark")
+
+            # Show confirmation dialog after authentication
+            dialog = Adw.AlertDialog.new(
+                "Unmark as Secret?",
+                "Are you sure you want to remove secret protection from this item? The content will become visible."
+            )
+            dialog.add_response("cancel", "Cancel")
+            dialog.add_response("confirm", "Unmark as Secret")
+            dialog.set_response_appearance("confirm", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.set_default_response("cancel")
+            dialog.set_close_response("cancel")
+
+            def on_response(dialog_obj, response):
+                if response == "confirm":
+                    self._toggle_secret_status(item_id, False, item_name)
+
+            dialog.connect("response", on_response)
+            dialog.present(self.get_root())
+
+        # If marking as secret and item has no name, show naming dialog
+        elif not item_name:
+            def on_name_provided(name):
+                self._toggle_secret_status(item_id, True, name)
+
+            dialog = SecretNamingDialog(self.get_root(), on_name_provided)
+            dialog.show()
+        else:
+            # Item already has name, just mark as secret
+            self._toggle_secret_status(item_id, True, item_name)
+
+    def _toggle_secret_status(self, item_id, is_secret, name=None):
+        """Send request to server to toggle secret status."""
+        logger.info(f"_toggle_secret_status called: item_id={item_id}, is_secret={is_secret}, name='{name}'")
+        def send_toggle():
+            try:
+                async def toggle_secret():
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {
+                            "action": "toggle_secret",
+                            "item_id": item_id,
+                            "is_secret": is_secret,
+                            "name": name
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+                        logger.info(f"Received response: {data}")
+
+                        if data.get("type") == "secret_toggled":
+                            if data.get("success"):
+                                # Update local item data from server response
+                                received_is_secret = data.get("is_secret", is_secret)
+                                logger.info(f"Received is_secret from server: {received_is_secret} (type: {type(received_is_secret)})")
+
+                                # Ensure boolean conversion (SQLite returns 0/1 as integers)
+                                self.item["is_secret"] = bool(received_is_secret)
+
+                                server_name = data.get("name")
+                                if server_name:
+                                    self.item["name"] = server_name
+                                    logger.info(f"Updated item name to: {server_name}")
+
+                                logger.info(f"Item {item_id} secret status updated: is_secret={self.item['is_secret']} (bool), name={self.item.get('name')}")
+
+                                # Immediately rebuild content to show/hide secret
+                                logger.info("Calling _rebuild_content via GLib.idle_add")
+                                GLib.idle_add(self._rebuild_content)
+
+                                # Update lock button icon
+                                logger.info("Calling _update_lock_button_icon via GLib.idle_add")
+                                GLib.idle_add(self._update_lock_button_icon)
+
+                                # Show notification
+                                status = "marked as secret" if is_secret else "unmarked as secret"
+                                GLib.idle_add(
+                                    lambda: self.window.show_notification(
+                                        f"Item {status}"
+                                    ) or False
+                                )
+                            else:
+                                error = data.get("error", "Unknown error")
+                                GLib.idle_add(
+                                    lambda: self.window.show_notification(
+                                        f"Failed to toggle secret: {error}"
+                                    ) or False
+                                )
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(toggle_secret())
+                finally:
+                    loop.close()
+            except Exception as e:
+                logger.error(f"Error toggling secret: {e}")
+                GLib.idle_add(
+                    lambda: self.window.show_notification(
+                        f"Error: {str(e)}"
+                    ) or False
+                )
+
+        threading.Thread(target=send_toggle, daemon=True).start()
 
     def _load_item_tags(self):
         """Load and display tags for this item asynchronously."""
@@ -257,7 +561,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(fetch_tags())
+                try:
+                    loop.run_until_complete(fetch_tags())
+                finally:
+                    loop.close()
             except Exception as e:
                 logger.error(f"[UI] Error loading item tags: {e}")
 
@@ -275,6 +582,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Add new tags widget to overlay
         self.overlay.add_overlay(self.tags_widget)
+
+        # Force GTK to show and redraw the tags
+        self.tags_widget.show()
+        self.overlay.queue_draw()
+        self.card_frame.queue_draw()
 
         return False  # For GLib.idle_add
 
@@ -305,6 +617,31 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _perform_copy_to_clipboard(self, item_type, item_id, content=None):
         """Copy item to clipboard."""
+        # Check if item is secret and require authentication
+        is_secret = self.item.get("is_secret", False)
+        if is_secret:
+            logger.info(f"Item {item_id} is secret, checking authentication")
+            if not self.password_service.is_authenticated():
+                logger.info("Not authenticated, prompting for password")
+                # Prompt for authentication
+                if not self.password_service.authenticate(self.get_root()):
+                    logger.info("Authentication failed or cancelled")
+                    self.window.show_notification("Authentication required to copy secret")
+                    return
+                else:
+                    logger.info("Authentication successful")
+            else:
+                logger.info("Already authenticated")
+
+            # For secrets, we need to fetch the actual content from the server
+            # (not the "-secret-" placeholder)
+            logger.info(f"Fetching real content for secret item {item_id}")
+            content = self._fetch_secret_content(item_id)
+            if not content:
+                self.window.show_notification("Failed to retrieve secret content")
+                return
+            logger.info(f"Retrieved secret content (length: {len(str(content))})")
+
         clipboard = Gdk.Display.get_default().get_clipboard()
         if not clipboard:
             self.window.show_notification("Error: Could not access clipboard.")
@@ -408,7 +745,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(get_full_image())
+                try:
+                    loop.run_until_complete(get_full_image())
+                finally:
+                    loop.close()
 
             except Exception:
                 GLib.idle_add(
@@ -543,7 +883,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                             GLib.idle_add(copy_to_clipboard)
 
-                asyncio.run(get_full_file())
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(get_full_file())
+                finally:
+                    loop.close()
 
             except Exception:
                 GLib.idle_add(
@@ -575,7 +920,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(send_record())
+                try:
+                    loop.run_until_complete(send_record())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"Error recording paste: {e}")
 
@@ -617,7 +965,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(send_update())
+                try:
+                    loop.run_until_complete(send_update())
+                finally:
+                    loop.close()
             except Exception as e:
                 logger.error(f"[UI] Error updating name: {e}")
 
@@ -654,7 +1005,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(delete_item())
+                try:
+                    loop.run_until_complete(delete_item())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"Error deleting item: {e}")
                 GLib.idle_add(
@@ -813,7 +1167,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(update_tag())
+                try:
+                    loop.run_until_complete(update_tag())
+                finally:
+                    loop.close()
             except Exception as e:
                 logger.error(f"[UI] Error toggling tag: {e}")
                 # Revert checkbox on error
@@ -831,15 +1188,40 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         """Prepare data for drag operation."""
         item_type = self.item.get("type", "")
         item_id = self.item.get("id")
+        is_secret = self.item.get("is_secret", False)
 
         print(
-            f"[DND] _on_drag_prepare called for type: {item_type}, id: {item_id}"
+            f"[DND] _on_drag_prepare called for type: {item_type}, id: {item_id}, is_secret: {is_secret}"
         )
+
+        # Check if item is secret and require authentication
+        if is_secret:
+            logger.info(f"Attempting to drag secret item {item_id}, checking authentication")
+            if not self.password_service.is_authenticated():
+                logger.info("Not authenticated for drag, prompting for password")
+                # We can't show async dialog during drag prepare, so prevent drag
+                GLib.idle_add(self._show_auth_required_notification)
+                return None
+            else:
+                logger.info("Authenticated, allowing drag of secret item")
 
         # Handle different content types
         if item_type == "text" or item_type == "url":
             # Text content - provide as text/plain
             content = self.item.get("content", "")
+
+            # For secrets, fetch real content (not the "-secret-" placeholder)
+            if is_secret:
+                logger.info(f"Fetching real content for secret item {item_id} for drag")
+                real_content = self._fetch_secret_content(item_id)
+                if real_content:
+                    content = real_content
+                    logger.info(f"Using real content for drag (length: {len(str(content))})")
+                else:
+                    logger.error("Failed to fetch secret content for drag")
+                    GLib.idle_add(self._show_fetch_error_notification)
+                    return None
+
             if isinstance(content, bytes):
                 content = content.decode("utf-8", errors="ignore")
             value = GObject.Value(str, content)

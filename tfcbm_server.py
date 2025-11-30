@@ -371,6 +371,7 @@ def prepare_item_for_ui(item: dict) -> dict:
         "name": item.get("name"),  # Include name field
         "format_type": item.get("format_type"),  # Include format type if present
         "formatted_content": base64.b64encode(item["formatted_content"]).decode("utf-8") if item.get("formatted_content") else None,  # Include formatted content if present
+        "is_secret": item.get("is_secret", False),  # Include secret status
     }
 
 
@@ -602,6 +603,48 @@ async def websocket_handler(websocket):
                         response = {"type": "item_tags", "tags": [], "error": "item_id is required"}
                         await websocket.send(json.dumps(response))
 
+                elif action == "add_tag":
+                    item_id = data.get("item_id")
+                    tag_id = data.get("tag_id")
+
+                    if item_id and tag_id:
+                        logging.info(f"Adding tag {tag_id} to item {item_id}")
+                        with db_lock:
+                            success = db.add_tag_to_item(item_id, tag_id)
+
+                        if success:
+                            response = {"type": "tag_added", "item_id": item_id, "tag_id": tag_id, "success": True}
+                            logging.info(f"Tag {tag_id} added to item {item_id}")
+                        else:
+                            response = {"type": "tag_added", "success": False, "error": "Failed to add tag"}
+                            logging.error(f"Failed to add tag {tag_id} to item {item_id}")
+
+                        await websocket.send(json.dumps(response))
+                    else:
+                        response = {"type": "tag_added", "success": False, "error": "item_id and tag_id are required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "remove_tag":
+                    item_id = data.get("item_id")
+                    tag_id = data.get("tag_id")
+
+                    if item_id and tag_id:
+                        logging.info(f"Removing tag {tag_id} from item {item_id}")
+                        with db_lock:
+                            success = db.remove_tag_from_item(item_id, tag_id)
+
+                        if success:
+                            response = {"type": "tag_removed", "item_id": item_id, "tag_id": tag_id, "success": True}
+                            logging.info(f"Tag {tag_id} removed from item {item_id}")
+                        else:
+                            response = {"type": "tag_removed", "success": False, "error": "Failed to remove tag"}
+                            logging.error(f"Failed to remove tag {tag_id} from item {item_id}")
+
+                        await websocket.send(json.dumps(response))
+                    else:
+                        response = {"type": "tag_removed", "success": False, "error": "item_id and tag_id are required"}
+                        await websocket.send(json.dumps(response))
+
                 elif action == "get_items_by_tags":
                     tag_ids = data.get("tag_ids", [])
                     match_all = data.get("match_all", False)
@@ -643,6 +686,78 @@ async def websocket_handler(websocket):
                         logging.info(f"Updated name for item {item_id}: {success}")
                     else:
                         response = {"type": "item_name_updated", "success": False, "error": "item_id is required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "toggle_secret":
+                    item_id = data.get("item_id")
+                    is_secret = data.get("is_secret", False)
+                    name = data.get("name")
+
+                    if item_id is not None:
+                        logging.info(f"Toggling secret for item {item_id}: is_secret={is_secret}, name='{name}'")
+                        with db_lock:
+                            success = db.toggle_secret(item_id, is_secret, name)
+
+                        if success:
+                            # Get updated item to send back
+                            with db_lock:
+                                updated_item = db.get_item(item_id)
+                            response = {
+                                "type": "secret_toggled",
+                                "item_id": item_id,
+                                "is_secret": is_secret,
+                                "name": updated_item.get("name") if updated_item else name,
+                                "success": True
+                            }
+                            # Send response to requesting client FIRST
+                            await websocket.send(json.dumps(response))
+                            logging.info(f"Sent secret_toggled response for item {item_id}")
+
+                            # Then broadcast to all OTHER clients
+                            await broadcast_ws({
+                                "type": "item_updated",
+                                "item_id": item_id,
+                                "is_secret": is_secret,
+                                "name": updated_item.get("name") if updated_item else name
+                            })
+                        else:
+                            response = {
+                                "type": "secret_toggled",
+                                "success": False,
+                                "error": "Secret items must have a name"
+                            }
+                            await websocket.send(json.dumps(response))
+                        logging.info(f"Toggled secret for item {item_id}: {success}")
+                    else:
+                        response = {"type": "secret_toggled", "success": False, "error": "item_id is required"}
+                        await websocket.send(json.dumps(response))
+
+                elif action == "get_item":
+                    item_id = data.get("item_id")
+                    if item_id is not None:
+                        logging.info(f"Fetching item {item_id}")
+                        with db_lock:
+                            item = db.get_item(item_id)
+
+                        if item:
+                            # Prepare item for UI
+                            ui_item = prepare_item_for_ui(item)
+                            response = {
+                                "type": "item",
+                                "item": ui_item
+                            }
+                            logging.info(f"Sending item {item_id} to client")
+                        else:
+                            response = {
+                                "type": "item",
+                                "item": None,
+                                "error": "Item not found"
+                            }
+                            logging.warning(f"Item {item_id} not found")
+
+                        await websocket.send(json.dumps(response))
+                    else:
+                        response = {"type": "item", "item": None, "error": "item_id is required"}
                         await websocket.send(json.dumps(response))
 
                 elif action == "get_file_extensions":

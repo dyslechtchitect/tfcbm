@@ -66,8 +66,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Load settings
         self.settings = get_settings()
 
+        # Initialize password service for secrets
+        from ui.services.password_service import PasswordService
+        self.password_service = PasswordService()
+
         # Connect close request handler
         self.connect("close-request", self._on_close_request)
+
+        # Connect focus change handler to clear secret authentication
+        self.connect("notify::is-active", self._on_focus_changed)
 
         # Set window properties
         display = Gdk.Display.get_default()
@@ -638,7 +645,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
             # Create new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.websocket_client())
+            try:
+                loop.run_until_complete(self.websocket_client())
+            finally:
+                loop.close()
 
         # Run in background thread
         thread = threading.Thread(target=run_websocket, daemon=True)
@@ -753,7 +763,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(get_pasted())
+                try:
+                    loop.run_until_complete(get_pasted())
+                finally:
+                    loop.close()
 
             except Exception as e:
                 print(f"Error loading pasted history: {e}")
@@ -1137,7 +1150,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(get_sorted_history())
+                try:
+                    loop.run_until_complete(get_sorted_history())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Error reloading sorted history: {e}")
 
@@ -1177,7 +1193,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(get_sorted_pasted())
+                try:
+                    loop.run_until_complete(get_sorted_pasted())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Error reloading sorted pasted: {e}")
 
@@ -1220,7 +1239,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         def run_websocket():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._fetch_more_items("copied"))
+            try:
+                loop.run_until_complete(self._fetch_more_items("copied"))
+            finally:
+                loop.close()
 
         threading.Thread(target=run_websocket, daemon=True).start()
         return False
@@ -1231,7 +1253,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         def run_websocket():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._fetch_more_items("pasted"))
+            try:
+                loop.run_until_complete(self._fetch_more_items("pasted"))
+            finally:
+                loop.close()
 
         threading.Thread(target=run_websocket, daemon=True).start()
         return False
@@ -1545,6 +1570,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
         print("Exiting UI...")
         return False  # Allow window to close
 
+    def _on_focus_changed(self, window, param):
+        """Handle window focus changes - clear secret authentication when focus is lost."""
+        if not self.is_active():
+            # Window lost focus or was minimized - clear secret authentication
+            logger.info("Window focus lost, clearing secret authentication")
+            self.password_service.clear_authentication()
+
     def _create_filter_bar(self):
         """Create the filter bar with system content types, file extensions, and controls"""
         # Store active filters
@@ -1748,7 +1780,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 logger.error(f"Error loading file extensions: {e}")
 
         def run_async():
-            asyncio.run(fetch_extensions())
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(fetch_extensions())
+            finally:
+                loop.close()
 
         threading.Thread(target=run_async, daemon=True).start()
 
@@ -1903,7 +1940,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(search())
+                try:
+                    loop.run_until_complete(search())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Search error: {e}")
                 traceback.print_exc()
@@ -2013,7 +2053,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    loop.run_until_complete(get_history())
+                    try:
+                        loop.run_until_complete(get_history())
+                    finally:
+                        loop.close()
                 except Exception as e:
                     print(f"[UI] Error reloading history: {e}")
 
@@ -2072,7 +2115,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(fetch_tags())
+                try:
+                    loop.run_until_complete(fetch_tags())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Error loading tags: {e}")
 
@@ -2308,7 +2354,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(fetch_tags())
+                try:
+                    loop.run_until_complete(fetch_tags())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Error loading user tags: {e}")
 
@@ -2366,7 +2415,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(add_tag())
+                try:
+                    loop.run_until_complete(add_tag())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Error adding tag: {e}")
 
@@ -2590,7 +2642,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(create_tag())
+                try:
+                    loop.run_until_complete(create_tag())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Exception creating tag: {e}")
                 traceback.print_exc()
@@ -2749,7 +2804,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(update_tag())
+                try:
+                    loop.run_until_complete(update_tag())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Error updating tag: {e}")
                 GLib.idle_add(
@@ -2819,7 +2877,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(delete_tag())
+                try:
+                    loop.run_until_complete(delete_tag())
+                finally:
+                    loop.close()
             except Exception as e:
                 print(f"[UI] Error deleting tag: {e}")
                 GLib.idle_add(

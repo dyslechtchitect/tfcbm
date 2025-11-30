@@ -25,7 +25,11 @@ class ItemContent:
         content_clamp.set_hexpand(True)
         content_clamp.set_overflow(Gtk.Overflow.HIDDEN)
 
-        if self.item_type == "text" or self.item_type == "url":
+        # Check if item is secret - if so, show unified secret placeholder
+        is_secret = self.item.get("is_secret", False)
+        if is_secret:
+            widget = self._build_secret_placeholder()
+        elif self.item_type == "text" or self.item_type == "url":
             widget = self._build_text_content()
         elif self.item_type == "file":
             widget = self._build_file_content()
@@ -39,6 +43,41 @@ class ItemContent:
 
         content_clamp.append(widget)
         return content_clamp
+
+    def _build_secret_placeholder(self) -> Gtk.Widget:
+        """Build unified secret placeholder for all secret items."""
+        container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        container.set_vexpand(True)
+        container.set_hexpand(True)
+        container.set_valign(Gtk.Align.CENTER)
+        container.set_halign(Gtk.Align.CENTER)
+        container.set_margin_top(40)
+        container.set_margin_bottom(60)  # Space for tags overlay
+        container.set_margin_start(20)
+        container.set_margin_end(20)
+
+        # Lock icon
+        lock_icon = Gtk.Image.new_from_icon_name("changes-prevent-symbolic")
+        lock_icon.set_pixel_size(48)
+        lock_icon.add_css_class("error")  # Red color
+        lock_icon.set_halign(Gtk.Align.CENTER)
+        container.append(lock_icon)
+
+        # "SECRET" label
+        secret_label = Gtk.Label(label="SECRET")
+        secret_label.add_css_class("title-2")
+        secret_label.add_css_class("error")  # Red color
+        secret_label.set_halign(Gtk.Align.CENTER)
+        container.append(secret_label)
+
+        # Subtle hint text
+        hint_label = Gtk.Label(label="Authentication required to view")
+        hint_label.add_css_class("dim-label")
+        hint_label.add_css_class("caption")
+        hint_label.set_halign(Gtk.Align.CENTER)
+        container.append(hint_label)
+
+        return container
 
     def _build_text_content(self) -> Gtk.Widget:
         container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -56,9 +95,9 @@ class ItemContent:
             container.append(indicator_widget)
 
         content_label = Gtk.Label()
+        text_content = self.item["content"]
 
         # Add quotes inline with the text content
-        text_content = self.item["content"]
         open_quote = (
             '<span font_family="serif" font_weight="heavy" '
             'size="28pt" alpha="60%">\u201c</span>'
