@@ -900,9 +900,10 @@ class ClipboardDB:
         # This treats the query as a phrase search and escapes special chars
         fts_query = f'"{query}"'
 
-        # Build WHERE clause from filters (same logic as get_items)
-        where_clauses = ["clipboard_fts MATCH ?"]
-        query_params = [fts_query]
+        # Build filter conditions for both FTS and tag queries
+        type_filter_clause = ""
+        tag_filter_clause = ""
+        filter_params = []
 
         if filters:
             # Separate filters into categories
@@ -926,47 +927,43 @@ class ClipboardDB:
                     # File extension filter (format: "file:pdf", "file:docx", etc.)
                     ext = f[5:]  # Remove "file:" prefix
                     type_filters.append("ci.type LIKE ?")
-                    query_params.append(f"%{ext}%")
+                    filter_params.append(f"%{ext}%")
                 elif f.startswith("."):
                     # File extension filter (format: ".pdf", ".docx", etc.)
                     type_filters.append("ci.type LIKE ?")
-                    query_params.append(f"%{f}%")
+                    filter_params.append(f"%{f}%")
                 else:
                     # Custom tag filter
                     tag_filters.append(f)
 
             # Combine type filters with OR
             if type_filters:
-                where_clauses.append(f"({' OR '.join(type_filters)})")
+                type_filter_clause = f" AND ({' OR '.join(type_filters)})"
 
             # Handle tag filters
             if tag_filters:
                 # Build subquery for tags
                 tag_placeholders = ",".join("?" * len(tag_filters))
-                where_clauses.append(
-                    f"""ci.id IN (
+                tag_filter_clause = f""" AND ci.id IN (
                     SELECT item_id FROM item_tags
                     WHERE tag_id IN (
                         SELECT id FROM tags WHERE name IN ({tag_placeholders})
                     )
                 )"""
-                )
-                query_params.extend(tag_filters)
-
-        # Build final WHERE clause
-        where_clause = " AND ".join(where_clauses)
+                filter_params.extend(tag_filters)
 
         # Debug logging
         import logging
 
         logging.info(f"[SEARCH DB] Query: '{query}', Filters: {filters}")
-        logging.info(f"[SEARCH DB] WHERE clause: {where_clause}")
-        logging.info(f"[SEARCH DB] Query params: {query_params}")
 
         cursor = self.conn.cursor()
-        # Use FTS5 MATCH with BM25 ranking (negative rank = best matches first)
+
+        # Use UNION to combine FTS results with tag-based results
+        # Query 1: FTS search (content and names)
+        # Query 2: Tag name search
         query_sql = f"""
-            SELECT
+            SELECT DISTINCT
                 ci.id,
                 ci.timestamp,
                 ci.type,
@@ -979,11 +976,35 @@ class ClipboardDB:
                 -fts.rank as relevance
             FROM clipboard_fts fts
             INNER JOIN clipboard_items ci ON fts.rowid = ci.id
-            WHERE {where_clause}
-            ORDER BY fts.rank
+            WHERE fts MATCH ?{type_filter_clause}{tag_filter_clause}
+
+            UNION
+
+            SELECT DISTINCT
+                ci.id,
+                ci.timestamp,
+                ci.type,
+                ci.data,
+                ci.thumbnail,
+                ci.name,
+                ci.format_type,
+                ci.formatted_content,
+                ci.is_secret,
+                0 as relevance
+            FROM clipboard_items ci
+            INNER JOIN item_tags it ON ci.id = it.item_id
+            INNER JOIN tags t ON it.tag_id = t.id
+            WHERE t.name LIKE ?{type_filter_clause}{tag_filter_clause}
+
+            ORDER BY relevance, timestamp DESC
             LIMIT ?
         """
-        query_params.append(limit)
+
+        # Build parameter list: fts_query, filter_params (x2 for both queries), tag search, filter_params (x2), limit
+        query_params = [fts_query] + filter_params + filter_params + [f"%{query}%"] + filter_params + filter_params + [limit]
+
+        logging.info(f"[SEARCH DB] SQL: {query_sql}")
+        logging.info(f"[SEARCH DB] Params: {query_params}")
 
         cursor.execute(query_sql, tuple(query_params))
 
