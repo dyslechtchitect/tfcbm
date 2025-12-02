@@ -1881,7 +1881,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         return True  # Returning True handles the signal and prevents the default action (closing)
 
     def _on_search_changed(self, entry):
-        """Handle search entry text changes with 1-second debouncing"""
+        """Handle search entry text changes with 200ms debouncing"""
         # Cancel existing timer if any
         if self.search_timer:
             GLib.source_remove(self.search_timer)
@@ -1897,8 +1897,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
             self._restore_normal_view()
             return
 
-        # Set up 1-second delay before searching
-        self.search_timer = GLib.timeout_add(1000, self._perform_search, query)
+        # Set up 200ms delay before searching (snappy but still debounced)
+        self.search_timer = GLib.timeout_add(200, self._perform_search, query)
 
     def _on_search_activate(self, entry):
         """Handle Enter key press - search immediately"""
