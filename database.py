@@ -973,10 +973,10 @@ class ClipboardDB:
                 ci.format_type,
                 ci.formatted_content,
                 ci.is_secret,
-                -fts.rank as relevance
-            FROM clipboard_fts fts
-            INNER JOIN clipboard_items ci ON fts.rowid = ci.id
-            WHERE fts MATCH ?{type_filter_clause}{tag_filter_clause}
+                -rank as relevance
+            FROM clipboard_fts
+            INNER JOIN clipboard_items ci ON clipboard_fts.rowid = ci.id
+            WHERE clipboard_fts MATCH ?{type_filter_clause}{tag_filter_clause}
 
             UNION
 

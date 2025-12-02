@@ -14,6 +14,7 @@ def test_item_actions_creation():
         on_view=lambda: None,
         on_save=lambda: None,
         on_tags=lambda: None,
+        on_secret=lambda: None,
         on_delete=lambda: None,
     )
 
@@ -31,6 +32,7 @@ def test_item_actions_build_widget():
         on_view=lambda: None,
         on_save=lambda: None,
         on_tags=lambda: None,
+        on_secret=lambda: None,
         on_delete=lambda: None,
     )
 
@@ -48,6 +50,7 @@ def test_item_actions_callbacks_invoked():
     save_called = False
     tags_called = False
     delete_called = False
+    secret_called = False
 
     def on_copy():
         nonlocal copy_called
@@ -69,6 +72,10 @@ def test_item_actions_callbacks_invoked():
         nonlocal delete_called
         delete_called = True
 
+    def on_secret():
+        nonlocal secret_called
+        secret_called = True
+
     item = {"id": 1, "type": "text", "content": "test"}
     actions = ItemActions(
         item=item,
@@ -76,6 +83,7 @@ def test_item_actions_callbacks_invoked():
         on_view=on_view,
         on_save=on_save,
         on_tags=on_tags,
+        on_secret=on_secret,
         on_delete=on_delete,
     )
 
@@ -83,10 +91,12 @@ def test_item_actions_callbacks_invoked():
     actions._trigger_view()
     actions._trigger_save()
     actions._trigger_tags()
+    actions._trigger_secret()
     actions._trigger_delete()
 
     assert copy_called
     assert view_called
     assert save_called
     assert tags_called
+    assert secret_called
     assert delete_called

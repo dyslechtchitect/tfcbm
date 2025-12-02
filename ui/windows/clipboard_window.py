@@ -1014,6 +1014,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Handle tab switching"""
         selected_page = tab_view.get_selected_page()
         if selected_page:
+            # If search is active, clear it when switching tabs
+            if self.search_active:
+                print(f"[DEBUG] Clearing search, query was: '{self.search_query}'")
+                self.search_query = ""
+                self.search_active = False
+                self.search_entry.set_text("")
+                self._restore_normal_view()
+
             title = selected_page.get_title()
             print(f"[DEBUG] Tab switched to: {title}", flush=True)
             if title == "Recently Pasted":
@@ -2009,6 +2017,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
             listbox.append(empty_box)
             status_label.set_label(f"Search: 0 results for '{query}'")
+
+        listbox.queue_draw()
+        # Scroll to top to ensure results are visible
+        self._jump_to_top(self.current_tab)
 
         return False
 
