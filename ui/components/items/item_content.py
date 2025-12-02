@@ -94,7 +94,6 @@ class ItemContent:
             indicator_widget.set_margin_top(8)
             container.append(indicator_widget)
 
-        content_label = Gtk.Label()
         text_content = self.item["content"]
 
         # Add quotes inline with the text content
@@ -108,36 +107,124 @@ class ItemContent:
         )
 
         if self.search_query:
-            # Highlight search terms in the content
-            highlighted = highlight_text(text_content, self.search_query)
-            # Add quotes around the highlighted content
-            markup = f"{open_quote}{highlighted}{close_quote}"
-            content_label.set_markup(markup)
+            # Use TextView for search results to enable scrolling to highlights
+            content_widget = self._build_searchable_text_view(
+                text_content, open_quote, close_quote
+            )
         else:
-            # Escape the content and add quotes
+            # Use Label for normal display
+            content_label = Gtk.Label()
             from gi.repository import GLib
 
             escaped = GLib.markup_escape_text(text_content)
             markup = f"{open_quote}{escaped}{close_quote}"
             content_label.set_markup(markup)
 
-        content_label.set_wrap(True)
-        content_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-        content_label.set_ellipsize(Pango.EllipsizeMode.END)
-        content_label.set_lines(3)
-        content_label.set_halign(Gtk.Align.START)
-        content_label.set_valign(Gtk.Align.START)
-        content_label.add_css_class("clipboard-item-text")
-        content_label.add_css_class("typewriter-text")
-        content_label.set_selectable(False)
-        content_label.set_xalign(0)
-        content_label.set_yalign(0)
-        content_label.set_hexpand(True)
-        content_label.set_vexpand(False)
-        content_label.set_max_width_chars(-1)
+            content_label.set_wrap(True)
+            content_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            content_label.set_ellipsize(Pango.EllipsizeMode.END)
+            content_label.set_lines(3)
+            content_label.set_halign(Gtk.Align.START)
+            content_label.set_valign(Gtk.Align.START)
+            content_label.add_css_class("clipboard-item-text")
+            content_label.add_css_class("typewriter-text")
+            content_label.set_selectable(False)
+            content_label.set_xalign(0)
+            content_label.set_yalign(0)
+            content_label.set_hexpand(True)
+            content_label.set_vexpand(False)
+            content_label.set_max_width_chars(-1)
+            content_widget = content_label
 
-        container.append(content_label)
+        container.append(content_widget)
         return container
+
+    def _build_searchable_text_view(
+        self, text_content: str, open_quote: str, close_quote: str
+    ) -> Gtk.Widget:
+        """Build a TextView with highlighted search terms and scroll to first match."""
+        import re
+        from gi.repository import GLib
+
+        # Parse search query into terms (same logic as highlight_text)
+        query = self.search_query.strip()
+        if query.startswith('"') and query.endswith('"') and query.count('"') == 2:
+            search_terms = [query[1:-1]]
+        else:
+            parts = re.findall(r'"[^"]+"|\S+', query)
+            search_terms = [p.strip('"') for p in parts]
+
+        # Create TextView
+        text_view = Gtk.TextView()
+        text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        text_view.set_editable(False)
+        text_view.set_cursor_visible(False)
+        text_view.set_hexpand(True)
+        text_view.set_vexpand(False)
+        text_view.add_css_class("clipboard-item-text")
+        text_view.add_css_class("typewriter-text")
+
+        # Get text buffer
+        buffer = text_view.get_buffer()
+
+        # Create highlight tag
+        tag_table = buffer.get_tag_table()
+        highlight_tag = Gtk.TextTag(name="highlight")
+        highlight_tag.set_property("background", "yellow")
+        highlight_tag.set_property("foreground", "black")
+        tag_table.add(highlight_tag)
+
+        # Insert opening quote with markup (need to handle manually)
+        # Actually, TextBuffer doesn't support markup directly, so we'll skip the fancy quotes
+        # and just show the text with highlights
+
+        # Insert text
+        buffer.set_text(text_content)
+
+        # Find and highlight all matches, and remember first match position
+        first_match_iter = None
+        for term in search_terms:
+            if not term:
+                continue
+
+            # Search for all occurrences of this term (case-insensitive)
+            start_iter = buffer.get_start_iter()
+            while True:
+                match = start_iter.forward_search(
+                    term,
+                    Gtk.TextSearchFlags.CASE_INSENSITIVE,
+                    None,
+                )
+                if not match:
+                    break
+
+                match_start, match_end = match
+                if first_match_iter is None:
+                    first_match_iter = match_start.copy()
+
+                buffer.apply_tag(highlight_tag, match_start, match_end)
+                start_iter = match_end
+
+        # Wrap in ScrolledWindow with fixed height (3 lines worth)
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_child(text_view)
+        scrolled.set_max_content_height(100)  # Roughly 3 lines
+        scrolled.set_propagate_natural_height(True)
+
+        # Scroll to first match after widget is realized
+        if first_match_iter:
+
+            def scroll_to_match():
+                text_view.scroll_to_iter(first_match_iter, 0.0, True, 0.0, 0.0)
+                return False
+
+            # Use idle_add to scroll after widget is fully laid out
+            from gi.repository import GLib
+
+            GLib.idle_add(scroll_to_match)
+
+        return scrolled
 
     def _build_file_content(self) -> Gtk.Widget:
         file_metadata = self.item.get("content", {})
