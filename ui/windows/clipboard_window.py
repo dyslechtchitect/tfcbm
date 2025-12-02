@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 
 import gi
@@ -1212,6 +1213,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _on_scroll_changed(self, adjustment, list_type):
         """Handle scroll events for infinite scrolling"""
+        # Don't load more items if search is active - search results are complete
+        if self.search_active:
+            return
+
         if (
             adjustment.get_upper()
             - adjustment.get_page_size()

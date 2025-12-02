@@ -674,20 +674,37 @@ class ClipboardDB:
             (name if name else None, item_id),
         )
 
-        # Also update FTS table if this is a text or file item
+        # Also update FTS table.
+        # We need to get the item's content to potentially re-insert/update FTS.
         cursor.execute(
-            "SELECT type FROM clipboard_items WHERE id = ?", (item_id,)
+            "SELECT type, data, is_secret FROM clipboard_items WHERE id = ?", (item_id,)
         )
         row = cursor.fetchone()
-        if row and (row["type"] == "text" or row["type"] == "file"):
+        if row:
+            item_type = row["type"]
+            item_data = row["data"]
+            is_secret = bool(row["is_secret"])
+
+            fts_content = ""
+            if item_type == "text" and not is_secret: # Only index text content if not secret
+                fts_content = item_data.decode("utf-8")
+            elif item_type == "file":
+                # Extract filename from file metadata
+                separator = b"\n---FILE_CONTENT---\n"
+                if separator in item_data:
+                    metadata_bytes, _ = item_data.split(separator, 1)
+                    metadata = json.loads(metadata_bytes.decode("utf-8"))
+                    fts_content = metadata.get("name", "") # Index file name as content
+
             try:
+                # Use INSERT OR REPLACE to update or insert the FTS entry
                 cursor.execute(
-                    "UPDATE clipboard_fts SET name = ? WHERE rowid = ?",
-                    (name if name else "", item_id),
+                    "INSERT OR REPLACE INTO clipboard_fts (rowid, content, name) VALUES (?, ?, ?)",
+                    (item_id, fts_content, name if name else ""),
                 )
             except Exception as e:
                 logging.warning(
-                    f"Failed to update FTS name for item {item_id}: {e}"
+                    f"Failed to update FTS for item {item_id} with name '{name}': {e}"
                 )
 
         self.conn.commit()
@@ -736,21 +753,31 @@ class ClipboardDB:
             "SELECT type, data FROM clipboard_items WHERE id = ?", (item_id,)
         )
         row = cursor.fetchone()
-        if row and row["type"] == "text":
+        if row: # Make sure the item exists
+            item_type = row["type"]
+            item_data = row["data"]
+
+            # Get current name from FTS or item's name
+            cursor.execute("SELECT name FROM clipboard_fts WHERE rowid = ?", (item_id,))
+            fts_name_row = cursor.fetchone()
+            current_fts_name = fts_name_row["name"] if fts_name_row else (name if name else "")
+
+            fts_content = ""
+            if item_type == "text" and not is_secret:
+                fts_content = item_data.decode("utf-8")
+            elif item_type == "file" and not is_secret: # Files also have content, but only name is indexed
+                 # Extract filename from file metadata
+                separator = b"\n---FILE_CONTENT---\n"
+                if separator in item_data:
+                    metadata_bytes, _ = item_data.split(separator, 1)
+                    metadata = json.loads(metadata_bytes.decode("utf-8"))
+                    fts_content = metadata.get("name", "") # Index file name as content
+
             try:
-                if is_secret:
-                    # Remove content from FTS for secrets
-                    cursor.execute(
-                        "UPDATE clipboard_fts SET content = '' WHERE rowid = ?",
-                        (item_id,),
-                    )
-                else:
-                    # Restore content to FTS when unmarking as secret
-                    text_content = row["data"].decode("utf-8")
-                    cursor.execute(
-                        "UPDATE clipboard_fts SET content = ? WHERE rowid = ?",
-                        (text_content, item_id),
-                    )
+                cursor.execute(
+                    "INSERT OR REPLACE INTO clipboard_fts (rowid, content, name) VALUES (?, ?, ?)",
+                    (item_id, fts_content, current_fts_name),
+                )
             except Exception as e:
                 logging.warning(
                     f"Failed to update FTS content for item {item_id}: {e}"
@@ -896,9 +923,36 @@ class ClipboardDB:
         if not query or not query.strip():
             return []
 
-        # Escape FTS5 special characters by wrapping query in quotes
-        # This treats the query as a phrase search and escapes special chars
-        fts_query = f'"{query}"'
+        # Build FTS5 query:
+        # - If user wraps in quotes: exact phrase search
+        # - Multiple words without quotes: ALL words must appear (AND), any order
+        # - FTS5 BM25 ranks by relevance (more occurrences = higher score)
+
+        query = query.strip()
+
+        # Check if user wrapped entire query in quotes for exact phrase
+        if query.startswith('"') and query.endswith('"'):
+            # User wants exact phrase - use as-is
+            fts_query = query
+        else:
+            # Parse query: respect quoted phrases but split unquoted words
+            # Example: hello "world foo" bar → hello AND "world foo" AND bar
+            import re
+            # Split on spaces but keep quoted phrases together
+            parts = re.findall(r'"[^"]+"|\S+', query)
+
+            # Wrap non-quoted words in quotes to escape special chars
+            fts_parts = []
+            for part in parts:
+                if part.startswith('"') and part.endswith('"'):
+                    # Already quoted phrase
+                    fts_parts.append(part)
+                else:
+                    # Individual word - quote it
+                    fts_parts.append(f'"{part}"')
+
+            # Join with spaces (FTS5 treats space-separated terms as AND by default)
+            fts_query = " ".join(fts_parts)
 
         # Build filter conditions for both FTS and tag queries
         type_filter_clause = ""
@@ -977,31 +1031,12 @@ class ClipboardDB:
             FROM clipboard_fts
             INNER JOIN clipboard_items ci ON clipboard_fts.rowid = ci.id
             WHERE clipboard_fts MATCH ?{type_filter_clause}{tag_filter_clause}
-
-            UNION
-
-            SELECT DISTINCT
-                ci.id,
-                ci.timestamp,
-                ci.type,
-                ci.data,
-                ci.thumbnail,
-                ci.name,
-                ci.format_type,
-                ci.formatted_content,
-                ci.is_secret,
-                0 as relevance
-            FROM clipboard_items ci
-            INNER JOIN item_tags it ON ci.id = it.item_id
-            INNER JOIN tags t ON it.tag_id = t.id
-            WHERE t.name LIKE ?{type_filter_clause}{tag_filter_clause}
-
             ORDER BY relevance, timestamp DESC
             LIMIT ?
         """
 
-        # Build parameter list: fts_query, filter_params (x2 for both queries), tag search, filter_params (x2), limit
-        query_params = [fts_query] + filter_params + filter_params + [f"%{query}%"] + filter_params + filter_params + [limit]
+        # Build parameter list: fts_query, filter_params (once), limit
+        query_params = [fts_query] + filter_params + [limit]
 
         logging.info(f"[SEARCH DB] SQL: {query_sql}")
         logging.info(f"[SEARCH DB] Params: {query_params}")
@@ -1220,6 +1255,48 @@ class ClipboardDB:
                 (item_id, tag_id),
             )
             self.conn.commit()
+
+            # NEW: Update FTS for this item to include the new tag's name
+            tag = self.get_tag(tag_id)
+            if tag:
+                tag_name = tag.get("name", "")
+                # Get current FTS content and name for this item
+                cursor.execute("SELECT content, name FROM clipboard_fts WHERE rowid = ?", (item_id,))
+                fts_row = cursor.fetchone()
+                if fts_row:
+                    current_fts_content = fts_row["content"]
+                    current_fts_name = fts_row["name"]
+                    # Append new tag name to FTS name field, avoid duplicates
+                    new_fts_name_parts = set(current_fts_name.split())
+                    new_fts_name_parts.add(tag_name)
+                    new_fts_name = " ".join(list(new_fts_name_parts))
+                    cursor.execute(
+                        """
+                        UPDATE clipboard_fts
+                        SET name = ?
+                        WHERE rowid = ?
+                        """,
+                        (new_fts_name, item_id),
+                    )
+                    self.conn.commit()
+                    logging.info(f"Updated FTS for item {item_id} with tag '{tag_name}'")
+                else:
+                    # If item not in FTS (e.g., image), insert it with tag name
+                    # We need to get content for this item
+                    item = self.get_item(item_id)
+                    if item:
+                        item_content = item.get("data", b"").decode("utf-8") if item.get("type") == "text" else ""
+                        cursor.execute(
+                            """
+                            INSERT INTO clipboard_fts (rowid, content, name)
+                            VALUES (?, ?, ?)
+                            """,
+                            (item_id, item_content, tag_name),
+                        )
+                        self.conn.commit()
+                        logging.info(f"Inserted item {item_id} into FTS with tag '{tag_name}'")
+
+
             logging.info(f"Committed add tag {tag_id} to item {item_id}")
             return True
         except sqlite3.IntegrityError:
@@ -1249,6 +1326,29 @@ class ClipboardDB:
         self.conn.commit()
         success = cursor.rowcount > 0
         if success:
+            # NEW: Update FTS for this item to remove the tag's name
+            tag = self.get_tag(tag_id)
+            if tag:
+                tag_name = tag.get("name", "")
+                cursor.execute("SELECT content, name FROM clipboard_fts WHERE rowid = ?", (item_id,))
+                fts_row = cursor.fetchone()
+                if fts_row:
+                    current_fts_content = fts_row["content"]
+                    current_fts_name = fts_row["name"]
+                    # Remove tag name from FTS name field
+                    new_fts_name_parts = [p for p in current_fts_name.split() if p != tag_name]
+                    new_fts_name = " ".join(new_fts_name_parts)
+                    cursor.execute(
+                        """
+                        UPDATE clipboard_fts
+                        SET name = ?
+                        WHERE rowid = ?
+                        """,
+                        (new_fts_name, item_id),
+                    )
+                    self.conn.commit()
+                    logging.info(f"Updated FTS for item {item_id} by removing tag '{tag_name}'")
+
             logging.info(f"Committed remove tag {tag_id} from item {item_id}")
         else:
             logging.warning(
