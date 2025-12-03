@@ -442,10 +442,11 @@ async def websocket_handler(websocket):
                     limit = data.get("limit", settings.max_page_length)
                     offset = data.get("offset", 0)
                     sort_order = data.get("sort_order", "DESC")
+                    filters = data.get("filters", [])
 
-                    # Get recently pasted items with JOIN
+                    # Get recently pasted items with JOIN and filters
                     with db_lock:
-                        items = db.get_recently_pasted(limit=limit, offset=offset, sort_order=sort_order)
+                        items = db.get_recently_pasted(limit=limit, offset=offset, sort_order=sort_order, filters=filters)
                         total_count = db.get_pasted_count()
 
                     # Convert to UI format

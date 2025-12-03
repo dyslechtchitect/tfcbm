@@ -851,7 +851,7 @@ class ClipboardDB:
         return pasted_id
 
     def get_recently_pasted(
-        self, limit: int = 100, offset: int = 0, sort_order: str = "DESC"
+        self, limit: int = 100, offset: int = 0, sort_order: str = "DESC", filters: List[str] = None
     ) -> List[Dict]:
         """
         Get recently pasted items (sorted by pasted timestamp) with JOIN to clipboard_items
@@ -860,6 +860,7 @@ class ClipboardDB:
             limit: Maximum number of items to return
             offset: Number of items to skip
             sort_order: "DESC" for newest first, "ASC" for oldest first
+            filters: List of filter strings (e.g., ["text", "image", "url", "file", "MyTag"])
 
         Returns:
             List of pasted items with full clipboard item data
@@ -869,8 +870,65 @@ class ClipboardDB:
         if sort_order not in ["DESC", "ASC"]:
             sort_order = "DESC"
 
-        cursor.execute(
-            f"""
+        # Build WHERE clause from filters (same logic as get_items)
+        where_clauses = []
+        query_params = []
+
+        if filters:
+            # Separate filters into categories
+            type_filters = []
+            tag_filters = []
+
+            for f in filters:
+                if f in ["text", "image", "url", "file"]:
+                    # Content type filters
+                    if f == "text":
+                        type_filters.append("ci.type = 'text'")
+                    elif f == "image":
+                        type_filters.append(
+                            "(ci.type LIKE 'image/%' OR ci.type = 'screenshot')"
+                        )
+                    elif f == "url":
+                        type_filters.append("ci.type = 'url'")
+                    elif f == "file":
+                        type_filters.append("ci.type = 'file'")
+                elif f.startswith("file:"):
+                    # File extension filter (format: "file:pdf", "file:docx", etc.)
+                    ext = f[5:]  # Remove "file:" prefix
+                    type_filters.append("ci.type LIKE ?")
+                    query_params.append(f"%{ext}%")
+                elif f.startswith("."):
+                    # File extension filter (format: ".pdf", ".docx", etc.)
+                    type_filters.append("ci.type LIKE ?")
+                    query_params.append(f"%{f}%")
+                else:
+                    # Custom tag filter
+                    tag_filters.append(f)
+
+            # Combine type filters with OR
+            if type_filters:
+                where_clauses.append(f"({' OR '.join(type_filters)})")
+
+            # Handle tag filters
+            if tag_filters:
+                # Build subquery for tags
+                tag_placeholders = ",".join("?" * len(tag_filters))
+                where_clauses.append(
+                    f"""ci.id IN (
+                    SELECT item_id FROM item_tags
+                    WHERE tag_id IN (
+                        SELECT id FROM tags WHERE name IN ({tag_placeholders})
+                    )
+                )"""
+                )
+                query_params.extend(tag_filters)
+
+        # Build final query
+        where_clause = ""
+        if where_clauses:
+            where_clause = "WHERE " + " AND ".join(where_clauses)
+
+        query = f"""
             SELECT
                 rp.id as paste_id,
                 rp.pasted_timestamp,
@@ -881,11 +939,20 @@ class ClipboardDB:
                 ci.thumbnail
             FROM recently_pasted rp
             INNER JOIN clipboard_items ci ON rp.clipboard_item_id = ci.id
+            {where_clause}
             ORDER BY rp.pasted_timestamp {sort_order}
             LIMIT ? OFFSET ?
-        """,
-            (limit, offset),
-        )
+        """
+
+        query_params.extend([limit, offset])
+
+        # Debug logging
+        import logging
+        logging.info(f"[FILTER DB PASTED] Filters: {filters}")
+        logging.info(f"[FILTER DB PASTED] WHERE clause: {where_clause}")
+        logging.info(f"[FILTER DB PASTED] Query params: {query_params}")
+
+        cursor.execute(query, tuple(query_params))
 
         items = []
         for row in cursor.fetchall():

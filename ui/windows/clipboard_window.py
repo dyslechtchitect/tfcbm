@@ -751,6 +751,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             "action": "get_recently_pasted",
                             "limit": page_size,
                         }
+                        # Include active filters
+                        if self.active_filters:
+                            request["filters"] = list(self.active_filters)
+                            print(
+                                f"[FILTER] Requesting pasted items with filters: {list(self.active_filters)}"
+                            )
                         await websocket.send(json.dumps(request))
 
                         # Wait for response
@@ -1185,6 +1191,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             "limit": self.page_size,
                             "sort_order": self.pasted_sort_order,
                         }
+                        # Include active filters
+                        if self.active_filters:
+                            request["filters"] = list(self.active_filters)
                         await websocket.send(json.dumps(request))
                         response = await websocket.recv()
                         data = json.loads(response)
@@ -1294,6 +1303,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         "offset": self.pasted_offset + self.page_size,
                         "limit": self.page_size,
                     }
+                    # Include active filters for pasted items too
+                    if self.active_filters:
+                        request["filters"] = list(self.active_filters)
 
                 await websocket.send(json.dumps(request))
                 response = await websocket.recv()
