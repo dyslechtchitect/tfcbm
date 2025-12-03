@@ -936,7 +936,11 @@ class ClipboardDB:
                 ci.timestamp,
                 ci.type,
                 ci.data,
-                ci.thumbnail
+                ci.thumbnail,
+                ci.name,
+                ci.format_type,
+                ci.formatted_content,
+                ci.is_secret
             FROM recently_pasted rp
             INNER JOIN clipboard_items ci ON rp.clipboard_item_id = ci.id
             {where_clause}
@@ -968,6 +972,10 @@ class ClipboardDB:
                     "type": row["type"],
                     "data": row["data"],
                     "thumbnail": row["thumbnail"],
+                    "name": row["name"],
+                    "format_type": row["format_type"],
+                    "formatted_content": row["formatted_content"],
+                    "is_secret": bool(row["is_secret"]),
                     "tags": tags,
                 }
             )

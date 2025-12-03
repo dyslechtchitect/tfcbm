@@ -310,6 +310,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         copied_page = self.tab_view.append(copied_scrolled)
         copied_page.set_title("Recently Copied")
         copied_page.set_icon(Gio.ThemedIcon.new("edit-copy-symbolic"))
+        copied_page.set_indicator_icon(None)  # Remove close button by clearing indicator
 
         # Tab 2: Recently Pasted
         pasted_scrolled = Gtk.ScrolledWindow()
@@ -364,6 +365,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_page = self.tab_view.append(pasted_scrolled)
         pasted_page.set_title("Recently Pasted")
         pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
+        pasted_page.set_indicator_icon(None)  # Remove close button by clearing indicator
 
         # Create settings page
         settings_page = self._create_settings_page()
