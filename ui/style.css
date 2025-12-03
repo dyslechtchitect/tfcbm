@@ -94,8 +94,18 @@
     100% { transform: translateX(-100%); } /* Move text completely off-screen to the left */
 }
 
-tabbar button.close {
-    display: none;
+/* Hide close buttons on tabs */
+tabbar tab button.close,
+tabbar tab .tab-close-button,
+tabview tab button,
+tabview tab .tab-close-button,
+tab button.close,
+.tab-close-button {
+    opacity: 0;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
 }
 
 /* Filter bar styling */
