@@ -344,11 +344,15 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         """Handle view button click - show full item dialog."""
         # Check if item is secret and require authentication
         is_secret = self.item.get("is_secret", False)
+        item_id = self.item.get('id')
+
         if is_secret:
-            logger.info(f"Item {self.item.get('id')} is secret, checking authentication for view")
-            if not self.password_service.is_authenticated():
+            logger.info(f"Item {item_id} is secret, checking authentication for view")
+            # Check if authenticated for THIS specific view operation on THIS item
+            if not self.password_service.is_authenticated_for("view", item_id):
                 logger.info("Not authenticated for view, prompting for password")
-                if not self.password_service.authenticate(self.get_root()):
+                # Prompt for authentication for THIS operation on THIS item
+                if not self.password_service.authenticate_for("view", item_id, self.get_root()):
                     logger.info("Authentication failed or cancelled for view")
                     self.window.show_notification("Authentication required to view secret")
                     return
@@ -358,10 +362,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 logger.info("Already authenticated for view")
 
             # Fetch real content for viewing
-            logger.info(f"Fetching real content for secret item {self.item.get('id')} for view")
-            real_content = self._fetch_secret_content(self.item.get('id'))
+            logger.info(f"Fetching real content for secret item {item_id} for view")
+            real_content = self._fetch_secret_content(item_id)
             if not real_content:
                 self.window.show_notification("Failed to retrieve secret content")
+                # Consume authentication even on failure
+                self.password_service.consume_authentication("view", item_id)
                 return
             logger.info(f"Retrieved secret content for view (length: {len(str(real_content))})")
 
@@ -371,6 +377,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             self._show_view_dialog()
             # Restore placeholder
             self.item["content"] = original_content
+            # Consume authentication after successful view
+            self.password_service.consume_authentication("view", item_id)
         else:
             self._show_view_dialog()
 
@@ -378,11 +386,15 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         """Handle save button click - show save file dialog."""
         # Check if item is secret and require authentication
         is_secret = self.item.get("is_secret", False)
+        item_id = self.item.get('id')
+
         if is_secret:
-            logger.info(f"Item {self.item.get('id')} is secret, checking authentication for save")
-            if not self.password_service.is_authenticated():
+            logger.info(f"Item {item_id} is secret, checking authentication for save")
+            # Check if authenticated for THIS specific save operation on THIS item
+            if not self.password_service.is_authenticated_for("save", item_id):
                 logger.info("Not authenticated for save, prompting for password")
-                if not self.password_service.authenticate(self.get_root()):
+                # Prompt for authentication for THIS operation on THIS item
+                if not self.password_service.authenticate_for("save", item_id, self.get_root()):
                     logger.info("Authentication failed or cancelled for save")
                     self.window.show_notification("Authentication required to save secret")
                     return
@@ -392,10 +404,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 logger.info("Already authenticated for save")
 
             # Fetch real content for saving
-            logger.info(f"Fetching real content for secret item {self.item.get('id')} for save")
-            real_content = self._fetch_secret_content(self.item.get('id'))
+            logger.info(f"Fetching real content for secret item {item_id} for save")
+            real_content = self._fetch_secret_content(item_id)
             if not real_content:
                 self.window.show_notification("Failed to retrieve secret content")
+                # Consume authentication even on failure
+                self.password_service.consume_authentication("save", item_id)
                 return
             logger.info(f"Retrieved secret content for save (length: {len(str(real_content))})")
 
@@ -405,6 +419,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             self._show_save_dialog()
             # Restore placeholder
             self.item["content"] = original_content
+            # Consume authentication after successful save
+            self.password_service.consume_authentication("save", item_id)
         else:
             self._show_save_dialog()
 
@@ -421,9 +437,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # If currently a secret, require authentication before unmarking
         if current_is_secret:
             logger.info(f"Item {item_id} is secret, checking authentication for unmark")
-            if not self.password_service.is_authenticated():
+            # Check if authenticated for THIS specific toggle_secret operation on THIS item
+            if not self.password_service.is_authenticated_for("toggle_secret", item_id):
                 logger.info("Not authenticated for unmark, prompting for password")
-                if not self.password_service.authenticate(self.get_root()):
+                # Prompt for authentication for THIS operation on THIS item
+                if not self.password_service.authenticate_for("toggle_secret", item_id, self.get_root()):
                     logger.info("Authentication failed or cancelled for unmark")
                     self.window.show_notification("Authentication required to unmark secret")
                     return
@@ -446,6 +464,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             def on_response(dialog_obj, response):
                 if response == "confirm":
                     self._toggle_secret_status(item_id, False, item_name)
+                # Consume authentication regardless of user choice (confirm or cancel)
+                self.password_service.consume_authentication("toggle_secret", item_id)
 
             dialog.connect("response", on_response)
             dialog.present(self.get_root())
@@ -621,17 +641,18 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         is_secret = self.item.get("is_secret", False)
         if is_secret:
             logger.info(f"Item {item_id} is secret, checking authentication")
-            if not self.password_service.is_authenticated():
-                logger.info("Not authenticated, prompting for password")
-                # Prompt for authentication
-                if not self.password_service.authenticate(self.get_root()):
+            # Check if authenticated for THIS specific copy operation on THIS item
+            if not self.password_service.is_authenticated_for("copy", item_id):
+                logger.info("Not authenticated for copy operation, prompting for password")
+                # Prompt for authentication for THIS operation on THIS item
+                if not self.password_service.authenticate_for("copy", item_id, self.get_root()):
                     logger.info("Authentication failed or cancelled")
                     self.window.show_notification("Authentication required to copy secret")
                     return
                 else:
-                    logger.info("Authentication successful")
+                    logger.info("Authentication successful for copy operation")
             else:
-                logger.info("Already authenticated")
+                logger.info("Already authenticated for copy operation")
 
             # For secrets, we need to fetch the actual content from the server
             # (not the "-secret-" placeholder)
@@ -639,12 +660,17 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             content = self._fetch_secret_content(item_id)
             if not content:
                 self.window.show_notification("Failed to retrieve secret content")
+                # Consume authentication even on failure
+                self.password_service.consume_authentication("copy", item_id)
                 return
             logger.info(f"Retrieved secret content (length: {len(str(content))})")
 
         clipboard = Gdk.Display.get_default().get_clipboard()
         if not clipboard:
             self.window.show_notification("Error: Could not access clipboard.")
+            # Consume authentication even on error
+            if is_secret:
+                self.password_service.consume_authentication("copy", item_id)
             return
 
         try:
@@ -669,10 +695,16 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                             f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
                         )
                     self._record_paste(item_id)
+                    # Consume authentication after successful copy
+                    if is_secret:
+                        self.password_service.consume_authentication("copy", item_id)
                 else:
                     self.window.show_notification(
                         "Error copying: content is empty."
                     )
+                    # Consume authentication even on error
+                    if is_secret:
+                        self.password_service.consume_authentication("copy", item_id)
             elif item_type == "file":
                 self.window.show_notification("Loading file...")
                 self._copy_file_to_clipboard(item_id, content, clipboard)
@@ -681,6 +713,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 self._copy_full_image_to_clipboard(item_id, clipboard)
         except Exception as e:
             self.window.show_notification(f"Error copying: {str(e)}")
+            # Consume authentication even on error
+            if is_secret:
+                self.password_service.consume_authentication("copy", item_id)
 
     def _copy_full_image_to_clipboard(self, item_id, clipboard):
         """Fetch and copy full image to clipboard."""
@@ -735,6 +770,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                         f"({pixbuf.get_width()}x{pixbuf.get_height()})"
                                     )
                                     self._record_paste(item_id)
+                                    # Consume authentication after successful copy
+                                    if self.item.get("is_secret", False):
+                                        self.password_service.consume_authentication("copy", item_id)
                                 except Exception as e:
                                     self.window.show_notification(
                                         f"Error copying: {str(e)}"
@@ -792,6 +830,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                 f"📁 Folder copied: {folder_name}"
                             )
                             self._record_paste(item_id)
+                            # Consume authentication after successful copy
+                            if self.item.get("is_secret", False):
+                                self.password_service.consume_authentication("copy", item_id)
                         except Exception as e:
                             self.window.show_notification(
                                 f"Error copying folder: {str(e)}"
@@ -875,6 +916,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                                         f"📄 File copied: {file_name}"
                                     )
                                     self._record_paste(item_id)
+                                    # Consume authentication after successful copy
+                                    if self.item.get("is_secret", False):
+                                        self.password_service.consume_authentication("copy", item_id)
                                 except Exception as e:
                                     self.window.show_notification(
                                         f"Error copying file: {str(e)}"
@@ -1197,7 +1241,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Check if item is secret and require authentication
         if is_secret:
             logger.info(f"Attempting to drag secret item {item_id}, checking authentication")
-            if not self.password_service.is_authenticated():
+            # Check if authenticated for THIS specific drag operation on THIS item
+            if not self.password_service.is_authenticated_for("drag", item_id):
                 logger.info("Not authenticated for drag, prompting for password")
                 # We can't show async dialog during drag prepare, so prevent drag
                 GLib.idle_add(self._show_auth_required_notification)
@@ -1220,11 +1265,17 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 else:
                     logger.error("Failed to fetch secret content for drag")
                     GLib.idle_add(self._show_fetch_error_notification)
+                    # Consume authentication on error
+                    if is_secret:
+                        self.password_service.consume_authentication("drag", item_id)
                     return None
 
             if isinstance(content, bytes):
                 content = content.decode("utf-8", errors="ignore")
             value = GObject.Value(str, content)
+            # Consume authentication after successful drag preparation
+            if is_secret:
+                self.password_service.consume_authentication("drag", item_id)
             return Gdk.ContentProvider.new_for_value(value)
 
         elif item_type.startswith("image/") or item_type == "screenshot":
@@ -1323,6 +1374,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                         f"PNG:{len(image_bytes)}, JPEG:{len(jpeg_bytes)}, "
                         f"BMP:{len(bmp_bytes)})"
                     )
+                    # Consume authentication after successful drag preparation
+                    if is_secret:
+                        self.password_service.consume_authentication("drag", item_id)
                     return provider
                 else:
                     print(
@@ -1342,6 +1396,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                     "text/uri-list", GLib.Bytes.new(uri_list_bytes)
                 )
                 print(f"[DND] Providing file/folder URI: {file_uri}")
+                # Consume authentication after successful drag preparation
+                if is_secret:
+                    self.password_service.consume_authentication("drag", item_id)
                 return provider
             else:
                 print(
