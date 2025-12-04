@@ -277,13 +277,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         )
 
         # If activated via keyboard shortcut, hide window and auto-paste
-        if hasattr(self.window, "activated_via_keyboard"):
-            if self.window.activated_via_keyboard:
+        if hasattr(self.window, "keyboard_handler"):
+            if self.window.keyboard_handler.activated_via_keyboard:
                 logger.info(
                     "[KEYBOARD] Auto-hiding window and pasting after click"
                 )
                 self.window.hide()
-                self.window.activated_via_keyboard = False
+                self.window.keyboard_handler.activated_via_keyboard = False
 
                 # Wait for focus to return, then simulate paste
                 GLib.timeout_add(150, self._simulate_paste)

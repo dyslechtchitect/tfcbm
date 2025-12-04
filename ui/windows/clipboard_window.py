@@ -30,6 +30,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from settings import get_settings
 from ui.about import AboutWindow
+from ui.managers.keyboard_shortcut_handler import KeyboardShortcutHandler
+from ui.managers.notification_manager import NotificationManager
 from ui.managers.tab_manager import TabManager
 from ui.rows.clipboard_item_row import ClipboardItemRow
 
@@ -61,9 +63,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         logger.info("Initializing ClipboardWindow...")
         super().__init__(application=app, title="TFCBM")
         self.server_pid = server_pid
-
-        # Track if window was activated via keyboard shortcut (Ctrl+`)
-        self.activated_via_keyboard = False
 
         # Load settings
         self.settings = get_settings()
@@ -440,23 +439,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Add tag filter at the bottom (footer)
         main_box.append(tag_frame)
 
-        # NEW: Notification area
-        self.notification_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        self.notification_box.set_vexpand(False)
-        self.notification_box.set_hexpand(True)
-        self.notification_box.set_halign(Gtk.Align.FILL)
-        self.notification_box.set_valign(Gtk.Align.END)
-        self.notification_box.set_size_request(-1, 30)  # Narrow strip
-        self.notification_box.add_css_class("notification-area")
-        self.notification_label = Gtk.Label(label="")
-        self.notification_label.set_hexpand(True)
-        self.notification_label.set_halign(Gtk.Align.CENTER)
-        self.notification_label.set_valign(Gtk.Align.CENTER)
-        self.notification_label.add_css_class(
-            "marquee-text"
-        )  # Add marquee-text class
-        self.notification_box.append(self.notification_label)
-        main_box.append(self.notification_box)
+        # Initialize NotificationManager and add its widget
+        self.notification_manager = NotificationManager()
+        main_box.append(self.notification_manager.get_widget())
 
         # Set up main box as content
         self.set_content(main_box)
@@ -498,10 +483,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Load user tags for tag manager
         self.load_user_tags()
 
-        # Add keyboard event controller for Return/Space quick copy
-        key_controller = Gtk.EventControllerKey()
-        key_controller.connect("key-pressed", self._on_key_pressed)
-        self.add_controller(key_controller)
+        # Initialize KeyboardShortcutHandler
+        self.keyboard_handler = KeyboardShortcutHandler(
+            self, self.search_entry, self.copied_listbox
+        )
 
         logger.info(
             f"ClipboardWindow initialized in {time.time() - start_time:.2f} seconds"
@@ -515,136 +500,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
             if surface:
                 # Move to left edge
                 surface.toplevel_move(0, 0)
-
-    def _focus_first_item(self):
-        """Focus the first item in the current tab's list when opened via keyboard shortcut"""
-        try:
-            # Get the first row from the copied listbox (Recently Copied tab)
-            first_row = self.copied_listbox.get_row_at_index(0)
-            if first_row:
-                # Set focus to the first row
-                first_row.grab_focus()
-                logger.info("[KEYBOARD] Auto-focused first item in list")
-                return False  # Don't repeat
-            else:
-                logger.warning("[KEYBOARD] No items to focus")
-                return False
-        except Exception as e:
-            logger.error(f"[KEYBOARD] Error focusing first item: {e}")
-            return False
-
-    def _on_key_pressed(self, controller, keyval, keycode, state):
-        """Handle keyboard shortcuts: Return/Space to copy item, alphanumeric to focus search"""
-        # Get the currently focused widget
-        focused_widget = self.get_focus()
-
-        # Feature 1: Auto-focus search bar on alphanumeric keypress
-        # Check if this is an alphanumeric key (a-z, A-Z, 0-9)
-        is_alphanumeric = False
-        if (
-            Gdk.KEY_a <= keyval <= Gdk.KEY_z
-            or Gdk.KEY_A <= keyval <= Gdk.KEY_Z
-            or Gdk.KEY_0 <= keyval <= Gdk.KEY_9
-        ):
-            is_alphanumeric = True
-
-        # If alphanumeric and search bar is NOT focused, focus it and let the key be typed
-        if is_alphanumeric:
-            if focused_widget != self.search_entry:
-                logger.info(
-                    f"[KEYBOARD] Auto-focusing search bar on alphanumeric key"
-                )
-                self.search_entry.grab_focus()
-                # Return False to let the key event propagate to the search entry
-                return False
-
-        # Handle Return/Space key press to copy item
-        if keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
-            return False  # Let other handlers process this key
-
-        if not focused_widget:
-            return False
-
-        # Find the ClipboardItemRow - it might be the focused widget or a parent
-        row = focused_widget
-        max_depth = 10  # Prevent infinite loop
-        while row and max_depth > 0:
-            if isinstance(row, ClipboardItemRow):
-                # Found the row! Copy it
-                logger.info(
-                    f"[KEYBOARD] Copying item {row.item.get('id')} via keyboard"
-                )
-                row._on_row_clicked(row)
-
-                # If activated via keyboard shortcut, hide window and paste
-                if self.activated_via_keyboard:
-                    logger.info("[KEYBOARD] Auto-pasting and hiding window")
-                    # Hide window first
-                    self.hide()
-                    self.activated_via_keyboard = False  # Clear flag
-
-                    # Give the window time to hide and focus to return
-                    def simulate_paste():
-                        import shutil
-                        import subprocess
-
-                        # Try xdotool first (X11)
-                        if shutil.which("xdotool"):
-                            try:
-                                subprocess.run(
-                                    ["xdotool", "key", "ctrl+v"],
-                                    check=False,
-                                    timeout=2,
-                                )
-                                logger.info(
-                                    "[KEYBOARD] Simulated Ctrl+V paste with xdotool"
-                                )
-                                return False
-                            except Exception as e:
-                                logger.error(f"[KEYBOARD] xdotool failed: {e}")
-
-                        # Try ydotool (Wayland)
-                        if shutil.which("ydotool"):
-                            try:
-                                # ydotool uses different key codes: 29=Ctrl, 47=v
-                                subprocess.run(
-                                    [
-                                        "ydotool",
-                                        "key",
-                                        "29:1",
-                                        "47:1",
-                                        "47:0",
-                                        "29:0",
-                                    ],
-                                    check=False,
-                                    timeout=2,
-                                )
-                                logger.info(
-                                    "[KEYBOARD] Simulated Ctrl+V paste with ydotool"
-                                )
-                                return False
-                            except Exception as e:
-                                logger.error(f"[KEYBOARD] ydotool failed: {e}")
-
-                        # No tool available
-                        logger.warning(
-                            "[KEYBOARD] Neither xdotool nor ydotool found. Auto-paste disabled."
-                        )
-                        logger.warning(
-                            "[KEYBOARD] Install xdotool: sudo dnf install xdotool"
-                        )
-                        return False
-
-                    # Wait a bit for focus to return, then paste
-                    GLib.timeout_add(150, simulate_paste)
-
-                return True  # Event handled
-
-            # Try parent widget
-            row = row.get_parent()
-            max_depth -= 1
-
-        return False  # Not a clipboard row, let other handlers process
 
     def load_history(self):
         """Load clipboard history and listen for updates via WebSocket"""
@@ -993,38 +848,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         return False
 
     def show_notification(self, message):
-        """Show a notification message in the dedicated area"""
-        logger.debug(f"Showing notification: {message}")
-        self.notification_label.set_label(message)
-        self.notification_box.set_visible(True)
-
-        logger.debug(
-            f"Notification box visible: {self.notification_box.get_visible()}"
-        )
-        logger.debug(
-            f"Notification label visible: {self.notification_label.get_visible()}"
-        )
-        logger.debug(
-            f"Notification box height: {self.notification_box.get_height()}"
-        )
-
-        # Check if message is long enough for marquee
-        if len(message) > 50:  # Arbitrary threshold, can be adjusted
-            self.notification_label.add_css_class("animate-marquee")
-        else:
-            self.notification_label.remove_css_class("animate-marquee")
-
-        # Hide after a few seconds
-        GLib.timeout_add_seconds(10, self._hide_notification)
-
-    def _hide_notification(self):
-        """Hide the notification area"""
-        self.notification_box.set_visible(False)
-        self.notification_label.set_label("")
-        self.notification_label.remove_css_class(
-            "animate-marquee"
-        )  # Remove marquee class
-        return GLib.SOURCE_REMOVE  # Only run once
+        """Show a notification message - delegates to NotificationManager"""
+        self.notification_manager.show(message)
 
     def _on_tab_switched(self, tab_view, param):
         """Handle tab switching - delegates to TabManager"""

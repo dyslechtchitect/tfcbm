@@ -142,18 +142,18 @@ class ClipboardApp(Adw.Application):
 
                     if is_visible:
                         win.hide()
-                        win.activated_via_keyboard = False
+                        win.keyboard_handler.activated_via_keyboard = False
                         logger.info("Window hidden via DBus")
                     else:
                         win.show()
                         win.unminimize()
                         win.present()
-                        win.activated_via_keyboard = True
+                        win.keyboard_handler.activated_via_keyboard = True
                         logger.info(
                             "Window shown via DBus (keyboard shortcut)"
                         )
 
-                        GLib.idle_add(win._focus_first_item)
+                        GLib.idle_add(win.keyboard_handler.focus_first_item)
 
                 except Exception as e:
                     logger.error(f"Error toggling window: {e}")
