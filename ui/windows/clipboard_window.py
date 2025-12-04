@@ -30,6 +30,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from settings import get_settings
 from ui.about import AboutWindow
+from ui.managers.tab_manager import TabManager
 from ui.rows.clipboard_item_row import ClipboardItemRow
 
 logger = logging.getLogger("TFCBM.UI")
@@ -471,6 +472,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.search_timer = None
         self.search_active = False
         self.search_results = []
+
+        # Initialize TabManager
+        self.tab_manager = TabManager(
+            window_instance=self,
+            filter_bar=self.filter_bar,
+        )
 
         # Tag state
         self.all_tags = []  # All available tags (system + user)
@@ -1020,48 +1027,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         return GLib.SOURCE_REMOVE  # Only run once
 
     def _on_tab_switched(self, tab_view, param):
-        """Handle tab switching"""
-        selected_page = tab_view.get_selected_page()
-        if selected_page:
-            # If search is active, clear it when switching tabs
-            if self.search_active:
-                print(f"[DEBUG] Clearing search, query was: '{self.search_query}'")
-                self.search_query = ""
-                self.search_active = False
-                self.search_entry.set_text("")
-                self._restore_normal_view()
-
-            title = selected_page.get_title()
-            print(f"[DEBUG] Tab switched to: {title}", flush=True)
-            if title == "Recently Pasted":
-                self.current_tab = "pasted"
-                # Reset pagination and reload pasted items from the beginning
-                self.pasted_offset = 0
-                self.pasted_has_more = True
-                # Load pasted items when switching to pasted tab
-                GLib.idle_add(self.load_pasted_history)
-                # Show filter bar on clipboard tabs
-                self.filter_bar.set_visible(True)
-                print(
-                    f"[DEBUG] Filter bar shown for Pasted tab, visible: {self.filter_bar.get_visible()}",
-                    flush=True,
-                )
-            elif title == "Recently Copied":
-                self.current_tab = "copied"
-                # Show filter bar on clipboard tabs
-                self.filter_bar.set_visible(True)
-                print(
-                    f"[DEBUG] Filter bar shown for Copied tab, visible: {self.filter_bar.get_visible()}",
-                    flush=True,
-                )
-            else:
-                self.current_tab = "copied"
-                # Hide filter bar on other tabs (Settings, Tags)
-                self.filter_bar.set_visible(False)
-                print(
-                    f"[DEBUG] Filter bar hidden for {title} tab, visible: {self.filter_bar.get_visible()}",
-                    flush=True,
-                )
+        """Handle tab switching - delegates to TabManager"""
+        self.tab_manager.handle_tab_switched(tab_view, param)
+        # Update window's current_tab to match TabManager
+        self.current_tab = self.tab_manager.current_tab
 
     def _jump_to_top(self, list_type):
         """Scroll to the top of the specified list"""
