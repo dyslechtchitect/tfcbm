@@ -9,6 +9,7 @@ from .search_manager import SearchManager
 from .sort_manager import SortManager
 from .tab_manager import TabManager
 from .tag_dialog_manager import TagDialogManager
+from .tag_display_manager import TagDisplayManager
 from .tag_filter_manager import TagFilterManager
 from .user_tags_manager import UserTagsManager
 from .window_manager import WindowManager
@@ -28,4 +29,5 @@ __all__ = [
     "SearchManager",
     "SortManager",
     "TagDialogManager",
+    "TagDisplayManager",
 ]

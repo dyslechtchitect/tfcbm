@@ -37,6 +37,7 @@ from ui.managers.search_manager import SearchManager
 from ui.managers.sort_manager import SortManager
 from ui.managers.tab_manager import TabManager
 from ui.managers.tag_dialog_manager import TagDialogManager
+from ui.managers.tag_display_manager import TagDisplayManager
 from ui.managers.tag_filter_manager import TagFilterManager
 from ui.managers.user_tags_manager import UserTagsManager
 from ui.managers.window_position_manager import WindowPositionManager
@@ -484,6 +485,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.tab_manager = TabManager(
             window_instance=self,
             filter_bar=self.filter_bar_manager.build(),
+            search_manager=self.search_manager,
         )
 
         # Initialize TagFilterManager
@@ -504,12 +506,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.tag_dialog_manager = TagDialogManager(
             parent_window=self,
             on_tag_created=lambda: (
-                self.load_user_tags(),
+                self.user_tags_manager.load_user_tags(),
                 self.load_tags(),
                 self.show_notification("Tag created"),
             ),
             on_tag_updated=lambda: (
-                self.load_user_tags(),
+                self.user_tags_manager.load_user_tags(),
                 self.load_tags(),
             ),
             get_all_tags=lambda: self.all_tags,
@@ -517,9 +519,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Tag state
         self.all_tags = []  # All available tags (system + user)
-        self.tag_buttons = {}  # Dict of tag_id -> button widget
         self.filtered_items = []  # Filtered items when tag filter is active
         self.dragged_tag = None
+
+        # Initialize TagDisplayManager
+        self.tag_display_manager = TagDisplayManager(
+            tag_flowbox=self.tag_flowbox,
+            tag_filter_manager=self.tag_filter_manager,
+            copied_listbox=self.copied_listbox,
+            pasted_listbox=self.pasted_listbox,
+            get_current_tab=lambda: self.current_tab,
+            on_tag_drag_prepare=self._on_tag_drag_prepare,
+            on_tag_drag_begin=self._on_tag_drag_begin,
+        )
 
         # Position window to the left (again, to ensure it's positioned)
         self.position_manager.position_left()
@@ -1402,117 +1414,30 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self._refresh_tag_display()
 
     def _refresh_tag_display(self):
-        """Refresh the tag display area"""
-        # Clear existing tags
-        while True:
-            child = self.tag_flowbox.get_first_child()
-            if not child:
-                break
-            self.tag_flowbox.remove(child)
-
-        self.tag_buttons = {}
-
-        # Filter out system tags - only show custom user tags
-        user_tags = [
-            tag for tag in self.all_tags if not tag.get("is_system", False)
-        ]
-
-        # Add tag buttons
-        for tag in user_tags:
-            tag_id = tag.get("id")
-            tag_name = tag.get("name", "")
-            tag_color = tag.get("color", "#9a9996")
-            is_selected = tag_id in self.tag_filter_manager.get_selected_tag_ids()
-
-            # Create button for tag
-            btn = Gtk.Button.new_with_label(tag_name)
-            btn.add_css_class("pill")
-
-            # Apply color styling - selected tags colored, unselected greyed out
-            css_provider = Gtk.CssProvider()
-            if is_selected:
-                css_data = f"button.pill {{ background-color: alpha({tag_color}, 0.25); color: {tag_color}; font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha({tag_color}, 0.4); border-radius: 2px; }}"
-            else:
-                # Unselected: greyed out
-                css_data = "button.pill { background-color: alpha(#666666, 0.08); color: alpha(#666666, 0.5); font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha(#666666, 0.2); border-radius: 2px; }"
-            css_provider.load_from_data(css_data.encode())
-            btn.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
-
-            # Add drag source for drag-and-drop
-            drag_source = Gtk.DragSource.new()
-            drag_source.set_actions(Gdk.DragAction.COPY)
-            drag_source.connect("prepare", self._on_tag_drag_prepare, tag)
-            drag_source.connect("drag-begin", self._on_tag_drag_begin)
-            btn.add_controller(drag_source)
-
-            btn.connect(
-                "clicked", lambda b, tid=tag_id: self._on_tag_clicked(tid)
-            )
-
-            self.tag_buttons[tag_id] = btn
-            self.tag_flowbox.append(btn)
+        """Refresh the tag display area - delegates to TagDisplayManager"""
+        self.tag_display_manager.refresh_display(self.all_tags)
 
     def _on_tag_clicked(self, tag_id):
-        """Handle tag button click - toggle selection"""
-        # Toggle tag selection via manager
-        self.tag_filter_manager.toggle_tag(tag_id)
-
-        # Apply filter if tags are selected
-        if self.tag_filter_manager.get_selected_tag_ids():
-            self._apply_tag_filter()
-        else:
-            self._restore_filtered_view()
+        """Handle tag button click - delegates to TagDisplayManager"""
+        # NOTE: This method is not used because TagDisplayManager handles clicks internally
+        # Kept for backward compatibility
+        pass
 
     def _clear_tag_filter(self):
-        """Clear all tag filters"""
-        self.tag_filter_manager.clear_selection()
-        self._restore_filtered_view()
+        """Clear all tag filters - delegates to TagDisplayManager"""
+        self.tag_display_manager.clear_tag_filter()
 
     def _apply_tag_filter(self):
-        """Filter items by selected tags at UI level (no DB calls)"""
-        # Determine which listbox to update
-        if self.current_tab == "pasted":
-            listbox = self.pasted_listbox
-        else:
-            listbox = self.copied_listbox
-
-        # Apply filter via manager
-        self.tag_filter_manager.apply_filter(listbox)
+        """Filter items by selected tags - delegates to TagDisplayManager"""
+        self.tag_display_manager.apply_tag_filter()
 
     def _restore_filtered_view(self):
-        """Restore normal unfiltered view by making all rows visible"""
-        # Determine which listbox to update
-        if self.current_tab == "pasted":
-            listbox = self.pasted_listbox
-        else:
-            listbox = self.copied_listbox
-
-        # Restore view via manager
-        self.tag_filter_manager.restore_view(listbox)
+        """Restore normal unfiltered view - delegates to TagDisplayManager"""
+        self.tag_display_manager.restore_filtered_view()
 
     def _reload_item_tags(self, item_id: int, copied_listbox: Gtk.ListBox, pasted_listbox: Gtk.ListBox):
-        """Reload tags for a specific clipboard item in both listboxes.
-
-        Args:
-            item_id: ID of the item to reload tags for
-            copied_listbox: Copied items listbox
-            pasted_listbox: Pasted items listbox
-        """
-        # Reload tags in copied listbox
-        for row in copied_listbox:
-            if hasattr(row, 'item') and row.item.get('id') == item_id:
-                if hasattr(row, '_load_item_tags'):
-                    row._load_item_tags()
-                break
-
-        # Reload tags in pasted listbox
-        for row in pasted_listbox:
-            if hasattr(row, 'item') and row.item.get('id') == item_id:
-                if hasattr(row, '_load_item_tags'):
-                    row._load_item_tags()
-                break
+        """Reload tags for a specific clipboard item - delegates to TagDisplayManager"""
+        self.tag_display_manager.reload_item_tags(item_id)
 
     # ========== Tag Manager Methods ==========
 
