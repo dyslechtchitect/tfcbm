@@ -33,7 +33,10 @@ from ui.about import AboutWindow
 from ui.managers.filter_bar_manager import FilterBarManager
 from ui.managers.keyboard_shortcut_handler import KeyboardShortcutHandler
 from ui.managers.notification_manager import NotificationManager
+from ui.managers.search_manager import SearchManager
+from ui.managers.sort_manager import SortManager
 from ui.managers.tab_manager import TabManager
+from ui.managers.tag_dialog_manager import TagDialogManager
 from ui.managers.tag_filter_manager import TagFilterManager
 from ui.managers.user_tags_manager import UserTagsManager
 from ui.managers.window_position_manager import WindowPositionManager
@@ -115,10 +118,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         self.page_size = self.settings.max_page_length
 
-        # Sort state
-        self.copied_sort_order = "DESC"  # Default: newest first
-        self.pasted_sort_order = "DESC"  # Default: newest first
-
         # Window icon is set through the desktop file and application
         # GTK4/Adwaita doesn't use set_icon() anymore
 
@@ -183,8 +182,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.search_entry = Gtk.SearchEntry()
         self.search_entry.set_hexpand(True)
         self.search_entry.set_placeholder_text("Search clipboard items...")
-        self.search_entry.connect("search-changed", self._on_search_changed)
-        self.search_entry.connect("activate", self._on_search_activate)
+        self.search_entry.connect("search-changed", self._on_search_changed_wrapper)
+        self.search_entry.connect("activate", self._on_search_activate_wrapper)
         self.search_container.append(self.search_entry)
 
         main_box.append(self.search_container)
@@ -466,11 +465,20 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Store current tab state
         self.current_tab = "copied"
 
-        # Search state
-        self.search_query = ""
-        self.search_timer = None
-        self.search_active = False
-        self.search_results = []
+        # Initialize SearchManager
+        self.search_manager = SearchManager(
+            on_display_results=self._display_search_results,
+            on_notification=self.show_notification,
+        )
+
+        # Initialize SortManager (after filter_sort_btn is created)
+        self.sort_manager = SortManager(
+            sort_button=self.filter_sort_btn,
+            on_history_load=self._initial_history_load,
+            on_pasted_load=self._initial_pasted_load,
+            get_active_filters=self.filter_bar_manager.get_active_filters,
+            page_size=self.page_size,
+        )
 
         # Initialize TabManager
         self.tab_manager = TabManager(
@@ -490,6 +498,21 @@ class ClipboardWindow(Adw.ApplicationWindow):
             on_refresh_tag_display=self._refresh_tag_display,
             on_item_tag_reload=self._reload_item_tags,
             window=self,
+        )
+
+        # Initialize TagDialogManager
+        self.tag_dialog_manager = TagDialogManager(
+            parent_window=self,
+            on_tag_created=lambda: (
+                self.load_user_tags(),
+                self.load_tags(),
+                self.show_notification("Tag created"),
+            ),
+            on_tag_updated=lambda: (
+                self.load_user_tags(),
+                self.load_tags(),
+            ),
+            get_all_tags=lambda: self.all_tags,
         )
 
         # Tag state
@@ -556,6 +579,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 await websocket.send(json.dumps(request))
                 print(
                     f"Requested history with filters: {request.get('filters', 'none')}"
+                )
+
+                # Request recently pasted items
+                pasted_request = {"action": "get_recently_pasted", "limit": self.page_size}
+                if self.filter_bar_manager.get_active_filters():
+                    pasted_request["filters"] = list(self.filter_bar_manager.get_active_filters())
+                await websocket.send(json.dumps(pasted_request))
+                print(
+                    f"Requested pasted items with filters: {pasted_request.get('filters', 'none')}"
                 )
 
                 # Listen for messages
@@ -696,7 +728,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add items (already in reverse order from backend)
         for item in history:
-            row = ClipboardItemRow(item, self, search_query=self.search_query)
+            row = ClipboardItemRow(item, self, search_query=self.search_manager.get_query())
             self.copied_listbox.prepend(row)  # Add to top
 
         return False  # Don't repeat
@@ -716,7 +748,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 item,
                 self,
                 show_pasted_time=True,
-                search_query=self.search_query,
+                search_query=self.search_manager.get_query(),
             )
             self.pasted_listbox.append(row)  # Append to maintain DESC order
 
@@ -743,7 +775,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Add items (database returns DESC order, append to maintain it)
         for item in items:
-            row = ClipboardItemRow(item, self, search_query=self.search_query)
+            row = ClipboardItemRow(item, self, search_query=self.search_manager.get_query())
             self.copied_listbox.append(row)  # Append to maintain DESC order
 
         # Update status label
@@ -780,7 +812,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 item,
                 self,
                 show_pasted_time=True,
-                search_query=self.search_query,
+                search_query=self.search_manager.get_query(),
             )
             self.pasted_listbox.append(row)  # Append to maintain DESC order
 
@@ -884,12 +916,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
             vadj.set_value(0)
 
     def _toggle_sort_from_toolbar(self):
-        """Toggle sort for the currently active tab"""
+        """Toggle sort for the currently active tab - delegates to SortManager"""
         # Determine which tab is active
         if self.current_tab == "copied":
-            self._toggle_sort("copied")
+            self.sort_manager.toggle_sort("copied")
         else:
-            self._toggle_sort("pasted")
+            self.sort_manager.toggle_sort("pasted")
 
     def _jump_to_top_from_toolbar(self):
         """Jump to top for the currently active tab"""
@@ -898,145 +930,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         else:
             self._jump_to_top("pasted")
 
-    def _toggle_sort(self, list_type):
-        """Toggle sort order for the specified list"""
-        if list_type == "copied":
-            # Toggle sort order
-            self.copied_sort_order = (
-                "ASC" if self.copied_sort_order == "DESC" else "DESC"
-            )
-
-            # Update toolbar button icon and tooltip
-            if self.copied_sort_order == "DESC":
-                self.filter_sort_btn.set_icon_name(
-                    "view-sort-descending-symbolic"
-                )
-                self.filter_sort_btn.set_tooltip_text("Newest first ↓")
-            else:
-                self.filter_sort_btn.set_icon_name(
-                    "view-sort-ascending-symbolic"
-                )
-                self.filter_sort_btn.set_tooltip_text("Oldest first ↑")
-
-            # Reload data with new sort order
-            self._reload_copied_with_sort()
-
-        elif list_type == "pasted":
-            # Toggle sort order
-            self.pasted_sort_order = (
-                "ASC" if self.pasted_sort_order == "DESC" else "DESC"
-            )
-
-            # Update toolbar button icon and tooltip
-            if self.pasted_sort_order == "DESC":
-                self.filter_sort_btn.set_icon_name(
-                    "view-sort-descending-symbolic"
-                )
-                self.filter_sort_btn.set_tooltip_text("Newest first ↓")
-            else:
-                self.filter_sort_btn.set_icon_name(
-                    "view-sort-ascending-symbolic"
-                )
-                self.filter_sort_btn.set_tooltip_text("Oldest first ↑")
-
-            # Reload data with new sort order
-            self._reload_pasted_with_sort()
-
-    def _reload_copied_with_sort(self):
-        """Reload copied items with current sort order"""
-
-        def reload():
-            try:
-
-                async def get_sorted_history():
-                    uri = "ws://localhost:8765"
-                    max_size = 5 * 1024 * 1024
-                    async with websockets.connect(
-                        uri, max_size=max_size
-                    ) as websocket:
-                        request = {
-                            "action": "get_history",
-                            "limit": self.page_size,
-                            "sort_order": self.copied_sort_order,
-                        }
-                        if self.filter_bar_manager.get_active_filters():
-                            request["filters"] = list(self.filter_bar_manager.get_active_filters())
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "history":
-                            items = data.get("items", [])
-                            total_count = data.get("total_count", 0)
-                            offset = data.get("offset", 0)
-                            GLib.idle_add(
-                                self._initial_history_load,
-                                items,
-                                total_count,
-                                offset,
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(get_sorted_history())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Error reloading sorted history: {e}")
-
-        threading.Thread(target=reload, daemon=True).start()
-
-    def _reload_pasted_with_sort(self):
-        """Reload pasted items with current sort order"""
-
-        def reload():
-            try:
-
-                async def get_sorted_pasted():
-                    uri = "ws://localhost:8765"
-                    max_size = 5 * 1024 * 1024
-                    async with websockets.connect(
-                        uri, max_size=max_size
-                    ) as websocket:
-                        request = {
-                            "action": "get_recently_pasted",
-                            "limit": self.page_size,
-                            "sort_order": self.pasted_sort_order,
-                        }
-                        # Include active filters
-                        if self.filter_bar_manager.get_active_filters():
-                            request["filters"] = list(self.filter_bar_manager.get_active_filters())
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "recently_pasted":
-                            items = data.get("items", [])
-                            total_count = data.get("total_count", 0)
-                            offset = data.get("offset", 0)
-                            GLib.idle_add(
-                                self._initial_pasted_load,
-                                items,
-                                total_count,
-                                offset,
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(get_sorted_pasted())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Error reloading sorted pasted: {e}")
-
-        threading.Thread(target=reload, daemon=True).start()
-
     def _on_scroll_changed(self, adjustment, list_type):
         """Handle scroll events for infinite scrolling"""
         # Don't load more items if search is active - search results are complete
-        if self.search_active:
+        if self.search_manager.is_active():
             return
 
         if (
@@ -1190,7 +1087,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 item,
                 self,
                 show_pasted_time=(list_type == "pasted"),
-                search_query=self.search_query,
+                search_query=self.search_manager.get_query(),
             )
             listbox.append(row)
 
@@ -1315,99 +1212,18 @@ class ClipboardWindow(Adw.ApplicationWindow):
         logger.info("Intercepted 'close-page' signal. Preventing tab closure.")
         return True  # Returning True handles the signal and prevents the default action (closing)
 
-    def _on_search_changed(self, entry):
-        """Handle search entry text changes with 200ms debouncing"""
-        # Cancel existing timer if any
-        if self.search_timer:
-            GLib.source_remove(self.search_timer)
-            self.search_timer = None
-
-        query = entry.get_text().strip()
-
-        # If query is empty, clear search and restore normal view
-        if not query:
-            self.search_query = ""
-            self.search_active = False
-            self.search_results = []
+    def _on_search_changed_wrapper(self, entry):
+        """Wrapper for search entry text changes - delegates to SearchManager"""
+        result = self.search_manager.on_search_changed(entry, self.filter_bar_manager.get_active_filters)
+        if result == "CLEAR":
             self._restore_normal_view()
-            return
 
-        # Set up 200ms delay before searching (snappy but still debounced)
-        self.search_timer = GLib.timeout_add(200, self._perform_search, query)
-
-    def _on_search_activate(self, entry):
-        """Handle Enter key press - search immediately"""
-        # Cancel debounce timer
-        if self.search_timer:
-            GLib.source_remove(self.search_timer)
-            self.search_timer = None
-
-        query = entry.get_text().strip()
-        if query:
-            self._perform_search(query)
-
-    def _perform_search(self, query):
-        """Perform the actual search via WebSocket"""
-        self.search_query = query
-        self.search_timer = None  # Clear timer reference
-
-        print(f"[UI] Searching for: '{query}'")
-
-        def run_search():
-            try:
-
-                async def search():
-                    uri = "ws://localhost:8765"
-                    max_size = 5 * 1024 * 1024  # 5MB
-                    async with websockets.connect(
-                        uri, max_size=max_size
-                    ) as websocket:
-                        request = {
-                            "action": "search",
-                            "query": query,
-                            "limit": 100,
-                        }
-                        # Feature 2: Include active filters in search request
-                        if self.filter_bar_manager.get_active_filters():
-                            request["filters"] = list(self.filter_bar_manager.get_active_filters())
-                            print(
-                                f"[UI] Searching with filters: {list(self.filter_bar_manager.get_active_filters())}"
-                            )
-                        await websocket.send(json.dumps(request))
-
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "search_results":
-                            items = data.get("items", [])
-                            result_count = data.get("count", 0)
-                            print(f"[UI] Search results: {result_count} items")
-                            GLib.idle_add(
-                                self._display_search_results, items, query
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(search())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Search error: {e}")
-                traceback.print_exc()
-                GLib.idle_add(
-                    lambda: self.show_notification(f"Search error: {str(e)}")
-                    or False
-                )
-
-        threading.Thread(target=run_search, daemon=True).start()
-        return False  # Don't repeat timer
+    def _on_search_activate_wrapper(self, entry):
+        """Wrapper for Enter key press - delegates to SearchManager"""
+        self.search_manager.on_search_activate(entry, self.filter_bar_manager.get_active_filters)
 
     def _display_search_results(self, items, query):
         """Display search results in the current tab"""
-        self.search_active = True
-        self.search_results = items
-
         # Determine which listbox to update based on current tab
         if self.current_tab == "pasted":
             listbox = self.pasted_listbox
@@ -1432,7 +1248,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
                     item,
                     self,
                     show_pasted_time=show_pasted_time,
-                    search_query=self.search_query,
+                    search_query=query,
                 )
                 listbox.append(row)
             status_label.set_label(
@@ -1716,264 +1532,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
 
     def _on_create_tag(self, button):
-        """Show dialog to create a new tag"""
-        dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Create New Tag")
-        dialog.set_body("Enter a name for the new tag")
-
-        # Create entry for tag name
-        entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        entry_box.set_margin_top(12)
-        entry_box.set_margin_bottom(12)
-        entry_box.set_margin_start(12)
-        entry_box.set_margin_end(12)
-
-        name_entry = Gtk.Entry()
-        name_entry.set_placeholder_text("Tag name")
-        entry_box.append(name_entry)
-
-        # Color picker - use a simple dropdown with predefined colors
-        color_label = Gtk.Label()
-        color_label.set_text("Choose a color:")
-        color_label.set_halign(Gtk.Align.START)
-        entry_box.append(color_label)
-
-        color_flow = Gtk.FlowBox()
-        color_flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        color_flow.set_max_children_per_line(6)
-        color_flow.set_column_spacing(6)
-        color_flow.set_row_spacing(6)
-
-        colors = [
-            "#3584e4",
-            "#33d17a",
-            "#f6d32d",
-            "#ff7800",
-            "#e01b24",
-            "#9141ac",
-            "#986a44",
-            "#5e5c64",
-        ]
-        for color in colors:
-            color_btn = Gtk.Button()
-            color_btn.set_size_request(40, 40)
-            # Store color value on button for later retrieval
-            color_btn.color_value = color
-            css_provider = Gtk.CssProvider()
-            css_data = (
-                f"button {{ background-color: {color}; border-radius: 20px; }}"
-            )
-            css_provider.load_from_data(css_data.encode())
-            color_btn.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
-
-            # Make button clickable to select its flowbox child
-            def on_color_click(btn, flow=color_flow):
-                # Find and select this button's parent FlowBoxChild
-                parent = btn.get_parent()
-                if parent:
-                    flow.select_child(parent)
-
-            color_btn.connect("clicked", on_color_click)
-            color_flow.append(color_btn)
-
-        color_flow.select_child(color_flow.get_child_at_index(0))
-        entry_box.append(color_flow)
-
-        dialog.set_extra_child(entry_box)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("create", "Create")
-        dialog.set_response_appearance(
-            "create", Adw.ResponseAppearance.SUGGESTED
-        )
-
-        def on_response(dialog, response):
-            if response == "create":
-                tag_name = name_entry.get_text().strip()
-                if not tag_name:
-                    print("Tag name cannot be empty")
-                    return
-
-                # Get selected color from the selected FlowBoxChild's button
-                selected = color_flow.get_selected_children()
-                if selected and len(selected) > 0:
-                    # Get the button from the FlowBoxChild
-                    flow_child = selected[0]
-                    button = flow_child.get_child()
-                    if hasattr(button, "color_value"):
-                        selected_color = button.color_value
-                    else:
-                        selected_color = colors[0]
-                else:
-                    selected_color = colors[0]
-
-                # Create tag via UserTagsManager
-                self.user_tags_manager.create_tag(tag_name, selected_color, self)
-
-        dialog.connect("response", on_response)
-        dialog.present()
+        """Show dialog to create a new tag - delegates to TagDialogManager"""
+        self.tag_dialog_manager.show_create_dialog()
 
     def _on_edit_tag(self, tag_id):
-        """Show dialog to edit a tag"""
-        # Find the tag
-        tag = None
-        for t in self.all_tags:
-            if t.get("id") == tag_id and not t.get("is_system"):
-                tag = t
-                break
-
-        if not tag:
-            self.show_notification("Tag not found")
-            return
-
-        dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Edit Tag")
-        dialog.set_body(f"Modify the tag '{tag.get('name')}'")
-
-        # Create entry for tag name
-        entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        entry_box.set_margin_top(12)
-        entry_box.set_margin_bottom(12)
-        entry_box.set_margin_start(12)
-        entry_box.set_margin_end(12)
-
-        name_entry = Gtk.Entry()
-        name_entry.set_text(tag.get("name", ""))
-        entry_box.append(name_entry)
-
-        # Color picker
-        color_label = Gtk.Label()
-        color_label.set_text("Choose a color:")
-        color_label.set_halign(Gtk.Align.START)
-        entry_box.append(color_label)
-
-        color_flow = Gtk.FlowBox()
-        color_flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        color_flow.set_max_children_per_line(6)
-        color_flow.set_column_spacing(6)
-        color_flow.set_row_spacing(6)
-
-        colors = [
-            "#3584e4",
-            "#33d17a",
-            "#f6d32d",
-            "#ff7800",
-            "#e01b24",
-            "#9141ac",
-            "#986a44",
-            "#5e5c64",
-        ]
-        current_color_index = 0
-        if tag.get("color") in colors:
-            current_color_index = colors.index(tag.get("color"))
-
-        for color in colors:
-            color_btn = Gtk.Button()
-            color_btn.set_size_request(40, 40)
-            # Store color value on button
-            color_btn.color_value = color
-            css_provider = Gtk.CssProvider()
-            css_data = (
-                f"button {{ background-color: {color}; border-radius: 20px; }}"
-            )
-            css_provider.load_from_data(css_data.encode())
-            color_btn.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-            )
-
-            # Make button clickable to select its flowbox child
-            def on_color_click(btn, flow=color_flow):
-                parent = btn.get_parent()
-                if parent:
-                    flow.select_child(parent)
-
-            color_btn.connect("clicked", on_color_click)
-            color_flow.append(color_btn)
-
-        color_flow.select_child(
-            color_flow.get_child_at_index(current_color_index)
-        )
-        entry_box.append(color_flow)
-
-        dialog.set_extra_child(entry_box)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("save", "Save")
-        dialog.set_response_appearance(
-            "save", Adw.ResponseAppearance.SUGGESTED
-        )
-
-        def on_response(dialog, response):
-            if response == "save":
-                tag_name = name_entry.get_text().strip()
-                if not tag_name:
-                    print("Tag name cannot be empty")
-                    return
-
-                # Get selected color from the selected FlowBoxChild's button
-                selected = color_flow.get_selected_children()
-                if selected and len(selected) > 0:
-                    flow_child = selected[0]
-                    button = flow_child.get_child()
-                    if hasattr(button, "color_value"):
-                        selected_color = button.color_value
-                    else:
-                        selected_color = colors[current_color_index]
-                else:
-                    selected_color = colors[current_color_index]
-
-                # Update tag via WebSocket
-                self._update_tag_on_server(tag_id, tag_name, selected_color)
-
-        dialog.connect("response", on_response)
-        dialog.present()
-
-    def _update_tag_on_server(self, tag_id, name, color):
-        """Update a tag on the server"""
-
-        def run_update():
-            try:
-
-                async def update_tag():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "update_tag",
-                            "tag_id": tag_id,
-                            "name": name,
-                            "color": color,
-                        }
-                        await websocket.send(json.dumps(request))
-
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "tag_updated":
-                            GLib.idle_add(
-                                self.show_notification, f"Tag updated"
-                            )
-                            GLib.idle_add(self.load_user_tags)
-                            GLib.idle_add(
-                                self.load_tags
-                            )  # Refresh tag filter display
-                        else:
-                            GLib.idle_add(
-                                self.show_notification, "Failed to update tag"
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(update_tag())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Error updating tag: {e}")
-                GLib.idle_add(
-                    self.show_notification, f"Error updating tag: {e}"
-                )
-
-        threading.Thread(target=run_update, daemon=True).start()
+        """Show dialog to edit a tag - delegates to TagDialogManager"""
+        self.tag_dialog_manager.show_edit_dialog(tag_id)
 
     def _on_delete_tag(self, tag_id):
         """Show confirmation dialog and delete tag"""
