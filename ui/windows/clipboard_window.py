@@ -30,9 +30,14 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from settings import get_settings
 from ui.about import AboutWindow
+from ui.managers.filter_bar_manager import FilterBarManager
 from ui.managers.keyboard_shortcut_handler import KeyboardShortcutHandler
 from ui.managers.notification_manager import NotificationManager
 from ui.managers.tab_manager import TabManager
+from ui.managers.tag_filter_manager import TagFilterManager
+from ui.managers.user_tags_manager import UserTagsManager
+from ui.managers.window_position_manager import WindowPositionManager
+from ui.pages.settings_page import SettingsPage
 from ui.rows.clipboard_item_row import ClipboardItemRow
 
 logger = logging.getLogger("TFCBM.UI")
@@ -93,8 +98,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         self.set_resizable(True)
 
-        # Position window to the left
-        self.position_window_left()
+        # Initialize WindowPositionManager and position window to the left
+        self.position_manager = WindowPositionManager(self)
+        self.position_manager.position_left()
 
         # Pagination state
         self.copied_offset = 0
@@ -256,8 +262,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.tab_bar.set_view(self.tab_view)
         main_box.append(self.tab_bar)
 
-        # Create filter bar (will be added to toolbar later)
-        self._create_filter_bar()
+        # Initialize FilterBarManager
+        self.filter_bar_manager = FilterBarManager(
+            on_filter_changed=self._reload_current_tab
+        )
 
         # Tab 1: Recently Copied
         copied_scrolled = Gtk.ScrolledWindow()
@@ -367,8 +375,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
         pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
         pasted_page.set_indicator_icon(None)  # Remove close button by clearing indicator
 
-        # Create settings page
-        settings_page = self._create_settings_page()
+        # Create settings page using SettingsPage component
+        settings_page_component = SettingsPage(
+            settings=self.settings,
+            on_save=self._handle_settings_save,
+            on_notification=self.show_notification,
+        )
+        settings_page = settings_page_component.build()
         self.main_stack.add_named(settings_page, "settings")
 
         # Tab 4: Tag Manager
@@ -416,23 +429,24 @@ class ClipboardWindow(Adw.ApplicationWindow):
         tag_manager_tab.set_title("Tags")
         tag_manager_tab.set_icon(Gio.ThemedIcon.new("tag-symbolic"))
 
+        # Initialize UserTagsManager (needs to be after user_tags_group and tag_filter_manager)
+        # Will be fully initialized after tag_filter_manager is created
+
         # Connect tab switch event
         self.tab_view.connect("notify::selected-page", self._on_tab_switched)
 
+        # Add toolbar controls to filter bar
+        self.filter_bar_manager.add_toolbar_separator()
+        self.filter_sort_btn = self.filter_bar_manager.add_sort_button(
+            on_sort_clicked=self._toggle_sort_from_toolbar,
+            initial_tooltip="Newest first ↓"
+        )
+        self.filter_bar_manager.add_jump_to_top_button(
+            on_jump_clicked=self._jump_to_top_from_toolbar
+        )
+
         # Add sticky filter bar (contains filters, sort, jump)
-        main_box.append(self.filter_bar)
-        print(
-            f"[DEBUG] Filter bar added to main_box, visible: {self.filter_bar.get_visible()}",
-            flush=True,
-        )
-        print(
-            f"[DEBUG] Filter toggle button visible: {self.filter_toggle_btn.get_visible()}",
-            flush=True,
-        )
-        print(
-            f"[DEBUG] Filter bar has {len(list(self.filter_bar))} children",
-            flush=True,
-        )
+        main_box.append(self.filter_bar_manager.build())
 
         main_box.append(self.main_stack)
 
@@ -461,27 +475,39 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Initialize TabManager
         self.tab_manager = TabManager(
             window_instance=self,
-            filter_bar=self.filter_bar,
+            filter_bar=self.filter_bar_manager.build(),
+        )
+
+        # Initialize TagFilterManager
+        self.tag_filter_manager = TagFilterManager(
+            on_tag_display_refresh=self._refresh_tag_display,
+            on_notification=self.show_notification,
+        )
+
+        # Initialize UserTagsManager
+        self.user_tags_manager = UserTagsManager(
+            user_tags_group=self.user_tags_group,
+            on_refresh_tag_display=self._refresh_tag_display,
+            on_item_tag_reload=self._reload_item_tags,
+            window=self,
         )
 
         # Tag state
         self.all_tags = []  # All available tags (system + user)
-        self.selected_tag_ids = []  # Currently selected tag IDs for filtering
         self.tag_buttons = {}  # Dict of tag_id -> button widget
-        self.filter_active = False  # Track if tag filtering is active
         self.filtered_items = []  # Filtered items when tag filter is active
         self.dragged_tag = None
 
-        # Position window to the left
-        self.position_window_left()
+        # Position window to the left (again, to ensure it's positioned)
+        self.position_manager.position_left()
 
         # Set up global keyboard shortcut
 
         # Load tags for filtering
         self.load_tags()
 
-        # Load user tags for tag manager
-        self.load_user_tags()
+        # Load user tags for tag manager (via manager)
+        self.user_tags_manager.load_user_tags()
 
         # Initialize KeyboardShortcutHandler
         self.keyboard_handler = KeyboardShortcutHandler(
@@ -491,15 +517,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         logger.info(
             f"ClipboardWindow initialized in {time.time() - start_time:.2f} seconds"
         )
-
-    def position_window_left(self):
-        """Position window to the left side of the screen"""
-        display = Gdk.Display.get_default()
-        if display:
-            surface = self.get_surface()
-            if surface:
-                # Move to left edge
-                surface.toplevel_move(0, 0)
 
     def load_history(self):
         """Load clipboard history and listen for updates via WebSocket"""
@@ -531,10 +548,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
                 # Request history
                 request = {"action": "get_history", "limit": self.page_size}
-                if self.active_filters:
-                    request["filters"] = list(self.active_filters)
+                if self.filter_bar_manager.get_active_filters():
+                    request["filters"] = list(self.filter_bar_manager.get_active_filters())
                     print(
-                        f"[FILTER] Sending filters to server: {list(self.active_filters)}"
+                        f"[FILTER] Sending filters to server: {list(self.filter_bar_manager.get_active_filters())}"
                     )
                 await websocket.send(json.dumps(request))
                 print(
@@ -616,10 +633,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             "limit": page_size,
                         }
                         # Include active filters
-                        if self.active_filters:
-                            request["filters"] = list(self.active_filters)
+                        if self.filter_bar_manager.get_active_filters():
+                            request["filters"] = list(self.filter_bar_manager.get_active_filters())
                             print(
-                                f"[FILTER] Requesting pasted items with filters: {list(self.active_filters)}"
+                                f"[FILTER] Requesting pasted items with filters: {list(self.filter_bar_manager.get_active_filters())}"
                             )
                         await websocket.send(json.dumps(request))
 
@@ -942,8 +959,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             "limit": self.page_size,
                             "sort_order": self.copied_sort_order,
                         }
-                        if self.active_filters:
-                            request["filters"] = list(self.active_filters)
+                        if self.filter_bar_manager.get_active_filters():
+                            request["filters"] = list(self.filter_bar_manager.get_active_filters())
                         await websocket.send(json.dumps(request))
                         response = await websocket.recv()
                         data = json.loads(response)
@@ -988,8 +1005,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             "sort_order": self.pasted_sort_order,
                         }
                         # Include active filters
-                        if self.active_filters:
-                            request["filters"] = list(self.active_filters)
+                        if self.filter_bar_manager.get_active_filters():
+                            request["filters"] = list(self.filter_bar_manager.get_active_filters())
                         await websocket.send(json.dumps(request))
                         response = await websocket.recv()
                         data = json.loads(response)
@@ -1091,8 +1108,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         "offset": self.copied_offset + self.page_size,
                         "limit": self.page_size,
                     }
-                    if self.active_filters:
-                        request["filters"] = list(self.active_filters)
+                    if self.filter_bar_manager.get_active_filters():
+                        request["filters"] = list(self.filter_bar_manager.get_active_filters())
                 else:  # pasted
                     request = {
                         "action": "get_recently_pasted",
@@ -1100,8 +1117,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                         "limit": self.page_size,
                     }
                     # Include active filters for pasted items too
-                    if self.active_filters:
-                        request["filters"] = list(self.active_filters)
+                    if self.filter_bar_manager.get_active_filters():
+                        request["filters"] = list(self.filter_bar_manager.get_active_filters())
 
                 await websocket.send(json.dumps(request))
                 response = await websocket.recv()
@@ -1212,7 +1229,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.button_stack.set_visible_child_name("settings")
         # Hide tab bar, filter bar, and search when in settings
         self.tab_bar.set_visible(False)
-        self.filter_bar.set_visible(False)
+        self.filter_bar_manager.set_visible(False)
         self.search_container.set_visible(False)
 
     def _show_tabs_page(self, button):
@@ -1224,152 +1241,25 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.search_container.set_visible(True)
         # Filter bar visibility is handled by tab selection logic
 
-    def _create_settings_page(self):
-        """Create the settings page"""
-        settings_page = Adw.PreferencesPage()
+    def _handle_settings_save(
+        self, item_width: int, item_height: int, max_page_length: int
+    ) -> None:
+        """Handle settings save callback from SettingsPage.
 
-        # Display Settings Group
-        display_group = Adw.PreferencesGroup()
-        display_group.set_title("Display Settings")
-        display_group.set_description(
-            "Configure how clipboard items are displayed"
-        )
+        Args:
+            item_width: New item width value
+            item_height: New item height value
+            max_page_length: New max page length value
+        """
+        # Prepare settings update dictionary
+        settings_update = {
+            "display.item_width": item_width,
+            "display.item_height": item_height,
+            "display.max_page_length": max_page_length,
+        }
 
-        # Item Width setting
-        item_width_row = Adw.SpinRow()
-        item_width_row.set_title("Item Width")
-        item_width_row.set_subtitle(
-            "Width of clipboard item cards in pixels (50-1000)"
-        )
-        item_width_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.settings.item_width,
-                lower=50,
-                upper=1000,
-                step_increment=10,
-                page_increment=50,
-                page_size=0,
-            )
-        )
-        item_width_row.set_digits(0)
-        self.item_width_spin = item_width_row
-        display_group.add(item_width_row)
-
-        # Item Height setting
-        item_height_row = Adw.SpinRow()
-        item_height_row.set_title("Item Height")
-        item_height_row.set_subtitle(
-            "Height of clipboard item cards in pixels (50-1000)"
-        )
-        item_height_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.settings.item_height,
-                lower=50,
-                upper=1000,
-                step_increment=10,
-                page_increment=50,
-                page_size=0,
-            )
-        )
-        item_height_row.set_digits(0)
-        self.item_height_spin = item_height_row
-        display_group.add(item_height_row)
-
-        # Max Page Length setting
-        page_length_row = Adw.SpinRow()
-        page_length_row.set_title("Max Page Length")
-        page_length_row.set_subtitle(
-            "Maximum number of items to load per page (1-100)"
-        )
-        page_length_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.settings.max_page_length,
-                lower=1,
-                upper=100,
-                step_increment=1,
-                page_increment=10,
-                page_size=0,
-            )
-        )
-        page_length_row.set_digits(0)
-        self.page_length_spin = page_length_row
-        display_group.add(page_length_row)
-
-        settings_page.add(display_group)
-
-        # Storage Settings Group
-        storage_group = Adw.PreferencesGroup()
-        storage_group.set_title("Storage")
-        storage_group.set_description("Database storage information")
-
-        # Database size row
-        db_size_row = Adw.ActionRow()
-        db_size_row.set_title("Database Size")
-
-        # Calculate database size
-        db_path = Path.home() / ".local" / "share" / "tfcbm" / "clipboard.db"
-        if db_path.exists():
-            size_bytes = os.path.getsize(db_path)
-            size_mb = size_bytes / (1024 * 1024)  # Convert to MB
-            db_size_row.set_subtitle(f"{size_mb:.2f} MB")
-        else:
-            db_size_row.set_subtitle("Database not found")
-
-        storage_group.add(db_size_row)
-        settings_page.add(storage_group)
-
-        # Actions Group (for Save button)
-        actions_group = Adw.PreferencesGroup()
-        actions_group.set_title("Actions")
-
-        # Create a button row for saving settings
-        save_row = Adw.ActionRow()
-        save_row.set_title("Save Settings")
-        save_row.set_subtitle("Apply changes and save to settings.yml")
-
-        save_button = Gtk.Button()
-        save_button.set_label("Apply & Save")
-        save_button.add_css_class("suggested-action")
-        save_button.set_valign(Gtk.Align.CENTER)
-        save_button.connect("clicked", self._on_save_settings)
-        save_row.add_suffix(save_button)
-
-        actions_group.add(save_row)
-        settings_page.add(actions_group)
-
-        return settings_page
-
-    def _on_save_settings(self, button):
-        """Save settings changes to YAML file and apply them"""
-        try:
-            # Get values from spin rows
-            new_item_width = int(self.item_width_spin.get_value())
-            new_item_height = int(self.item_height_spin.get_value())
-            new_page_length = int(self.page_length_spin.get_value())
-
-            # Prepare settings update dictionary
-            settings_update = {
-                "display.item_width": new_item_width,
-                "display.item_height": new_item_height,
-                "display.max_page_length": new_page_length,
-            }
-
-            # Update settings using the settings manager
-            self.settings.update_settings(**settings_update)
-
-            # Print message
-            self.show_notification(
-                "Settings saved successfully! Restart the app to apply changes."
-            )
-
-            print(
-                f"Settings saved: item_width={new_item_width}, item_height={new_item_height}, max_page_length={new_page_length}"
-            )
-
-        except Exception as e:
-            # Print message
-            self.show_notification(f"Error saving settings: {str(e)}")
-            print(f"Error saving settings: {e}")
+        # Update settings using the settings manager
+        self.settings.update_settings(**settings_update)
 
     def _on_close_request(self, window):
         """Handle window close request - kill server before exiting"""
@@ -1397,269 +1287,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
             # Window lost focus or was minimized - clear secret authentication
             logger.info("Window focus lost, clearing secret authentication")
             self.password_service.clear_authentication()
-
-    def _create_filter_bar(self):
-        """Create the filter bar with system content types, file extensions, and controls"""
-        # Store active filters
-        self.active_filters = set()
-        self.file_extensions = []
-        self.system_filters_visible = True  # Start expanded
-
-        # Main filter bar container
-        self.filter_bar = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=6
-        )
-        self.filter_bar.set_margin_top(6)
-        self.filter_bar.set_margin_bottom(6)
-        self.filter_bar.set_margin_start(8)
-        self.filter_bar.set_margin_end(8)
-        self.filter_bar.add_css_class("toolbar")
-        self.filter_bar.set_visible(True)  # Ensure it's visible
-
-        # Filter toggle button (to show/hide system filters)
-        self.filter_toggle_btn = Gtk.ToggleButton()
-        # Try multiple icon names as fallback
-        icon_found = False
-        for icon_name in [
-            "funnel-symbolic",
-            "filter-symbolic",
-            "view-filter-symbolic",
-            "preferences-system-symbolic",
-        ]:
-            theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
-            if theme.has_icon(icon_name):
-                self.filter_toggle_btn.set_icon_name(icon_name)
-                print(f"[DEBUG] Using icon: {icon_name}", flush=True)
-                icon_found = True
-                break
-
-        # If no icon found, use text label as fallback
-        if not icon_found:
-            self.filter_toggle_btn.set_label("⚙")
-            print(
-                "[DEBUG] No icon found, using text label fallback", flush=True
-            )
-
-        self.filter_toggle_btn.set_tooltip_text("Show/hide system filters")
-        self.filter_toggle_btn.add_css_class("flat")
-        self.filter_toggle_btn.set_size_request(
-            32, 32
-        )  # Give it explicit size
-        self.filter_toggle_btn.set_visible(True)  # Ensure visible
-        self.filter_toggle_btn.set_sensitive(True)  # Ensure enabled
-        # self.filter_bar.append(self.filter_toggle_btn)
-
-        print(
-            "[DEBUG] Filter toggle button created and added to filter bar",
-            flush=True,
-        )
-
-        # Scrollable container for filter chips
-        self.filter_scroll = Gtk.ScrolledWindow()
-        self.filter_scroll.set_policy(
-            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER
-        )
-        self.filter_scroll.set_hexpand(True)
-
-        # FlowBox for filter chips (wraps automatically)
-        self.filter_box = Gtk.FlowBox()
-        self.filter_box.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.filter_box.set_homogeneous(False)
-        self.filter_box.set_column_spacing(4)
-        self.filter_box.set_row_spacing(4)
-        self.filter_box.set_max_children_per_line(20)
-
-        self.filter_scroll.set_child(self.filter_box)
-        self.filter_bar.append(self.filter_scroll)
-
-        # Clear filters button
-        clear_btn = Gtk.Button()
-        clear_btn.set_icon_name("edit-clear-symbolic")
-        clear_btn.set_tooltip_text("Clear all filters")
-        clear_btn.add_css_class("flat")
-        clear_btn.connect("clicked", self._on_clear_filters)
-        self.filter_bar.append(clear_btn)
-
-        # Separator
-        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
-        self.filter_bar.append(separator)
-
-        # Sort toggle button (for current tab)
-        self.filter_sort_btn = Gtk.Button()
-        self.filter_sort_btn.set_icon_name("view-sort-descending-symbolic")
-        self.filter_sort_btn.set_tooltip_text("Newest first ↓")
-        self.filter_sort_btn.add_css_class("flat")
-        self.filter_sort_btn.add_css_class("sort-toggle")
-        self.filter_sort_btn.connect(
-            "clicked", lambda btn: self._toggle_sort_from_toolbar()
-        )
-        self.filter_bar.append(self.filter_sort_btn)
-
-        # Jump to top button (for current tab)
-        jump_btn = Gtk.Button()
-        jump_btn.set_icon_name("go-top-symbolic")
-        jump_btn.set_tooltip_text("Jump to top")
-        jump_btn.add_css_class("flat")
-        jump_btn.connect(
-            "clicked", lambda btn: self._jump_to_top_from_toolbar()
-        )
-        self.filter_bar.append(jump_btn)
-
-        # Add system content type filters (initially hidden)
-        self._add_system_filters()
-
-        # Load file extensions - DISABLED to only show basic filters
-        # self._load_file_extensions()
-
-    def _add_system_filters(self):
-        """Add system content type filter buttons"""
-        self.system_filter_chips = []  # Track system filter chips
-        system_filters = [
-            ("text", "Text", "text-x-generic-symbolic"),
-            ("image", "Images", "image-x-generic-symbolic"),
-            ("url", "URLs", "web-browser-symbolic"),
-            ("file", "Files", "folder-documents-symbolic"),
-        ]
-
-        for filter_type, label, icon_name in system_filters:
-            chip = self._create_filter_chip(
-                filter_type, label, icon_name, is_system=True
-            )
-            self.system_filter_chips.append(chip)
-
-    def _create_filter_chip(
-        self, filter_id, label, icon_name=None, is_system=False
-    ):
-        """Create a small filter chip button"""
-        chip = Gtk.ToggleButton()
-        chip.set_has_frame(False)
-        chip.add_css_class("pill")
-
-        chip_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-
-        if icon_name:
-            icon = Gtk.Image.new_from_icon_name(icon_name)
-            icon.set_pixel_size(12)
-            chip_box.append(icon)
-
-        chip_label = Gtk.Label(label=label)
-        chip_label.add_css_class("caption")
-        chip_box.append(chip_label)
-
-        chip.set_child(chip_box)
-        chip.connect(
-            "toggled", lambda btn: self._on_filter_toggled(filter_id, btn)
-        )
-
-        # Wrap in FlowBoxChild
-        flow_child = Gtk.FlowBoxChild()
-        flow_child.set_child(chip)
-
-        # Hide system filters initially
-        if is_system:
-            flow_child.set_visible(True)
-
-        self.filter_box.append(flow_child)
-
-        return flow_child
-
-    def _load_file_extensions(self):
-        """Load available file extensions from server"""
-
-        async def fetch_extensions():
-            try:
-                uri = "ws://localhost:8765"
-                async with websockets.connect(
-                    uri, max_size=5 * 1024 * 1024
-                ) as websocket:
-                    request = {"action": "get_file_extensions"}
-                    await websocket.send(json.dumps(request))
-
-                    response = await websocket.recv()
-                    data = json.loads(response)
-
-                    if data.get("type") == "file_extensions":
-                        extensions = data.get("extensions", [])
-
-                        def update_ui():
-                            self.file_extensions = extensions
-                            for ext in extensions:
-                                # Remove leading dot for display
-                                display_ext = ext.lstrip(".")
-                                # Get icon for this file type
-                                icon_name = self._get_icon_for_extension(ext)
-                                self._create_filter_chip(
-                                    f"file:{ext}",
-                                    display_ext.upper(),
-                                    icon_name,
-                                )
-                            return False
-
-                        GLib.idle_add(update_ui)
-
-            except Exception as e:
-                logger.error(f"Error loading file extensions: {e}")
-
-        def run_async():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(fetch_extensions())
-            finally:
-                loop.close()
-
-        threading.Thread(target=run_async, daemon=True).start()
-
-    def _get_icon_for_extension(self, extension):
-        """Get appropriate icon for file extension"""
-        # Map common extensions to icons
-        icon_map = {
-            ".zip": "package-x-generic-symbolic",
-            ".gz": "package-x-generic-symbolic",
-            ".tar": "package-x-generic-symbolic",
-            ".sh": "text-x-script-symbolic",
-            ".py": "text-x-python-symbolic",
-            ".txt": "text-x-generic-symbolic",
-            ".pdf": "x-office-document-symbolic",
-            ".doc": "x-office-document-symbolic",
-            ".docx": "x-office-document-symbolic",
-        }
-        return icon_map.get(extension, "text-x-generic-symbolic")
-
-    def _on_filter_toggled(self, filter_id, button):
-        """Handle filter chip toggle"""
-        if button.get_active():
-            self.active_filters.add(filter_id)
-        else:
-            self.active_filters.discard(filter_id)
-
-        print(
-            f"[FILTER] Toggled filter '{filter_id}', active: {button.get_active()}"
-        )
-        print(f"[FILTER] Current active filters: {self.active_filters}")
-
-        # Apply filters
-        self._apply_filters()
-
-    def _on_clear_filters(self, button):
-        """Clear all active filters"""
-        self.active_filters.clear()
-
-        # Uncheck all filter chips
-        for flow_child in list(self.filter_box):
-            chip = flow_child.get_child()
-            if isinstance(chip, Gtk.ToggleButton):
-                chip.set_active(False)
-
-        # Reload items
-        self._apply_filters()
-
-    def _apply_filters(self):
-        """Apply active filters to the item list - reload from DB with filters"""
-        # Always reload from database when filters change
-        # This ensures we get a fresh set of items matching the current filters
-        # and can load more filtered items when scrolling
-        self._reload_current_tab()
 
     def _reload_current_tab(self):
         """Reload items in the current tab"""
@@ -1741,10 +1368,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
                             "limit": 100,
                         }
                         # Feature 2: Include active filters in search request
-                        if self.active_filters:
-                            request["filters"] = list(self.active_filters)
+                        if self.filter_bar_manager.get_active_filters():
+                            request["filters"] = list(self.filter_bar_manager.get_active_filters())
                             print(
-                                f"[UI] Searching with filters: {list(self.active_filters)}"
+                                f"[UI] Searching with filters: {list(self.filter_bar_manager.get_active_filters())}"
                             )
                         await websocket.send(json.dumps(request))
 
@@ -1859,8 +1486,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
                                 "action": "get_history",
                                 "limit": self.page_size,
                             }
-                            if self.active_filters:
-                                request["filters"] = list(self.active_filters)
+                            if self.filter_bar_manager.get_active_filters():
+                                request["filters"] = list(self.filter_bar_manager.get_active_filters())
                             await websocket.send(json.dumps(request))
                             response = await websocket.recv()
                             data = json.loads(response)
@@ -1979,7 +1606,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             tag_id = tag.get("id")
             tag_name = tag.get("name", "")
             tag_color = tag.get("color", "#9a9996")
-            is_selected = tag_id in self.selected_tag_ids
+            is_selected = tag_id in self.tag_filter_manager.get_selected_tag_ids()
 
             # Create button for tag
             btn = Gtk.Button.new_with_label(tag_name)
@@ -2013,318 +1640,80 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _on_tag_clicked(self, tag_id):
         """Handle tag button click - toggle selection"""
-        if tag_id in self.selected_tag_ids:
-            self.selected_tag_ids.remove(tag_id)
-        else:
-            self.selected_tag_ids.append(tag_id)
-
-        # Refresh display to update button styles
-        self._refresh_tag_display()
+        # Toggle tag selection via manager
+        self.tag_filter_manager.toggle_tag(tag_id)
 
         # Apply filter if tags are selected
-        if self.selected_tag_ids:
+        if self.tag_filter_manager.get_selected_tag_ids():
             self._apply_tag_filter()
         else:
             self._restore_filtered_view()
 
     def _clear_tag_filter(self):
         """Clear all tag filters"""
-        self.selected_tag_ids = []
-        self._refresh_tag_display()
+        self.tag_filter_manager.clear_selection()
         self._restore_filtered_view()
 
     def _apply_tag_filter(self):
         """Filter items by selected tags at UI level (no DB calls)"""
-        print(f"[UI] Applying tag filter: {self.selected_tag_ids}")
-
-        if not self.selected_tag_ids:
-            self._restore_normal_view()
-            return
-
-        # Map system tag IDs to item types
-        type_map = {
-            "system_text": ["text"],
-            "system_image": [
-                "image/generic",
-                "image/file",
-                "image/web",
-                "image/screenshot",
-            ],
-            "system_screenshot": ["image/screenshot"],
-            "system_url": ["url"],
-        }
-
-        # Get user-defined tag IDs (non-system tags) - convert to string to check
-        user_tag_ids = [
-            tag_id
-            for tag_id in self.selected_tag_ids
-            if not str(tag_id).startswith("system_")
-        ]
-
-        # Get allowed types from system tags
-        allowed_types = []
-        for tag_id in self.selected_tag_ids:
-            if tag_id in type_map:
-                allowed_types.extend(type_map[tag_id])
-
         # Determine which listbox to update
         if self.current_tab == "pasted":
             listbox = self.pasted_listbox
         else:
             listbox = self.copied_listbox
 
-        # Filter rows by showing/hiding them based on tags
-        visible_count = 0
-        i = 0
-        while True:
-            row = listbox.get_row_at_index(i)
-            if not row:
-                break
-
-            if hasattr(row, "item"):
-                item = row.item
-                item_type = item.get("type", "")
-                item_tags = item.get("tags", [])
-
-                # Extract tag IDs from item tags
-                item_tag_ids = [
-                    tag.get("id") for tag in item_tags if isinstance(tag, dict)
-                ]
-
-                # Check if item matches filter
-                matches = False
-
-                # If we have system tag filters, check type match
-                if allowed_types:
-                    if item_type in allowed_types:
-                        # If we also have user tags, check if item has those tags
-                        if user_tag_ids:
-                            # Item must have at least one of the selected user tags
-                            if any(
-                                tag_id in item_tag_ids
-                                for tag_id in user_tag_ids
-                            ):
-                                matches = True
-                        else:
-                            # No user tags, just type match is enough
-                            matches = True
-
-                # If we only have user tag filters (no system tags)
-                elif user_tag_ids:
-                    if any(tag_id in item_tag_ids for tag_id in user_tag_ids):
-                        matches = True
-
-                # Show/hide row based on match
-                row.set_visible(matches)
-                if matches:
-                    visible_count += 1
-
-            i += 1
-
-        self.filter_active = True
-        self.show_notification(f"Showing {visible_count} filtered items")
+        # Apply filter via manager
+        self.tag_filter_manager.apply_filter(listbox)
 
     def _restore_filtered_view(self):
         """Restore normal unfiltered view by making all rows visible"""
-        if not self.filter_active:
-            return
-
-        self.filter_active = False
-
         # Determine which listbox to update
         if self.current_tab == "pasted":
             listbox = self.pasted_listbox
         else:
             listbox = self.copied_listbox
 
-        # Show all rows again
-        i = 0
-        while True:
-            row = listbox.get_row_at_index(i)
-            if not row:
+        # Restore view via manager
+        self.tag_filter_manager.restore_view(listbox)
+
+    def _reload_item_tags(self, item_id: int, copied_listbox: Gtk.ListBox, pasted_listbox: Gtk.ListBox):
+        """Reload tags for a specific clipboard item in both listboxes.
+
+        Args:
+            item_id: ID of the item to reload tags for
+            copied_listbox: Copied items listbox
+            pasted_listbox: Pasted items listbox
+        """
+        # Reload tags in copied listbox
+        for row in copied_listbox:
+            if hasattr(row, 'item') and row.item.get('id') == item_id:
+                if hasattr(row, '_load_item_tags'):
+                    row._load_item_tags()
                 break
-            row.set_visible(True)
-            i += 1
+
+        # Reload tags in pasted listbox
+        for row in pasted_listbox:
+            if hasattr(row, 'item') and row.item.get('id') == item_id:
+                if hasattr(row, '_load_item_tags'):
+                    row._load_item_tags()
+                break
 
     # ========== Tag Manager Methods ==========
 
-    def load_user_tags(self):
-        """Load user-defined tags for the tag manager"""
-        self.user_tags_load_start_time = time.time()
-        logger.info("Starting user tags load...")
-
-        def run_load():
-            try:
-
-                async def fetch_tags():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {"action": "get_tags"}
-                        await websocket.send(json.dumps(request))
-
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "tags":
-                            all_tags = data.get("tags", [])
-                            # Only user-defined tags (filter out system tags)
-                            user_tags = [
-                                tag
-                                for tag in all_tags
-                                if not tag.get("is_system", False)
-                            ]
-                            GLib.idle_add(
-                                self._refresh_user_tags_display, user_tags
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(fetch_tags())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Error loading user tags: {e}")
-
-        threading.Thread(target=run_load, daemon=True).start()
-
     def _on_tag_drag_prepare(self, drag_source, x, y, tag):
-        """Prepare data for tag drag operation"""
-        self.dragged_tag = tag
-        # We'll pass the tag ID as a string
-        tag_id = str(tag.get("id"))
-        value = GObject.Value(str, tag_id)
-        return Gdk.ContentProvider.new_for_value(value)
+        """Prepare data for tag drag operation - delegates to UserTagsManager"""
+        return self.user_tags_manager.on_tag_drag_prepare(drag_source, x, y, tag)
 
     def _on_tag_drag_begin(self, drag_source, drag):
-        """Called when tag drag begins - set drag icon"""
-        widget = drag_source.get_widget()
-        drag_source.set_icon(Gtk.WidgetPaintable.new(widget), 0, 0)
+        """Called when tag drag begins - delegates to UserTagsManager"""
+        self.user_tags_manager.on_tag_drag_begin(drag_source, drag)
 
     def _on_tag_dropped_on_item(self, tag_id, item_id):
-        """Handle tag drop on an item"""
-        print(f"[UI] Tag {tag_id} dropped on item {item_id}")
+        """Handle tag drop on an item - delegates to UserTagsManager"""
+        self.user_tags_manager.add_tag_to_item(
+            tag_id, item_id, self.copied_listbox, self.pasted_listbox
+        )
 
-        def run_add_tag():
-            try:
-
-                async def add_tag():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "add_item_tag",
-                            "item_id": item_id,
-                            "tag_id": int(tag_id),
-                        }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("success"):
-                            print(
-                                f"[UI] Successfully added tag {tag_id} to item {item_id}"
-                            )
-                            # Find the row and reload its tags
-                            for row in self.copied_listbox:
-                                if row.item.get("id") == item_id:
-                                    row._load_item_tags()
-                                    break
-                            for row in self.pasted_listbox:
-                                if row.item.get("id") == item_id:
-                                    row._load_item_tags()
-                                    break
-                        else:
-                            print(
-                                f"[UI] Failed to add tag: {data.get('error', 'Unknown error')}"
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(add_tag())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Error adding tag: {e}")
-
-        threading.Thread(target=run_add_tag, daemon=True).start()
-
-    def _refresh_user_tags_display(self, tags):
-        """Refresh the user tags display in the tag manager"""
-        if hasattr(self, "user_tags_load_start_time"):
-            duration = time.time() - self.user_tags_load_start_time
-            logger.info(f"User tags loaded in {duration:.2f} seconds")
-            del self.user_tags_load_start_time
-        # Clear existing tags - AdwPreferencesGroup stores rows internally
-        # We need to track and remove only the rows we added
-        if hasattr(self, "_user_tag_rows"):
-            for row in self._user_tag_rows:
-                self.user_tags_group.remove(row)
-
-        self._user_tag_rows = []
-
-        # Add tag rows
-        if not tags:
-            empty_row = Adw.ActionRow()
-            empty_row.set_title("No custom tags yet")
-            empty_row.set_subtitle(
-                "Create your first tag to organize clipboard items"
-            )
-            self.user_tags_group.add(empty_row)
-            self._user_tag_rows.append(empty_row)
-        else:
-            for tag in tags:
-                tag_id = tag.get("id")
-                tag_name = tag.get("name", "")
-                tag_color = tag.get("color", "#9a9996")
-
-                tag_row = Adw.ActionRow()
-                tag_row.set_title(tag_name)
-
-                # Create a color indicator box
-                color_box = Gtk.Box()
-                color_box.set_size_request(20, 20)
-                color_box.add_css_class("card")
-
-                # Apply color
-                css_provider = Gtk.CssProvider()
-                css_data = f"box {{ background-color: {tag_color}; border-radius: 4px; }}"
-                css_provider.load_from_data(css_data.encode())
-                color_box.get_style_context().add_provider(
-                    css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-                )
-                tag_row.add_prefix(color_box)
-
-                # Edit button
-                edit_button = Gtk.Button()
-                edit_button.set_icon_name("document-edit-symbolic")
-                edit_button.set_valign(Gtk.Align.CENTER)
-                edit_button.add_css_class("flat")
-                edit_button.connect(
-                    "clicked", lambda b, tid=tag_id: self._on_edit_tag(tid)
-                )
-                tag_row.add_suffix(edit_button)
-
-                # Delete button
-                delete_button = Gtk.Button()
-                delete_button.set_icon_name("user-trash-symbolic")
-                delete_button.set_valign(Gtk.Align.CENTER)
-                delete_button.add_css_class("flat")
-                delete_button.add_css_class("destructive-action")
-                delete_button.connect(
-                    "clicked", lambda b, tid=tag_id: self._on_delete_tag(tid)
-                )
-                tag_row.add_suffix(delete_button)
-
-                # Add drag source for drag-and-drop
-                drag_source = Gtk.DragSource.new()
-                drag_source.set_actions(Gdk.DragAction.COPY)
-                drag_source.connect("prepare", self._on_tag_drag_prepare, tag)
-                drag_source.connect("drag-begin", self._on_tag_drag_begin)
-                tag_row.add_controller(drag_source)
-
-                self.user_tags_group.add(tag_row)
-                self._user_tag_rows.append(tag_row)
 
     def _on_create_tag(self, button):
         """Show dialog to create a new tag"""
@@ -2419,66 +1808,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
                 else:
                     selected_color = colors[0]
 
-                # Create tag via WebSocket
-                self._create_tag_on_server(tag_name, selected_color)
+                # Create tag via UserTagsManager
+                self.user_tags_manager.create_tag(tag_name, selected_color, self)
 
         dialog.connect("response", on_response)
         dialog.present()
-
-    def _create_tag_on_server(self, name, color):
-        """Create a new tag on the server"""
-
-        def run_create():
-            try:
-
-                async def create_tag():
-                    print(f"[UI] Creating tag: name='{name}', color='{color}'")
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "create_tag",
-                            "name": name,
-                            "color": color,
-                        }
-                        print(f"[UI] Sending create_tag request: {request}")
-                        await websocket.send(json.dumps(request))
-
-                        response = await websocket.recv()
-                        data = json.loads(response)
-                        print(f"[UI] Received response: {data}")
-
-                        if data.get("type") == "tag_created":
-                            print(f"[UI] Tag created successfully")
-                            GLib.idle_add(
-                                self.show_notification, f"Tag '{name}' created"
-                            )
-                            GLib.idle_add(self.load_user_tags)
-                            GLib.idle_add(
-                                self.load_tags
-                            )  # Refresh tag filter display
-                        else:
-                            print(
-                                f"[UI] Tag creation failed - unexpected response type: {data.get('type')}"
-                            )
-                            GLib.idle_add(
-                                self.show_notification,
-                                f"Failed to create tag: {data.get('message', 'Unknown error')}",
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(create_tag())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Exception creating tag: {e}")
-                traceback.print_exc()
-                GLib.idle_add(
-                    self.show_notification, f"Error creating tag: {e}"
-                )
-
-        threading.Thread(target=run_create, daemon=True).start()
 
     def _on_edit_tag(self, tag_id):
         """Show dialog to edit a tag"""
@@ -2673,49 +2007,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         dialog.present()
 
     def _delete_tag_on_server(self, tag_id):
-        """Delete a tag on the server"""
-
-        def run_delete():
-            try:
-
-                async def delete_tag():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {"action": "delete_tag", "tag_id": tag_id}
-                        await websocket.send(json.dumps(request))
-
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "tag_deleted":
-                            GLib.idle_add(
-                                self.show_notification, "Tag deleted"
-                            )
-                            GLib.idle_add(self.load_user_tags)
-                            GLib.idle_add(
-                                self.load_tags
-                            )  # Refresh tag filter display
-                            GLib.idle_add(
-                                self._refresh_all_item_tags
-                            )  # Refresh tags on all visible items
-                        else:
-                            GLib.idle_add(
-                                self.show_notification, "Failed to delete tag"
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(delete_tag())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"[UI] Error deleting tag: {e}")
-                GLib.idle_add(
-                    self.show_notification, f"Error deleting tag: {e}"
-                )
-
-        threading.Thread(target=run_delete, daemon=True).start()
+        """Delete a tag on the server - delegates to UserTagsManager"""
+        self.user_tags_manager.delete_tag(tag_id, self)
 
     def _refresh_all_item_tags(self):
         """Refresh tag displays on all visible clipboard items."""
