@@ -13,6 +13,8 @@ import websockets
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
+from ui.rows.clipboard_item_row import ClipboardItemRow
+
 logger = logging.getLogger("TFCBM.SearchManager")
 
 
@@ -21,7 +23,13 @@ class SearchManager:
 
     def __init__(
         self,
-        on_display_results: Callable[[List[Dict], str], None],
+        copied_listbox: Gtk.ListBox,
+        pasted_listbox: Gtk.ListBox,
+        copied_status_label: Gtk.Label,
+        pasted_status_label: Gtk.Label,
+        get_current_tab: Callable[[], str],
+        jump_to_top: Callable[[str], None],
+        window,  # Reference to ClipboardWindow for ClipboardItemRow
         on_notification: Callable[[str], None],
         websocket_uri: str = "ws://localhost:8765",
         search_limit: int = 100,
@@ -30,13 +38,25 @@ class SearchManager:
         """Initialize SearchManager.
 
         Args:
-            on_display_results: Callback to display search results (items, query)
+            copied_listbox: ListBox for copied items
+            pasted_listbox: ListBox for pasted items
+            copied_status_label: Status label for copied items
+            pasted_status_label: Status label for pasted items
+            get_current_tab: Callback to get current active tab
+            jump_to_top: Callback to scroll to top
+            window: Reference to ClipboardWindow for ClipboardItemRow
             on_notification: Callback to show notifications
             websocket_uri: WebSocket server URI
             search_limit: Maximum number of search results
             debounce_ms: Debounce delay in milliseconds (default 200ms)
         """
-        self.on_display_results = on_display_results
+        self.copied_listbox = copied_listbox
+        self.pasted_listbox = pasted_listbox
+        self.copied_status_label = copied_status_label
+        self.pasted_status_label = pasted_status_label
+        self.get_current_tab = get_current_tab
+        self.jump_to_top = jump_to_top
+        self.window = window
         self.on_notification = on_notification
         self.websocket_uri = websocket_uri
         self.search_limit = search_limit
@@ -135,8 +155,8 @@ class SearchManager:
                             # Store results and mark search as active
                             self.results = items
                             self.active = True
-                            # Display results via callback
-                            GLib.idle_add(self.on_display_results, items, query)
+                            # Display results directly
+                            GLib.idle_add(self.display_results, items, query)
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -153,6 +173,73 @@ class SearchManager:
 
         threading.Thread(target=run_search, daemon=True).start()
         return False  # Don't repeat timer
+
+    def display_results(self, items: List[Dict], query: str) -> bool:
+        """Display search results in the current tab.
+
+        Args:
+            items: Search result items
+            query: Search query string
+
+        Returns:
+            bool: False (for GLib.idle_add)
+        """
+        # Determine which listbox to update based on current tab
+        current_tab = self.get_current_tab()
+        if current_tab == "pasted":
+            listbox = self.pasted_listbox
+            status_label = self.pasted_status_label
+            show_pasted_time = True
+        else:  # copied
+            listbox = self.copied_listbox
+            status_label = self.copied_status_label
+            show_pasted_time = False
+
+        # Clear existing items
+        while True:
+            row = listbox.get_row_at_index(0)
+            if row is None:
+                break
+            listbox.remove(row)
+
+        # Display search results or empty message
+        if items:
+            for item in items:
+                row = ClipboardItemRow(
+                    item,
+                    self.window,
+                    show_pasted_time=show_pasted_time,
+                    search_query=query,
+                )
+                listbox.append(row)
+            status_label.set_label(
+                f"Search: {len(items)} results for '{query}'"
+            )
+        else:
+            # Show empty results message
+            empty_box = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL, spacing=12
+            )
+            empty_box.set_valign(Gtk.Align.CENTER)
+            empty_box.set_margin_top(60)
+            empty_box.set_margin_bottom(60)
+
+            empty_label = Gtk.Label(label="No results found")
+            empty_label.add_css_class("title-2")
+            empty_box.append(empty_label)
+
+            hint_label = Gtk.Label(label=f"No clipboard items match '{query}'")
+            hint_label.add_css_class("dim-label")
+            empty_box.append(hint_label)
+
+            listbox.append(empty_box)
+            status_label.set_label(f"Search: 0 results for '{query}'")
+
+        listbox.queue_draw()
+        # Scroll to top to ensure results are visible
+        self.jump_to_top(current_tab)
+
+        return False
 
     def clear(self):
         """Clear search state."""

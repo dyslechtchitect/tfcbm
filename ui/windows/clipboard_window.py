@@ -1,8 +1,4 @@
-"""ClipboardWindow - Main application window.
-
-This is the original 2,300-line implementation.
-To be refactored into focused classes.
-"""
+"""ClipboardWindow - Main application window."""
 
 import asyncio
 import json
@@ -455,7 +451,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Initialize SearchManager
         self.search_manager = SearchManager(
-            on_display_results=self._display_search_results,
+            copied_listbox=self.copied_listbox,
+            pasted_listbox=self.pasted_listbox,
+            copied_status_label=self.copied_status_label,
+            pasted_status_label=self.pasted_status_label,
+            get_current_tab=lambda: self.current_tab,
+            jump_to_top=self._jump_to_top,
+            window=self,
             on_notification=self.show_notification,
         )
 
@@ -818,64 +820,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Wrapper for Enter key press - delegates to SearchManager"""
         self.search_manager.on_search_activate(entry, self.filter_bar_manager.get_active_filters)
 
-    def _display_search_results(self, items, query):
-        """Display search results in the current tab"""
-        # Determine which listbox to update based on current tab
-        if self.current_tab == "pasted":
-            listbox = self.pasted_listbox
-            status_label = self.pasted_status_label
-            show_pasted_time = True
-        else:  # copied
-            listbox = self.copied_listbox
-            status_label = self.copied_status_label
-            show_pasted_time = False
-
-        # Clear existing items
-        while True:
-            row = listbox.get_row_at_index(0)
-            if row is None:
-                break
-            listbox.remove(row)
-
-        # Display search results or empty message
-        if items:
-            for item in items:
-                row = ClipboardItemRow(
-                    item,
-                    self,
-                    show_pasted_time=show_pasted_time,
-                    search_query=query,
-                )
-                listbox.append(row)
-            status_label.set_label(
-                f"Search: {len(items)} results for '{query}'"
-            )
-        else:
-            # Show empty results message
-            empty_box = Gtk.Box(
-                orientation=Gtk.Orientation.VERTICAL, spacing=12
-            )
-            empty_box.set_valign(Gtk.Align.CENTER)
-            empty_box.set_margin_top(60)
-            empty_box.set_margin_bottom(60)
-
-            empty_label = Gtk.Label(label="No results found")
-            empty_label.add_css_class("title-2")
-            empty_box.append(empty_label)
-
-            hint_label = Gtk.Label(label=f"No clipboard items match '{query}'")
-            hint_label.add_css_class("dim-label")
-            empty_box.append(hint_label)
-
-            listbox.append(empty_box)
-            status_label.set_label(f"Search: 0 results for '{query}'")
-
-        listbox.queue_draw()
-        # Scroll to top to ensure results are visible
-        self._jump_to_top(self.current_tab)
-
-        return False
-
     def _restore_normal_view(self):
         """Restore normal view when search is cleared"""
         # Reset pagination and reload current tab
@@ -961,11 +905,6 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Refresh the tag display area - delegates to TagDisplayManager"""
         self.tag_display_manager.refresh_display(self.all_tags)
 
-    def _on_tag_clicked(self, tag_id):
-        """Handle tag button click - delegates to TagDisplayManager"""
-        # NOTE: This method is not used because TagDisplayManager handles clicks internally
-        # Kept for backward compatibility
-        pass
 
     def _clear_tag_filter(self):
         """Clear all tag filters - delegates to TagDisplayManager"""
