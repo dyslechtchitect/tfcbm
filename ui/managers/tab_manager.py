@@ -65,10 +65,9 @@ class TabManager:
         """Handle switching to Recently Pasted tab."""
         self.current_tab = "pasted"
         # Reset pagination and reload pasted items from the beginning
-        self.window.pasted_offset = 0
-        self.window.pasted_has_more = True
+        self.window.history_loader.reset_pagination("pasted")
         # Load pasted items when switching to pasted tab
-        GLib.idle_add(self.window.load_pasted_history)
+        GLib.idle_add(self.window.history_loader.load_pasted_history)
         # Show filter bar on clipboard tabs
         self.filter_bar.set_visible(True)
         print(

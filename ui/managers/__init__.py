@@ -2,6 +2,7 @@
 
 from .filter_bar_manager import FilterBarManager
 from .filter_manager import FilterManager
+from .history_loader_manager import HistoryLoaderManager
 from .keyboard_shortcut_handler import KeyboardShortcutHandler
 from .notification_manager import NotificationManager
 from .pagination_manager import PaginationManager
@@ -30,4 +31,5 @@ __all__ = [
     "SortManager",
     "TagDialogManager",
     "TagDisplayManager",
+    "HistoryLoaderManager",
 ]
