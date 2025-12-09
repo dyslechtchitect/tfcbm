@@ -26,6 +26,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from settings import get_settings
 from ui.about import AboutWindow
+from ui.builders.main_window_builder import MainWindowBuilder
 from ui.managers.filter_bar_manager import FilterBarManager
 from ui.managers.history_loader_manager import HistoryLoaderManager
 from ui.managers.keyboard_shortcut_handler import KeyboardShortcutHandler
@@ -108,318 +109,42 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Window icon is set through the desktop file and application
         # GTK4/Adwaita doesn't use set_icon() anymore
 
-        # Create main box
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        # ========== UI Construction via MainWindowBuilder ==========
+        builder = MainWindowBuilder(self)
+        widgets = builder.build()
 
-        self.header = Adw.HeaderBar()
-        self.header.add_css_class("tfcbm-header")
+        # Store widget references from builder
+        self.header = widgets.header
+        self.title_stack = widgets.title_stack
+        self.button_stack = widgets.button_stack
+        self.search_container = widgets.search_container
+        self.search_entry = widgets.search_entry
+        self.tag_flowbox = widgets.tag_flowbox
+        self.main_stack = widgets.main_stack
+        self.tab_view = widgets.tab_view
+        self.tab_bar = widgets.tab_bar
+        self.copied_scrolled = widgets.copied_scrolled
+        self.copied_listbox = widgets.copied_listbox
+        self.copied_loader = widgets.copied_loader
+        self.copied_status_label = widgets.copied_status_label
+        self.pasted_scrolled = widgets.pasted_scrolled
+        self.pasted_listbox = widgets.pasted_listbox
+        self.pasted_loader = widgets.pasted_loader
+        self.pasted_status_label = widgets.pasted_status_label
+        self.user_tags_group = widgets.user_tags_group
+        self.filter_sort_btn = widgets.filter_sort_btn
 
-        # Title stack
-        self.title_stack = Gtk.Stack()
-        self.header.set_title_widget(self.title_stack)
+        # Store settings page spin rows (created by builder)
+        # These are needed for _on_save_settings compatibility method
+        # (Builder sets these as window attributes via self.window.item_width_spin etc.)
 
-        self.title_label = Gtk.Label(label="TFCBM")
-        self.title_label.add_css_class("title")
-        self.title_label.add_css_class("tfcbm-title")
-        self.title_stack.add_named(self.title_label, "main")
+        # Remove builder's filter_bar from main_box (we'll use FilterBarManager's instead)
+        widgets.main_box.remove(widgets.filter_bar)
 
-        self.settings_title_label = Gtk.Label(label="Settings")
-        self.settings_title_label.add_css_class("title")
-        self.settings_title_label.add_css_class("tfcbm-title")
-        self.title_stack.add_named(self.settings_title_label, "settings")
-
-        # Button stack
-        self.button_stack = Gtk.Stack()
-        self.header.pack_end(self.button_stack)
-
-        main_buttons = Gtk.Box()
-        info_button = Gtk.Button()
-        info_button.set_icon_name("help-about-symbolic")
-        info_button.add_css_class("flat")
-        info_button.connect("clicked", self._show_splash_screen)
-        main_buttons.append(info_button)
-
-        settings_button = Gtk.Button()
-        settings_button.set_icon_name("emblem-system-symbolic")
-        settings_button.add_css_class("flat")
-        settings_button.connect("clicked", self._show_settings_page)
-        main_buttons.append(settings_button)
-        self.button_stack.add_named(main_buttons, "main")
-
-        settings_buttons = Gtk.Box()
-        back_button = Gtk.Button()
-        back_button.set_icon_name("go-previous-symbolic")
-        back_button.add_css_class("flat")
-        back_button.connect("clicked", self._show_tabs_page)
-        settings_buttons.append(back_button)
-        self.button_stack.add_named(settings_buttons, "settings")
-
-        main_box.append(self.header)
-
-        # Search bar container
-        self.search_container = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=6
-        )
-        self.search_container.set_margin_start(8)
-        self.search_container.set_margin_end(8)
-        self.search_container.set_margin_top(8)
-        self.search_container.set_margin_bottom(4)
-
-        # Search entry
-        self.search_entry = Gtk.SearchEntry()
-        self.search_entry.set_hexpand(True)
-        self.search_entry.set_placeholder_text("Search clipboard items...")
-        self.search_entry.connect("search-changed", self._on_search_changed_wrapper)
-        self.search_entry.connect("activate", self._on_search_activate_wrapper)
-        self.search_container.append(self.search_entry)
-
-        main_box.append(self.search_container)
-
-        # Tag filter area
-        tag_frame = Gtk.Frame()
-        tag_frame.set_margin_start(8)
-        tag_frame.set_margin_end(8)
-        tag_frame.set_margin_top(4)
-        tag_frame.set_margin_bottom(4)
-        tag_frame.add_css_class("view")
-
-        # Minimal tag container - just tags and a small X
-        tag_container = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=4
-        )
-        tag_container.set_margin_top(4)
-        tag_container.set_margin_bottom(4)
-        tag_container.set_margin_start(8)
-        tag_container.set_margin_end(8)
-
-        # Scrollable tag area with FlowBox for tag buttons
-        tag_scrolled = Gtk.ScrolledWindow()
-        tag_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
-        tag_scrolled.set_max_content_height(40)
-        tag_scrolled.set_min_content_height(32)
-        tag_scrolled.set_propagate_natural_height(True)
-        tag_scrolled.set_hexpand(True)
-
-        self.tag_flowbox = Gtk.FlowBox()
-        self.tag_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.tag_flowbox.set_homogeneous(False)
-        self.tag_flowbox.set_column_spacing(4)
-        self.tag_flowbox.set_row_spacing(4)
-        self.tag_flowbox.set_max_children_per_line(15)
-        tag_scrolled.set_child(self.tag_flowbox)
-
-        tag_container.append(tag_scrolled)
-
-        # Small X button to clear filter
-        clear_btn = Gtk.Button()
-        clear_btn.set_icon_name("window-close-symbolic")
-        clear_btn.add_css_class("flat")
-        clear_btn.set_tooltip_text("Clear filter")
-        clear_btn.set_valign(Gtk.Align.CENTER)
-        # Make it very small
-        css_provider = Gtk.CssProvider()
-        css_data = (
-            "button { min-width: 20px; min-height: 20px; padding: 2px; }"
-        )
-        css_provider.load_from_data(css_data.encode())
-        clear_btn.get_style_context().add_provider(
-            css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
-        clear_btn.connect("clicked", lambda btn: self._clear_tag_filter())
-        tag_container.append(clear_btn)
-        tag_frame.set_child(tag_container)
-
-        # Create a stack to manage main content (tabs vs settings)
-        self.main_stack = Gtk.Stack()
-        self.main_stack.set_transition_type(
-            Gtk.StackTransitionType.SLIDE_LEFT_RIGHT
-        )
-
-        # Create TabView for Recently Copied and Recently Pasted
-        self.tab_view = Adw.TabView()
-        self.tab_view.set_vexpand(True)
-        self.main_stack.add_named(self.tab_view, "tabs")
-
-        # Prevent tabs from being closed by the user
-        self.tab_view.connect("close-page", self._on_close_page)
-
-        # Tab bar
-        self.tab_bar = Adw.TabBar()
-        self.tab_bar.set_view(self.tab_view)
-        main_box.append(self.tab_bar)
-
-        # Initialize FilterBarManager
+        # Initialize FilterBarManager for filter state management
         self.filter_bar_manager = FilterBarManager(
             on_filter_changed=self._reload_current_tab
         )
-
-        # Tab 1: Recently Copied
-        copied_scrolled = Gtk.ScrolledWindow()
-        copied_scrolled.set_vexpand(True)
-        copied_scrolled.set_policy(
-            Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC
-        )
-        self.copied_scrolled = copied_scrolled
-
-        copied_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-
-        # BOTTOM footer with status label
-        copied_footer = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=6
-        )
-        copied_footer.set_margin_top(8)
-        copied_footer.set_margin_bottom(4)
-        copied_footer.set_margin_start(8)
-        copied_footer.set_margin_end(8)
-
-        # Status label for copied items
-        self.copied_status_label = Gtk.Label()
-        self.copied_status_label.add_css_class("dim-label")
-        self.copied_status_label.add_css_class("caption")
-        self.copied_status_label.set_hexpand(True)
-        self.copied_status_label.set_halign(Gtk.Align.START)
-        copied_footer.append(self.copied_status_label)
-
-        self.copied_listbox = Gtk.ListBox()
-        self.copied_listbox.add_css_class("boxed-list")
-        self.copied_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
-        copied_box.append(self.copied_listbox)
-
-        # Loader for copied items
-        self.copied_loader = self._create_loader()
-        self.copied_loader.set_visible(False)
-        copied_box.append(self.copied_loader)
-
-        # Footer with status label (at bottom)
-        copied_box.append(copied_footer)
-
-        copied_scrolled.set_child(copied_box)
-
-        # Connect scroll event for infinite scroll
-        copied_vadj = copied_scrolled.get_vadjustment()
-        copied_vadj.connect(
-            "value-changed", lambda adj: self._on_scroll_changed(adj, "copied")
-        )
-
-        copied_page = self.tab_view.append(copied_scrolled)
-        copied_page.set_title("Recently Copied")
-        copied_page.set_icon(Gio.ThemedIcon.new("edit-copy-symbolic"))
-        copied_page.set_indicator_icon(None)  # Remove close button by clearing indicator
-
-        # Tab 2: Recently Pasted
-        pasted_scrolled = Gtk.ScrolledWindow()
-        pasted_scrolled.set_vexpand(True)
-        pasted_scrolled.set_policy(
-            Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC
-        )
-        self.pasted_scrolled = pasted_scrolled
-
-        pasted_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-
-        # Sticky filter bar at top (shared with copied tab)
-
-        # BOTTOM footer with status label
-        pasted_footer = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=6
-        )
-        pasted_footer.set_margin_top(8)
-        pasted_footer.set_margin_bottom(4)
-        pasted_footer.set_margin_start(8)
-        pasted_footer.set_margin_end(8)
-
-        # Status label for pasted items
-        self.pasted_status_label = Gtk.Label()
-        self.pasted_status_label.add_css_class("dim-label")
-        self.pasted_status_label.add_css_class("caption")
-        self.pasted_status_label.set_hexpand(True)
-        self.pasted_status_label.set_halign(Gtk.Align.START)
-        pasted_footer.append(self.pasted_status_label)
-
-        self.pasted_listbox = Gtk.ListBox()
-        self.pasted_listbox.add_css_class("boxed-list")
-        self.pasted_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
-        pasted_box.append(self.pasted_listbox)
-
-        # Loader for pasted items
-        self.pasted_loader = self._create_loader()
-        self.pasted_loader.set_visible(False)
-        pasted_box.append(self.pasted_loader)
-
-        # Footer with status label (at bottom)
-        pasted_box.append(pasted_footer)
-
-        pasted_scrolled.set_child(pasted_box)
-
-        # Connect scroll event for infinite scroll
-        pasted_vadj = pasted_scrolled.get_vadjustment()
-        pasted_vadj.connect(
-            "value-changed", lambda adj: self._on_scroll_changed(adj, "pasted")
-        )
-
-        pasted_page = self.tab_view.append(pasted_scrolled)
-        pasted_page.set_title("Recently Pasted")
-        pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
-        pasted_page.set_indicator_icon(None)  # Remove close button by clearing indicator
-
-        # Create settings page using SettingsPage component
-        settings_page_component = SettingsPage(
-            settings=self.settings,
-            on_save=self._handle_settings_save,
-            on_notification=self.show_notification,
-        )
-        settings_page = settings_page_component.build()
-        self.main_stack.add_named(settings_page, "settings")
-
-        # Tab 4: Tag Manager
-        tag_manager_scrolled = Gtk.ScrolledWindow()
-        tag_manager_scrolled.set_vexpand(True)
-        tag_manager_scrolled.set_policy(
-            Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC
-        )
-
-        # Create tag manager page
-        tag_manager_page = Adw.PreferencesPage()
-
-        # Tags List Group
-        tags_group = Adw.PreferencesGroup()
-        tags_group.set_title("User-Defined Tags")
-        tags_group.set_description(
-            "Manage your custom tags for organizing clipboard items"
-        )
-
-        # Add a "Create New Tag" button at the top
-        create_tag_row = Adw.ActionRow()
-        create_tag_row.set_title("Create New Tag")
-        create_tag_row.set_subtitle(
-            "Add a new tag to organize your clipboard items"
-        )
-
-        create_tag_button = Gtk.Button()
-        create_tag_button.set_label("New Tag")
-        create_tag_button.add_css_class("suggested-action")
-        create_tag_button.set_valign(Gtk.Align.CENTER)
-        create_tag_button.connect("clicked", self._on_create_tag)
-        create_tag_row.add_suffix(create_tag_button)
-
-        tags_group.add(create_tag_row)
-        tag_manager_page.add(tags_group)
-
-        # User tags list group
-        self.user_tags_group = Adw.PreferencesGroup()
-        self.user_tags_group.set_title("Your Tags")
-        tag_manager_page.add(self.user_tags_group)
-
-        tag_manager_scrolled.set_child(tag_manager_page)
-
-        tag_manager_tab = self.tab_view.append(tag_manager_scrolled)
-        tag_manager_tab.set_title("Tags")
-        tag_manager_tab.set_icon(Gio.ThemedIcon.new("tag-symbolic"))
-
-        # Initialize UserTagsManager (needs to be after user_tags_group and tag_filter_manager)
-        # Will be fully initialized after tag_filter_manager is created
-
-        # Connect tab switch event
-        self.tab_view.connect("notify::selected-page", self._on_tab_switched)
 
         # Add toolbar controls to filter bar
         self.filter_bar_manager.add_toolbar_separator()
@@ -431,20 +156,19 @@ class ClipboardWindow(Adw.ApplicationWindow):
             on_jump_clicked=self._jump_to_top_from_toolbar
         )
 
-        # Add sticky filter bar (contains filters, sort, jump)
-        main_box.append(self.filter_bar_manager.build())
-
-        main_box.append(self.main_stack)
-
-        # Add tag filter at the bottom (footer)
-        main_box.append(tag_frame)
+        # Build filter bar widget and insert into main_box (after tab_bar)
+        # Builder already added: header, search, tab_bar, main_stack, tag_frame
+        # We need to insert filter_bar between tab_bar and main_stack
+        self.filter_bar_widget = self.filter_bar_manager.build()
+        # Insert filter_bar after tab_bar
+        widgets.main_box.insert_child_after(self.filter_bar_widget, widgets.tab_bar)
 
         # Initialize NotificationManager and add its widget
         self.notification_manager = NotificationManager()
-        main_box.append(self.notification_manager.get_widget())
+        widgets.main_box.append(self.notification_manager.get_widget())
 
-        # Set up main box as content
-        self.set_content(main_box)
+        # Set window content
+        self.set_content(widgets.main_box)
 
         # Store current tab state
         self.current_tab = "copied"
@@ -464,10 +188,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Initialize SortManager (will be updated after history_loader is created)
         self.sort_manager = None
 
-        # Initialize TabManager
+        # Initialize TabManager (pass the filter_bar widget for show/hide functionality)
         self.tab_manager = TabManager(
             window_instance=self,
-            filter_bar=self.filter_bar_manager.build(),
+            filter_bar=self.filter_bar_widget,
             search_manager=self.search_manager,
         )
 
@@ -829,6 +553,32 @@ class ClipboardWindow(Adw.ApplicationWindow):
         else:  # copied
             self.history_loader.reset_pagination("copied")
             GLib.idle_add(self.history_loader.reload_copied_with_filters)
+
+    # ========== Builder Compatibility Methods ==========
+
+    def _on_search_changed(self, entry):
+        """Compatibility method for MainWindowBuilder - delegates to wrapper"""
+        return self._on_search_changed_wrapper(entry)
+
+    def _on_search_activate(self, entry):
+        """Compatibility method for MainWindowBuilder - delegates to wrapper"""
+        return self._on_search_activate_wrapper(entry)
+
+    def _on_filter_toggled(self, filter_id: str, button: Gtk.ToggleButton):
+        """Compatibility method for MainWindowBuilder - delegates to FilterBarManager"""
+        return self.filter_bar_manager._on_filter_toggled(filter_id, button)
+
+    def _on_clear_filters(self, button: Gtk.Button = None):
+        """Compatibility method for MainWindowBuilder - delegates to FilterBarManager"""
+        return self.filter_bar_manager._on_clear_filters(button)
+
+    def _on_save_settings(self, button: Gtk.Button):
+        """Compatibility method for MainWindowBuilder - extracts values and delegates"""
+        # Extract values from the spin rows (set by builder)
+        item_width = int(self.item_width_spin.get_value())
+        item_height = int(self.item_height_spin.get_value())
+        max_page_length = int(self.page_length_spin.get_value())
+        return self._handle_settings_save(item_width, item_height, max_page_length)
 
     # ========== Tag Methods ==========
 

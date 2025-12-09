@@ -485,7 +485,7 @@ class MainWindowBuilder:
         item_width_row.set_subtitle("Width of clipboard item cards in pixels (50-1000)")
         item_width_row.set_adjustment(
             Gtk.Adjustment.new(
-                value=self.window.settings.display.item_width,
+                value=self.window.settings.settings.display.item_width,
                 lower=50,
                 upper=1000,
                 step_increment=10,
@@ -502,7 +502,7 @@ class MainWindowBuilder:
         item_height_row.set_subtitle("Height of clipboard item cards in pixels (50-1000)")
         item_height_row.set_adjustment(
             Gtk.Adjustment.new(
-                value=self.window.settings.display.item_height,
+                value=self.window.settings.settings.display.item_height,
                 lower=50,
                 upper=1000,
                 step_increment=10,
@@ -519,7 +519,7 @@ class MainWindowBuilder:
         page_length_row.set_subtitle("Maximum number of items to load per page (1-100)")
         page_length_row.set_adjustment(
             Gtk.Adjustment.new(
-                value=self.window.settings.display.max_page_length,
+                value=self.window.settings.settings.display.max_page_length,
                 lower=1,
                 upper=100,
                 step_increment=1,

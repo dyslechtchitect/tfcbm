@@ -27,6 +27,11 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
 from ui.components.items import ItemActions, ItemContent, ItemHeader, ItemTags
 from ui.dialogs import SecretNamingDialog
+from ui.rows.handlers import (
+    ClipboardOperationsHandler,
+    ItemDragDropHandler,
+    ItemWebSocketService,
+)
 from ui.services.clipboard_service import ClipboardService
 from ui.services.password_service import PasswordService
 
@@ -42,10 +47,26 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.window = window
         self.show_pasted_time = show_pasted_time
         self.search_query = search_query
-        self._last_paste_time = 0
-        self._file_temp_path = None
         self.clipboard_service = ClipboardService()
         self.password_service = PasswordService()
+
+        # Initialize WebSocket service for server communication
+        self.ws_service = ItemWebSocketService(
+            item=item,
+            window=window,
+            on_rebuild_content=self._rebuild_content,
+            on_update_lock_button=self._update_lock_button_icon,
+            on_display_tags=self._display_tags,
+        )
+
+        # Initialize clipboard operations handler
+        self.clipboard_ops = ClipboardOperationsHandler(
+            item=item,
+            window=window,
+            ws_service=self.ws_service,
+            password_service=self.password_service,
+            clipboard_service=self.clipboard_service,
+        )
 
         item_height = self.window.settings.item_height
 
@@ -95,29 +116,35 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.set_vexpand(False)
         self.set_hexpand(True)
 
-        drop_target = Gtk.DropTarget.new(
-            GObject.TYPE_STRING, Gdk.DragAction.COPY
-        )
-        drop_target.connect("drop", self._on_tag_drop)
-        card_frame.add_controller(drop_target)
-
         click_gesture = Gtk.GestureClick.new()
         click_gesture.connect("released", self._on_card_clicked)
         card_frame.add_controller(click_gesture)
 
+        # Initialize drag-and-drop handler
+        self.drag_drop_handler = ItemDragDropHandler(
+            item=item,
+            card_frame=card_frame,
+            password_service=self.password_service,
+            ws_service=self.ws_service,
+            on_show_auth_required=self._show_auth_required_notification,
+            on_show_fetch_error=self._show_fetch_error_notification,
+        )
+
+        # Set up drag source
         drag_source = Gtk.DragSource.new()
         drag_source.set_actions(Gdk.DragAction.COPY)
-        drag_source.connect("prepare", self._on_drag_prepare)
-        drag_source.connect("drag-begin", self._on_drag_begin)
+        drag_source.connect("prepare", self.drag_drop_handler.on_drag_prepare)
+        drag_source.connect("drag-begin", self.drag_drop_handler.on_drag_begin)
         card_frame.add_controller(drag_source)
 
+        # Pre-fetch file content for drag-and-drop
         if item.get("type") == "file":
-            self._prefetch_file_for_dnd()
+            self.drag_drop_handler.prefetch_file_for_dnd()
 
         # Build actions first
         self.actions = ItemActions(
             item=self.item,
-            on_copy=self._on_copy_action,
+            on_copy=self.clipboard_ops.handle_copy_action,
             on_view=self._on_view_action,
             on_save=self._on_save_action,
             on_tags=self._on_tags_action,
@@ -129,7 +156,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Build header with actions on the right
         header = ItemHeader(
             item=self.item,
-            on_name_save=self._update_item_name,
+            on_name_save=self.ws_service.update_item_name,
             show_pasted_time=self.show_pasted_time,
             search_query=self.search_query,
         )
@@ -144,6 +171,13 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Store reference to main_box for rebuilding content
         self.main_box = main_box
 
+        # Add drop target to main_box (not card_frame) to avoid conflict with drag source
+        drop_target = Gtk.DropTarget.new(
+            GObject.TYPE_STRING, Gdk.DragAction.COPY
+        )
+        drop_target.connect("drop", self._on_tag_drop)
+        main_box.add_controller(drop_target)
+
         self.overlay = Gtk.Overlay()
         self.overlay.set_child(card_frame)
 
@@ -157,7 +191,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.set_child(self.overlay)
 
         # Load tags asynchronously from server
-        self._load_item_tags()
+        self.ws_service.load_item_tags()
+
+    def _load_item_tags(self):
+        """Reload tags for this item - called by TagDisplayManager after drag-and-drop."""
+        self.ws_service.load_item_tags()
 
     def _rebuild_content(self):
         """Rebuild the content area to reflect updated item data."""
@@ -188,7 +226,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Rebuild actions with updated item data
         self.actions = ItemActions(
             item=self.item,
-            on_copy=self._on_copy_action,
+            on_copy=self.clipboard_ops.handle_copy_action,
             on_view=self._on_view_action,
             on_save=self._on_save_action,
             on_tags=self._on_tags_action,
@@ -203,7 +241,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         new_actions_widget = self.actions.build()
         header = ItemHeader(
             item=self.item,
-            on_name_save=self._update_item_name,
+            on_name_save=self.ws_service.update_item_name,
             show_pasted_time=self.show_pasted_time,
             search_query=self.search_query,
         )
@@ -220,45 +258,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         logger.info(f"_update_lock_button_icon completed for item {self.item.get('id')}")
         return False  # For GLib.idle_add
 
-    def _fetch_secret_content(self, item_id):
-        """Fetch the actual content of a secret item from the server."""
-        content = [None]  # Use list to allow modification in nested function
-
-        def fetch_content():
-            try:
-                async def get_content():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "get_item",
-                            "item_id": item_id
-                        }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "item" and data.get("item"):
-                            item_data = data["item"]
-                            content[0] = item_data.get("content")
-                            logger.info(f"Fetched secret content for item {item_id}")
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(get_content())
-                finally:
-                    loop.close()
-
-            except Exception as e:
-                logger.error(f"Error fetching secret content: {e}")
-
-        # Run synchronously in a thread and wait
-        import threading
-        thread = threading.Thread(target=fetch_content)
-        thread.start()
-        thread.join(timeout=5)  # Wait up to 5 seconds
-
-        return content[0]
 
     def _show_auth_required_notification(self):
         """Show notification that authentication is required."""
@@ -272,7 +271,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked."""
-        self._perform_copy_to_clipboard(
+        self.clipboard_ops.perform_copy_to_clipboard(
             self.item["type"], self.item["id"], self.item["content"]
         )
 
@@ -286,59 +285,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 self.window.keyboard_handler.activated_via_keyboard = False
 
                 # Wait for focus to return, then simulate paste
-                GLib.timeout_add(150, self._simulate_paste)
-
-    def _simulate_paste(self):
-        """Simulate Ctrl+V paste after window is hidden."""
-        import shutil
-        import subprocess
-
-        # Try xdotool first (X11)
-        if shutil.which("xdotool"):
-            try:
-                subprocess.run(
-                    ["xdotool", "key", "ctrl+v"],
-                    check=False,
-                    timeout=2,
-                )
-                logger.info("[KEYBOARD] Simulated Ctrl+V paste with xdotool")
-                return False
-            except Exception as e:
-                logger.error(f"[KEYBOARD] xdotool failed: {e}")
-
-        # Try ydotool (Wayland)
-        if shutil.which("ydotool"):
-            try:
-                # ydotool uses different key codes: 29=Ctrl, 47=v
-                subprocess.run(
-                    [
-                        "ydotool",
-                        "key",
-                        "29:1",
-                        "47:1",
-                        "47:0",
-                        "29:0",
-                    ],
-                    check=False,
-                    timeout=2,
-                )
-                logger.info("[KEYBOARD] Simulated Ctrl+V paste with ydotool")
-                return False
-            except Exception as e:
-                logger.error(f"[KEYBOARD] ydotool failed: {e}")
-
-        # No tool available
-        logger.warning(
-            "[KEYBOARD] Neither xdotool nor ydotool found. "
-            "Auto-paste disabled."
-        )
-        return False
-
-    def _on_copy_action(self):
-        """Handle copy button click."""
-        self._perform_copy_to_clipboard(
-            self.item["type"], self.item["id"], self.item["content"]
-        )
+                GLib.timeout_add(150, self.clipboard_ops.simulate_paste)
 
     def _on_view_action(self):
         """Handle view button click - show full item dialog."""
@@ -363,7 +310,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             # Fetch real content for viewing
             logger.info(f"Fetching real content for secret item {item_id} for view")
-            real_content = self._fetch_secret_content(item_id)
+            real_content = self.ws_service.fetch_secret_content(item_id)
             if not real_content:
                 self.window.show_notification("Failed to retrieve secret content")
                 # Consume authentication even on failure
@@ -405,7 +352,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             # Fetch real content for saving
             logger.info(f"Fetching real content for secret item {item_id} for save")
-            real_content = self._fetch_secret_content(item_id)
+            real_content = self.ws_service.fetch_secret_content(item_id)
             if not real_content:
                 self.window.show_notification("Failed to retrieve secret content")
                 # Consume authentication even on failure
@@ -463,7 +410,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
             def on_response(dialog_obj, response):
                 if response == "confirm":
-                    self._toggle_secret_status(item_id, False, item_name)
+                    self.ws_service.toggle_secret_status(item_id, False, item_name)
                 # Consume authentication regardless of user choice (confirm or cancel)
                 self.password_service.consume_authentication("toggle_secret", item_id)
 
@@ -473,122 +420,15 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # If marking as secret and item has no name, show naming dialog
         elif not item_name:
             def on_name_provided(name):
-                self._toggle_secret_status(item_id, True, name)
+                self.ws_service.toggle_secret_status(item_id, True, name)
 
             dialog = SecretNamingDialog(self.get_root(), on_name_provided)
             dialog.show()
         else:
             # Item already has name, just mark as secret
-            self._toggle_secret_status(item_id, True, item_name)
+            self.ws_service.toggle_secret_status(item_id, True, item_name)
 
-    def _toggle_secret_status(self, item_id, is_secret, name=None):
-        """Send request to server to toggle secret status."""
-        logger.info(f"_toggle_secret_status called: item_id={item_id}, is_secret={is_secret}, name='{name}'")
-        def send_toggle():
-            try:
-                async def toggle_secret():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "toggle_secret",
-                            "item_id": item_id,
-                            "is_secret": is_secret,
-                            "name": name
-                        }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-                        logger.info(f"Received response: {data}")
 
-                        if data.get("type") == "secret_toggled":
-                            if data.get("success"):
-                                # Update local item data from server response
-                                received_is_secret = data.get("is_secret", is_secret)
-                                logger.info(f"Received is_secret from server: {received_is_secret} (type: {type(received_is_secret)})")
-
-                                # Ensure boolean conversion (SQLite returns 0/1 as integers)
-                                self.item["is_secret"] = bool(received_is_secret)
-
-                                server_name = data.get("name")
-                                if server_name:
-                                    self.item["name"] = server_name
-                                    logger.info(f"Updated item name to: {server_name}")
-
-                                logger.info(f"Item {item_id} secret status updated: is_secret={self.item['is_secret']} (bool), name={self.item.get('name')}")
-
-                                # Immediately rebuild content to show/hide secret
-                                logger.info("Calling _rebuild_content via GLib.idle_add")
-                                GLib.idle_add(self._rebuild_content)
-
-                                # Update lock button icon
-                                logger.info("Calling _update_lock_button_icon via GLib.idle_add")
-                                GLib.idle_add(self._update_lock_button_icon)
-
-                                # Show notification
-                                status = "marked as secret" if is_secret else "unmarked as secret"
-                                GLib.idle_add(
-                                    lambda: self.window.show_notification(
-                                        f"Item {status}"
-                                    ) or False
-                                )
-                            else:
-                                error = data.get("error", "Unknown error")
-                                GLib.idle_add(
-                                    lambda: self.window.show_notification(
-                                        f"Failed to toggle secret: {error}"
-                                    ) or False
-                                )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(toggle_secret())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error toggling secret: {e}")
-                GLib.idle_add(
-                    lambda: self.window.show_notification(
-                        f"Error: {str(e)}"
-                    ) or False
-                )
-
-        threading.Thread(target=send_toggle, daemon=True).start()
-
-    def _load_item_tags(self):
-        """Load and display tags for this item asynchronously."""
-
-        def run_load():
-            try:
-
-                async def fetch_tags():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "get_item_tags",
-                            "item_id": self.item.get("id"),
-                        }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "item_tags":
-                            tags = data.get("tags", [])
-                            # Store tags in item for filtering
-                            self.item["tags"] = tags
-                            # Update UI on main thread
-                            GLib.idle_add(self._display_tags, tags)
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(fetch_tags())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"[UI] Error loading item tags: {e}")
-
-        threading.Thread(target=run_load, daemon=True).start()
 
     def _display_tags(self, tags):
         """Display tags in the tags overlay."""
@@ -630,439 +470,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         def on_response(dialog, response):
             if response == "delete":
-                self._delete_item_from_server(self.item["id"])
+                self.ws_service.delete_item_from_server(self.item["id"])
 
         dialog.connect("response", on_response)
         dialog.present(window)
-
-    def _perform_copy_to_clipboard(self, item_type, item_id, content=None):
-        """Copy item to clipboard."""
-        # Check if item is secret and require authentication
-        is_secret = self.item.get("is_secret", False)
-        if is_secret:
-            logger.info(f"Item {item_id} is secret, checking authentication")
-            # Check if authenticated for THIS specific copy operation on THIS item
-            if not self.password_service.is_authenticated_for("copy", item_id):
-                logger.info("Not authenticated for copy operation, prompting for password")
-                # Prompt for authentication for THIS operation on THIS item
-                if not self.password_service.authenticate_for("copy", item_id, self.get_root()):
-                    logger.info("Authentication failed or cancelled")
-                    self.window.show_notification("Authentication required to copy secret")
-                    return
-                else:
-                    logger.info("Authentication successful for copy operation")
-            else:
-                logger.info("Already authenticated for copy operation")
-
-            # For secrets, we need to fetch the actual content from the server
-            # (not the "-secret-" placeholder)
-            logger.info(f"Fetching real content for secret item {item_id}")
-            content = self._fetch_secret_content(item_id)
-            if not content:
-                self.window.show_notification("Failed to retrieve secret content")
-                # Consume authentication even on failure
-                self.password_service.consume_authentication("copy", item_id)
-                return
-            logger.info(f"Retrieved secret content (length: {len(str(content))})")
-
-        clipboard = Gdk.Display.get_default().get_clipboard()
-        if not clipboard:
-            self.window.show_notification("Error: Could not access clipboard.")
-            # Consume authentication even on error
-            if is_secret:
-                self.password_service.consume_authentication("copy", item_id)
-            return
-
-        try:
-            if item_type == "text" or item_type == "url":
-                if content:
-                    # Check if item has formatted content
-                    format_type = self.item.get("format_type")
-                    formatted_content = self.item.get("formatted_content")
-
-                    if format_type and formatted_content:
-                        # Use formatted text copy
-                        self.clipboard_service.copy_formatted_text(
-                            content, formatted_content, format_type
-                        )
-                        self.window.show_notification(
-                            f"{'URL' if item_type == 'url' else 'Text'} with {format_type.upper()} formatting copied"
-                        )
-                    else:
-                        # Use plain text copy
-                        self.clipboard_service.copy_text(content)
-                        self.window.show_notification(
-                            f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
-                        )
-                    self._record_paste(item_id)
-                    # Consume authentication after successful copy
-                    if is_secret:
-                        self.password_service.consume_authentication("copy", item_id)
-                else:
-                    self.window.show_notification(
-                        "Error copying: content is empty."
-                    )
-                    # Consume authentication even on error
-                    if is_secret:
-                        self.password_service.consume_authentication("copy", item_id)
-            elif item_type == "file":
-                self.window.show_notification("Loading file...")
-                self._copy_file_to_clipboard(item_id, content, clipboard)
-            elif item_type.startswith("image/") or item_type == "screenshot":
-                self.window.show_notification("Loading full image...")
-                self._copy_full_image_to_clipboard(item_id, clipboard)
-        except Exception as e:
-            self.window.show_notification(f"Error copying: {str(e)}")
-            # Consume authentication even on error
-            if is_secret:
-                self.password_service.consume_authentication("copy", item_id)
-
-    def _copy_full_image_to_clipboard(self, item_id, clipboard):
-        """Fetch and copy full image to clipboard."""
-
-        def fetch_and_copy():
-            try:
-
-                async def get_full_image():
-                    uri = "ws://localhost:8765"
-                    max_size = 5 * 1024 * 1024
-                    async with websockets.connect(
-                        uri, max_size=max_size
-                    ) as websocket:
-                        request = {"action": "get_full_image", "id": item_id}
-                        await websocket.send(json.dumps(request))
-
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if (
-                            data.get("type") == "full_image"
-                            and data.get("id") == item_id
-                        ):
-                            image_b64 = data.get("content")
-                            image_data = base64.b64decode(image_b64)
-
-                            loader = GdkPixbuf.PixbufLoader()
-                            loader.write(image_data)
-                            loader.close()
-                            pixbuf = loader.get_pixbuf()
-
-                            def copy_to_clipboard():
-                                try:
-                                    success, png_bytes = (
-                                        pixbuf.save_to_bufferv("png", [], [])
-                                    )
-                                    if not success:
-                                        raise Exception(
-                                            "Failed to convert image to PNG"
-                                        )
-
-                                    gbytes = GLib.Bytes.new(png_bytes)
-                                    content = (
-                                        Gdk.ContentProvider.new_for_bytes(
-                                            "image/png", gbytes
-                                        )
-                                    )
-                                    clipboard.set_content(content)
-
-                                    self.window.show_notification(
-                                        f"📷 Full image copied "
-                                        f"({pixbuf.get_width()}x{pixbuf.get_height()})"
-                                    )
-                                    self._record_paste(item_id)
-                                    # Consume authentication after successful copy
-                                    if self.item.get("is_secret", False):
-                                        self.password_service.consume_authentication("copy", item_id)
-                                except Exception as e:
-                                    self.window.show_notification(
-                                        f"Error copying: {str(e)}"
-                                    )
-                                return False
-
-                            GLib.idle_add(copy_to_clipboard)
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(get_full_image())
-                finally:
-                    loop.close()
-
-            except Exception:
-                GLib.idle_add(
-                    lambda: self.window.show_notification(f"Error: {str(e)}")
-                    or False
-                )
-
-        threading.Thread(target=fetch_and_copy, daemon=True).start()
-
-    def _copy_file_to_clipboard(self, item_id, file_metadata, clipboard):
-        """Copy file or folder to clipboard."""
-        is_directory = file_metadata.get("is_directory", False)
-
-        if is_directory:
-            self._copy_folder_to_clipboard(item_id, file_metadata, clipboard)
-        else:
-            self._copy_regular_file_to_clipboard(
-                item_id, file_metadata, clipboard
-            )
-
-    def _copy_folder_to_clipboard(self, item_id, file_metadata, clipboard):
-        """Copy folder to clipboard if it still exists."""
-
-        def copy_folder():
-            try:
-                original_path = file_metadata.get("original_path", "")
-                folder_name = file_metadata.get("name", "folder")
-
-                if original_path and Path(original_path).exists():
-
-                    def copy_to_clipboard():
-                        try:
-                            gfile = Gio.File.new_for_path(original_path)
-                            file_list = Gdk.FileList.new_from_array([gfile])
-                            content_provider = (
-                                Gdk.ContentProvider.new_for_value(file_list)
-                            )
-                            clipboard.set_content(content_provider)
-
-                            self.window.show_notification(
-                                f"📁 Folder copied: {folder_name}"
-                            )
-                            self._record_paste(item_id)
-                            # Consume authentication after successful copy
-                            if self.item.get("is_secret", False):
-                                self.password_service.consume_authentication("copy", item_id)
-                        except Exception as e:
-                            self.window.show_notification(
-                                f"Error copying folder: {str(e)}"
-                            )
-                        return False
-
-                    GLib.idle_add(copy_to_clipboard)
-                else:
-                    GLib.idle_add(
-                        lambda: self.window.show_notification(
-                            "Folder no longer exists at original location"
-                        )
-                        or False
-                    )
-            except Exception:
-                GLib.idle_add(
-                    lambda: self.window.show_notification(
-                        f"Error copying folder: {str(e)}"
-                    )
-                    or False
-                )
-
-        threading.Thread(target=copy_folder, daemon=True).start()
-
-    def _copy_regular_file_to_clipboard(
-        self, item_id, file_metadata, clipboard
-    ):
-        """Fetch file from server and copy to clipboard."""
-
-        def fetch_and_copy():
-            try:
-
-                async def get_full_file():
-                    uri = "ws://localhost:8765"
-                    max_size = 100 * 1024 * 1024
-                    async with websockets.connect(
-                        uri, max_size=max_size
-                    ) as websocket:
-                        request = {"action": "get_full_image", "id": item_id}
-                        await websocket.send(json.dumps(request))
-
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if (
-                            data.get("type") == "full_file"
-                            and data.get("id") == item_id
-                        ):
-                            file_b64 = data.get("content")
-                            file_data = base64.b64decode(file_b64)
-
-                            file_name = file_metadata.get(
-                                "name", "clipboard_file"
-                            )
-
-                            temp_dir = (
-                                Path(tempfile.gettempdir()) / "tfcbm_files"
-                            )
-                            temp_dir.mkdir(exist_ok=True)
-                            temp_file_path = temp_dir / file_name
-
-                            with open(temp_file_path, "wb") as f:
-                                f.write(file_data)
-
-                            def copy_to_clipboard():
-                                try:
-                                    gfile = Gio.File.new_for_path(
-                                        str(temp_file_path)
-                                    )
-                                    file_list = Gdk.FileList.new_from_array(
-                                        [gfile]
-                                    )
-                                    content_provider = (
-                                        Gdk.ContentProvider.new_for_value(
-                                            file_list
-                                        )
-                                    )
-                                    clipboard.set_content(content_provider)
-
-                                    self.window.show_notification(
-                                        f"📄 File copied: {file_name}"
-                                    )
-                                    self._record_paste(item_id)
-                                    # Consume authentication after successful copy
-                                    if self.item.get("is_secret", False):
-                                        self.password_service.consume_authentication("copy", item_id)
-                                except Exception as e:
-                                    self.window.show_notification(
-                                        f"Error copying file: {str(e)}"
-                                    )
-                                return False
-
-                            GLib.idle_add(copy_to_clipboard)
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(get_full_file())
-                finally:
-                    loop.close()
-
-            except Exception:
-                GLib.idle_add(
-                    lambda: self.window.show_notification(
-                        f"Error copying file: {str(e)}"
-                    )
-                    or False
-                )
-
-        threading.Thread(target=fetch_and_copy, daemon=True).start()
-
-    def _record_paste(self, item_id):
-        """Record that this item was pasted."""
-        current_time = time.time()
-        if current_time - self._last_paste_time < 1.0:
-            return
-
-        self._last_paste_time = current_time
-
-        def record():
-            try:
-
-                async def send_record():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {"action": "record_paste", "id": item_id}
-                        await websocket.send(json.dumps(request))
-                        await websocket.recv()
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(send_record())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"Error recording paste: {e}")
-
-        threading.Thread(target=record, daemon=True).start()
-
-    def _update_item_name(self, item_id, name):
-        """Update item name on server."""
-        # Update local item data immediately
-        self.item["name"] = name
-
-        def update():
-            try:
-
-                async def send_update():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {
-                            "action": "update_item_name",
-                            "item_id": item_id,
-                            "name": name,
-                        }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") == "item_name_updated":
-                            if data.get("success"):
-                                logger.info(
-                                    f"[UI] Name updated for item {item_id}: '{name}'"
-                                )
-                            else:
-                                logger.error(
-                                    f"[UI] Failed to update name for item {item_id}: {data.get('error', 'Unknown error')}"
-                                )
-                        else:
-                            logger.warning(
-                                f"[UI] Unexpected response updating name: {data}"
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(send_update())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"[UI] Error updating name: {e}")
-
-        threading.Thread(target=update, daemon=True).start()
-
-    def _delete_item_from_server(self, item_id):
-        """Send delete request to server via WebSocket."""
-
-        def send_delete():
-            try:
-
-                async def delete_item():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        request = {"action": "delete_item", "id": item_id}
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("status") == "success":
-                            GLib.idle_add(
-                                lambda: self.window.show_notification(
-                                    "Item deleted"
-                                )
-                                or False
-                            )
-                        else:
-                            GLib.idle_add(
-                                lambda: self.window.show_notification(
-                                    "Failed to delete item"
-                                )
-                                or False
-                            )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(delete_item())
-                finally:
-                    loop.close()
-            except Exception as e:
-                print(f"Error deleting item: {e}")
-                GLib.idle_add(
-                    lambda: self.window.show_notification(
-                        f"Error deleting: {str(e)}"
-                    )
-                    or False
-                )
-
-        threading.Thread(target=send_delete, daemon=True).start()
 
     def _show_tags_popover(self):
         """Show popover to manage tags for this item."""
@@ -1174,11 +585,22 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _on_tag_drop(self, drop_target, value, x, y):
         """Handle tag drop on item."""
-        tag_id = value
-        item_id = self.item.get("id")
-        if hasattr(self.window, "_on_tag_dropped_on_item"):
-            self.window._on_tag_dropped_on_item(tag_id, item_id)
-        return True
+        logger.info(f"[TAG_DROP] Received drop - value: {value}, type: {type(value)}")
+        try:
+            tag_id = value
+            item_id = self.item.get("id")
+            logger.info(f"[TAG_DROP] Attempting to add tag {tag_id} to item {item_id}")
+            if hasattr(self.window, "_on_tag_dropped_on_item"):
+                self.window._on_tag_dropped_on_item(tag_id, item_id)
+                logger.info(f"[TAG_DROP] Successfully called _on_tag_dropped_on_item")
+            else:
+                logger.error("[TAG_DROP] window._on_tag_dropped_on_item method not found")
+            return True
+        except Exception as e:
+            logger.error(f"[TAG_DROP] Error in _on_tag_drop: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def _on_tag_toggle(self, checkbutton, tag_id, item_id, popover):
         """Handle tag checkbox toggle."""
@@ -1202,7 +624,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
                         if data.get("type") in ["tag_added", "tag_removed"]:
                             # Reload tags for this item
-                            GLib.idle_add(self._load_item_tags)
+                            GLib.idle_add(self.ws_service.load_item_tags)
                             # Notify window to refresh if needed
                             if hasattr(self.window, "_on_item_tags_changed"):
                                 GLib.idle_add(
@@ -1228,303 +650,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             # Single click - copy to clipboard
             self._on_row_clicked(self)
 
-    def _on_drag_prepare(self, drag_source, x, y):
-        """Prepare data for drag operation."""
-        item_type = self.item.get("type", "")
-        item_id = self.item.get("id")
-        is_secret = self.item.get("is_secret", False)
-
-        print(
-            f"[DND] _on_drag_prepare called for type: {item_type}, id: {item_id}, is_secret: {is_secret}"
-        )
-
-        # Check if item is secret and require authentication
-        if is_secret:
-            logger.info(f"Attempting to drag secret item {item_id}, checking authentication")
-            # Check if authenticated for THIS specific drag operation on THIS item
-            if not self.password_service.is_authenticated_for("drag", item_id):
-                logger.info("Not authenticated for drag, prompting for password")
-                # We can't show async dialog during drag prepare, so prevent drag
-                GLib.idle_add(self._show_auth_required_notification)
-                return None
-            else:
-                logger.info("Authenticated, allowing drag of secret item")
-
-        # Handle different content types
-        if item_type == "text" or item_type == "url":
-            # Text content - provide as text/plain
-            content = self.item.get("content", "")
-
-            # For secrets, fetch real content (not the "-secret-" placeholder)
-            if is_secret:
-                logger.info(f"Fetching real content for secret item {item_id} for drag")
-                real_content = self._fetch_secret_content(item_id)
-                if real_content:
-                    content = real_content
-                    logger.info(f"Using real content for drag (length: {len(str(content))})")
-                else:
-                    logger.error("Failed to fetch secret content for drag")
-                    GLib.idle_add(self._show_fetch_error_notification)
-                    # Consume authentication on error
-                    if is_secret:
-                        self.password_service.consume_authentication("drag", item_id)
-                    return None
-
-            if isinstance(content, bytes):
-                content = content.decode("utf-8", errors="ignore")
-            value = GObject.Value(str, content)
-            # Consume authentication after successful drag preparation
-            if is_secret:
-                self.password_service.consume_authentication("drag", item_id)
-            return Gdk.ContentProvider.new_for_value(value)
-
-        elif item_type.startswith("image/") or item_type == "screenshot":
-            # Image content - provide multiple formats for maximum compatibility
-            try:
-                # Use thumbnail data (already loaded) instead of full image
-                thumbnail_b64 = self.item.get("thumbnail")
-                print(
-                    f"[DND] Thumbnail data available: {thumbnail_b64 is not None}, "
-                    f"length: {len(thumbnail_b64) if thumbnail_b64 else 0}"
-                )
-                if thumbnail_b64:
-                    # Thumbnail is base64-encoded, decode it first
-                    image_bytes = base64.b64decode(thumbnail_b64)
-
-                    # Convert PNG bytes to Gdk.Texture
-                    pixbuf = GdkPixbuf.Pixbuf.new_from_stream(
-                        Gio.MemoryInputStream.new_from_bytes(
-                            GLib.Bytes.new(image_bytes)
-                        ),
-                        None,
-                    )
-                    texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-
-                    # Create JPEG version using temp file (for immediate use)
-                    jpeg_fd, jpeg_path = tempfile.mkstemp(suffix=".jpg")
-                    try:
-                        os.close(jpeg_fd)
-                        pixbuf.savev(jpeg_path, "jpeg", [], [])
-                        with open(jpeg_path, "rb") as f:
-                            jpeg_bytes = f.read()
-                    finally:
-                        try:
-                            os.unlink(jpeg_path)
-                        except Exception:
-                            pass
-
-                    # Create BMP version using temp file (for immediate use)
-                    bmp_fd, bmp_path = tempfile.mkstemp(suffix=".bmp")
-                    try:
-                        os.close(bmp_fd)
-                        pixbuf.savev(bmp_path, "bmp", [], [])
-                        with open(bmp_path, "rb") as f:
-                            bmp_bytes = f.read()
-                    finally:
-                        try:
-                            os.unlink(bmp_path)
-                        except Exception:
-                            pass
-
-                    # Provide MULTIPLE formats for maximum compatibility
-                    providers = []
-
-                    # PNG bytes (lossless) - FIRST for web browsers
-                    providers.append(
-                        Gdk.ContentProvider.new_for_bytes(
-                            "image/png", GLib.Bytes.new(image_bytes)
-                        )
-                    )
-
-                    # JPEG bytes (most compatible)
-                    providers.append(
-                        Gdk.ContentProvider.new_for_bytes(
-                            "image/jpeg", GLib.Bytes.new(jpeg_bytes)
-                        )
-                    )
-
-                    # BMP bytes (universal)
-                    providers.append(
-                        Gdk.ContentProvider.new_for_bytes(
-                            "image/bmp", GLib.Bytes.new(bmp_bytes)
-                        )
-                    )
-
-                    # Texture provider (GTK4)
-                    tex_value = GObject.Value()
-                    tex_value.init(Gdk.Texture)
-                    tex_value.set_object(texture)
-                    providers.append(
-                        Gdk.ContentProvider.new_for_value(tex_value)
-                    )
-
-                    # Pixbuf provider (GTK3/4)
-                    pb_value = GObject.Value()
-                    pb_value.init(GdkPixbuf.Pixbuf)
-                    pb_value.set_object(pixbuf)
-                    providers.append(
-                        Gdk.ContentProvider.new_for_value(pb_value)
-                    )
-
-                    # Union all providers
-                    provider = Gdk.ContentProvider.new_union(providers)
-                    print(
-                        f"[DND] Created multi-format content provider "
-                        f"({pixbuf.get_width()}x{pixbuf.get_height()}, "
-                        f"PNG:{len(image_bytes)}, JPEG:{len(jpeg_bytes)}, "
-                        f"BMP:{len(bmp_bytes)})"
-                    )
-                    # Consume authentication after successful drag preparation
-                    if is_secret:
-                        self.password_service.consume_authentication("drag", item_id)
-                    return provider
-                else:
-                    print(
-                        f"[DND] No thumbnail data in item! "
-                        f"Keys: {list(self.item.keys())}"
-                    )
-            except Exception as e:
-                print(f"[DND] Error preparing image: {e}")
-                traceback.print_exc()
-
-        elif item_type == "file":
-            # Use pre-fetched temp file/folder for drag-and-drop
-            if self._file_temp_path and os.path.exists(self._file_temp_path):
-                file_uri = f"file://{self._file_temp_path}"
-                uri_list_bytes = file_uri.encode("utf-8")
-                provider = Gdk.ContentProvider.new_for_bytes(
-                    "text/uri-list", GLib.Bytes.new(uri_list_bytes)
-                )
-                print(f"[DND] Providing file/folder URI: {file_uri}")
-                # Consume authentication after successful drag preparation
-                if is_secret:
-                    self.password_service.consume_authentication("drag", item_id)
-                return provider
-            else:
-                print(
-                    "[DND] File/folder not ready for drag "
-                    "(temp file not available)"
-                )
-                return None
-
-        return None
-
-    def _on_drag_begin(self, drag_source, drag):
-        """Called when drag begins - set drag icon."""
-        print("[DND] _on_drag_begin called")
-        # Use a small preview of the item as drag icon
-        icon = Gtk.WidgetPaintable.new(self.card_frame)
-        drag_source.set_icon(icon, 0, 0)
-        print("[DND] Drag icon set")
-
-    def _prefetch_file_for_dnd(self):
-        """Pre-fetch file content and save to temp location for drag-and-drop."""
-
-        def fetch_and_save():
-            print("[DND] Background thread started for pre-fetch")
-            try:
-
-                async def get_file():
-                    item_id = self.item.get("id")
-                    print(f"[DND] Async get_file() started for item {item_id}")
-                    uri = "ws://localhost:8765"
-                    max_size = 100 * 1024 * 1024  # 100MB for files
-
-                    print(f"[DND] Pre-fetching file for item {item_id}")
-
-                    try:
-                        async with websockets.connect(
-                            uri, max_size=max_size
-                        ) as websocket:
-                            # Use same action as Save button: get_full_image
-                            request = {
-                                "action": "get_full_image",
-                                "id": item_id,
-                            }
-                            await websocket.send(json.dumps(request))
-
-                            # Wait for response
-                            response = await websocket.recv()
-                            data = json.loads(response)
-
-                            if (
-                                data.get("type") == "full_file"
-                                and data.get("id") == item_id
-                            ):
-                                file_b64 = data.get("content")
-                                filename = data.get(
-                                    "filename", f"file_{item_id}"
-                                )
-
-                                if file_b64:
-                                    # Decode file content
-                                    file_bytes = base64.b64decode(file_b64)
-
-                                    # Create temp file with original filename
-                                    fd, temp_path = tempfile.mkstemp(
-                                        suffix=f"_{filename}"
-                                    )
-                                    try:
-                                        os.write(fd, file_bytes)
-                                    finally:
-                                        os.close(fd)
-
-                                    self._file_temp_path = temp_path
-                                    print(
-                                        f"[DND] Pre-fetched file to: {temp_path} "
-                                        f"({len(file_bytes)} bytes)"
-                                    )
-                                else:
-                                    # Empty content - likely a folder
-                                    # Check if item has original_path in metadata
-                                    file_metadata = self.item.get(
-                                        "content", {}
-                                    )
-                                    original_path = file_metadata.get(
-                                        "original_path"
-                                    )
-                                    print(
-                                        f"[DND] Checking for original_path in "
-                                        f"content field: {original_path}"
-                                    )
-                                    if original_path and os.path.exists(
-                                        original_path
-                                    ):
-                                        self._file_temp_path = original_path
-                                        print(
-                                            f"[DND] Using original folder path: "
-                                            f"{original_path}"
-                                        )
-                                    else:
-                                        print(
-                                            "[DND] No file content - original_path "
-                                            f"not available or doesn't exist: "
-                                            f"{original_path}"
-                                        )
-                            else:
-                                print(
-                                    f"[DND] Unexpected response type: "
-                                    f"{data.get('type')}"
-                                )
-
-                    except Exception as e:
-                        print(f"[DND] Websocket error during pre-fetch: {e}")
-                        traceback.print_exc()
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(get_file())
-                finally:
-                    loop.close()
-
-            except Exception as e:
-                print(f"[DND] Failed to pre-fetch file: {e}")
-                traceback.print_exc()
-
-        # Run in background thread to avoid blocking UI
-        thread = threading.Thread(target=fetch_and_save, daemon=True)
-        thread.start()
 
     def _show_save_dialog(self):
         """Show file save dialog."""
