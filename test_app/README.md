@@ -12,19 +12,27 @@ A proof-of-concept GTK4 application for Fedora 43 (Wayland) that allows users to
 
 ## Installation
 
-1. Install the GNOME Shell extension:
+1. Run the installation script:
 ```bash
-ln -sf $(pwd)/gnome-extension ~/.local/share/gnome-shell/extensions/popup-app-hotkey@example.com
+./install_extension.sh
 ```
 
-2. Enable the extension (choose one):
-   - Open Extensions app: `gnome-extensions-app` and toggle "Popup App Hotkey" ON
-   - Or log out and log back in
+2. Restart GNOME Shell or log out and back in:
+   - Press **Alt+F2**, type **r**, press **Enter** (restarts GNOME Shell)
+   - OR log out and log back in
 
-3. Start the application:
+3. Verify the extension is enabled:
+```bash
+gnome-extensions list --enabled | grep popup
+```
+   You should see: `popup-app-hotkey@example.com`
+
+4. Start the application:
 ```bash
 python3 popup_app.py
 ```
+
+5. Test: Press **Ctrl+Shift+R** - the window should appear with NO notification!
 
 ## Usage
 
