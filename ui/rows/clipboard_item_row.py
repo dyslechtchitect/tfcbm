@@ -25,11 +25,13 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
-from ui.components.items import ItemActions, ItemContent, ItemHeader, ItemTags
-from ui.dialogs import SecretNamingDialog
+from ui.components.items import ItemActions, ItemContent, ItemHeader
 from ui.rows.handlers import (
     ClipboardOperationsHandler,
+    ItemDialogHandler,
     ItemDragDropHandler,
+    ItemSecretManager,
+    ItemTagManager,
     ItemWebSocketService,
 )
 from ui.services.clipboard_service import ClipboardService
@@ -66,6 +68,24 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             ws_service=self.ws_service,
             password_service=self.password_service,
             clipboard_service=self.clipboard_service,
+        )
+
+        # Initialize dialog handler
+        self.dialog_handler = ItemDialogHandler(
+            item=item,
+            window=window,
+            password_service=self.password_service,
+            ws_service=self.ws_service,
+            get_root=self.get_root,
+        )
+
+        # Initialize secret manager
+        self.secret_manager = ItemSecretManager(
+            item=item,
+            window=window,
+            password_service=self.password_service,
+            ws_service=self.ws_service,
+            get_root=self.get_root,
         )
 
         item_height = self.window.settings.item_height
@@ -141,15 +161,18 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         if item.get("type") == "file":
             self.drag_drop_handler.prefetch_file_for_dnd()
 
+        # Create placeholder for tag manager (will be initialized after overlay creation)
+        self.tag_manager = None
+
         # Build actions first
         self.actions = ItemActions(
             item=self.item,
             on_copy=self.clipboard_ops.handle_copy_action,
-            on_view=self._on_view_action,
-            on_save=self._on_save_action,
+            on_view=self.dialog_handler.handle_view_action,
+            on_save=self.dialog_handler.handle_save_action,
             on_tags=self._on_tags_action,
-            on_secret=self._on_secret_action,
-            on_delete=self._on_delete_action,
+            on_secret=self.secret_manager.handle_secret_action,
+            on_delete=self.dialog_handler.handle_delete_action,
         )
         self.actions_widget = self.actions.build()
 
@@ -175,18 +198,23 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         drop_target = Gtk.DropTarget.new(
             GObject.TYPE_STRING, Gdk.DragAction.COPY
         )
-        drop_target.connect("drop", self._on_tag_drop)
+        drop_target.connect("drop", lambda dt, val, x, y: self.tag_manager.handle_tag_drop(dt, val, x, y) if self.tag_manager else False)
         main_box.add_controller(drop_target)
 
         self.overlay = Gtk.Overlay()
         self.overlay.set_child(card_frame)
 
-        # Build initial tags display
-        tags = ItemTags(
-            tags=self.item.get("tags", []), on_click=self._on_tags_action
+        # Initialize tag manager
+        self.tag_manager = ItemTagManager(
+            item=item,
+            window=window,
+            overlay=self.overlay,
+            ws_service=self.ws_service,
+            on_tags_action=self._on_tags_action,
         )
-        self.tags_widget = tags.build()
-        self.overlay.add_overlay(self.tags_widget)
+
+        # Build initial tags display using tag manager
+        self.tag_manager.display_tags(self.item.get("tags", []))
 
         self.set_child(self.overlay)
 
@@ -227,11 +255,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.actions = ItemActions(
             item=self.item,
             on_copy=self.clipboard_ops.handle_copy_action,
-            on_view=self._on_view_action,
-            on_save=self._on_save_action,
+            on_view=self.dialog_handler.handle_view_action,
+            on_save=self.dialog_handler.handle_save_action,
             on_tags=self._on_tags_action,
-            on_secret=self._on_secret_action,
-            on_delete=self._on_delete_action,
+            on_secret=self.secret_manager.handle_secret_action,
+            on_delete=self.dialog_handler.handle_delete_action,
         )
 
         # Remove old header
@@ -287,580 +315,18 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 # Wait for focus to return, then simulate paste
                 GLib.timeout_add(150, self.clipboard_ops.simulate_paste)
 
-    def _on_view_action(self):
-        """Handle view button click - show full item dialog."""
-        # Check if item is secret and require authentication
-        is_secret = self.item.get("is_secret", False)
-        item_id = self.item.get('id')
-
-        if is_secret:
-            logger.info(f"Item {item_id} is secret, checking authentication for view")
-            # Check if authenticated for THIS specific view operation on THIS item
-            if not self.password_service.is_authenticated_for("view", item_id):
-                logger.info("Not authenticated for view, prompting for password")
-                # Prompt for authentication for THIS operation on THIS item
-                if not self.password_service.authenticate_for("view", item_id, self.get_root()):
-                    logger.info("Authentication failed or cancelled for view")
-                    self.window.show_notification("Authentication required to view secret")
-                    return
-                else:
-                    logger.info("Authentication successful for view")
-            else:
-                logger.info("Already authenticated for view")
-
-            # Fetch real content for viewing
-            logger.info(f"Fetching real content for secret item {item_id} for view")
-            real_content = self.ws_service.fetch_secret_content(item_id)
-            if not real_content:
-                self.window.show_notification("Failed to retrieve secret content")
-                # Consume authentication even on failure
-                self.password_service.consume_authentication("view", item_id)
-                return
-            logger.info(f"Retrieved secret content for view (length: {len(str(real_content))})")
-
-            # Temporarily replace content for viewing
-            original_content = self.item.get("content")
-            self.item["content"] = real_content
-            self._show_view_dialog()
-            # Restore placeholder
-            self.item["content"] = original_content
-            # Consume authentication after successful view
-            self.password_service.consume_authentication("view", item_id)
-        else:
-            self._show_view_dialog()
-
-    def _on_save_action(self):
-        """Handle save button click - show save file dialog."""
-        # Check if item is secret and require authentication
-        is_secret = self.item.get("is_secret", False)
-        item_id = self.item.get('id')
-
-        if is_secret:
-            logger.info(f"Item {item_id} is secret, checking authentication for save")
-            # Check if authenticated for THIS specific save operation on THIS item
-            if not self.password_service.is_authenticated_for("save", item_id):
-                logger.info("Not authenticated for save, prompting for password")
-                # Prompt for authentication for THIS operation on THIS item
-                if not self.password_service.authenticate_for("save", item_id, self.get_root()):
-                    logger.info("Authentication failed or cancelled for save")
-                    self.window.show_notification("Authentication required to save secret")
-                    return
-                else:
-                    logger.info("Authentication successful for save")
-            else:
-                logger.info("Already authenticated for save")
-
-            # Fetch real content for saving
-            logger.info(f"Fetching real content for secret item {item_id} for save")
-            real_content = self.ws_service.fetch_secret_content(item_id)
-            if not real_content:
-                self.window.show_notification("Failed to retrieve secret content")
-                # Consume authentication even on failure
-                self.password_service.consume_authentication("save", item_id)
-                return
-            logger.info(f"Retrieved secret content for save (length: {len(str(real_content))})")
-
-            # Temporarily replace content for saving
-            original_content = self.item.get("content")
-            self.item["content"] = real_content
-            self._show_save_dialog()
-            # Restore placeholder
-            self.item["content"] = original_content
-            # Consume authentication after successful save
-            self.password_service.consume_authentication("save", item_id)
-        else:
-            self._show_save_dialog()
-
     def _on_tags_action(self):
-        """Handle tags button click - show tags popover."""
-        self._show_tags_popover()
-
-    def _on_secret_action(self):
-        """Handle secret button click - toggle secret status."""
-        item_id = self.item.get("id")
-        current_is_secret = self.item.get("is_secret", False)
-        item_name = self.item.get("name")
-
-        # If currently a secret, require authentication before unmarking
-        if current_is_secret:
-            logger.info(f"Item {item_id} is secret, checking authentication for unmark")
-            # Check if authenticated for THIS specific toggle_secret operation on THIS item
-            if not self.password_service.is_authenticated_for("toggle_secret", item_id):
-                logger.info("Not authenticated for unmark, prompting for password")
-                # Prompt for authentication for THIS operation on THIS item
-                if not self.password_service.authenticate_for("toggle_secret", item_id, self.get_root()):
-                    logger.info("Authentication failed or cancelled for unmark")
-                    self.window.show_notification("Authentication required to unmark secret")
-                    return
-                else:
-                    logger.info("Authentication successful for unmark")
-            else:
-                logger.info("Already authenticated for unmark")
-
-            # Show confirmation dialog after authentication
-            dialog = Adw.AlertDialog.new(
-                "Unmark as Secret?",
-                "Are you sure you want to remove secret protection from this item? The content will become visible."
-            )
-            dialog.add_response("cancel", "Cancel")
-            dialog.add_response("confirm", "Unmark as Secret")
-            dialog.set_response_appearance("confirm", Adw.ResponseAppearance.DESTRUCTIVE)
-            dialog.set_default_response("cancel")
-            dialog.set_close_response("cancel")
-
-            def on_response(dialog_obj, response):
-                if response == "confirm":
-                    self.ws_service.toggle_secret_status(item_id, False, item_name)
-                # Consume authentication regardless of user choice (confirm or cancel)
-                self.password_service.consume_authentication("toggle_secret", item_id)
-
-            dialog.connect("response", on_response)
-            dialog.present(self.get_root())
-
-        # If marking as secret and item has no name, show naming dialog
-        elif not item_name:
-            def on_name_provided(name):
-                self.ws_service.toggle_secret_status(item_id, True, name)
-
-            dialog = SecretNamingDialog(self.get_root(), on_name_provided)
-            dialog.show()
-        else:
-            # Item already has name, just mark as secret
-            self.ws_service.toggle_secret_status(item_id, True, item_name)
-
-
+        """Handle tags button click - delegate to tag manager."""
+        if self.tag_manager:
+            self.tag_manager.handle_tags_action()
 
     def _display_tags(self, tags):
-        """Display tags in the tags overlay."""
-        # Remove old tags widget
-        if self.tags_widget:
-            self.overlay.remove_overlay(self.tags_widget)
-
-        # Create new tags widget
-        tags_component = ItemTags(tags=tags, on_click=self._on_tags_action)
-        self.tags_widget = tags_component.build()
-
-        # Add new tags widget to overlay
-        self.overlay.add_overlay(self.tags_widget)
-
-        # Force GTK to show and redraw the tags
-        self.tags_widget.show()
-        self.overlay.queue_draw()
-        self.card_frame.queue_draw()
-
-        return False  # For GLib.idle_add
-
-    def _on_delete_action(self):
-        """Handle delete button click - show confirmation dialog."""
-        window = self.get_root()
-
-        # Create confirmation dialog
-        dialog = Adw.AlertDialog.new(
-            "Delete this item?",
-            "This item will be permanently removed from your clipboard history.",
-        )
-
-        dialog.add_response("cancel", "Nah")
-        dialog.add_response("delete", "Yeah")
-        dialog.set_response_appearance(
-            "delete", Adw.ResponseAppearance.SUGGESTED
-        )
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
-
-        def on_response(dialog, response):
-            if response == "delete":
-                self.ws_service.delete_item_from_server(self.item["id"])
-
-        dialog.connect("response", on_response)
-        dialog.present(window)
-
-    def _show_tags_popover(self):
-        """Show popover to manage tags for this item."""
-        # Create popover
-        popover = Gtk.Popover()
-        # Anchor to the tags button if available, otherwise the row
-        if hasattr(self, "actions") and hasattr(self.actions, "tags_button"):
-            popover.set_parent(self.actions.tags_button)
-            popover.set_position(Gtk.PositionType.BOTTOM)
-        else:
-            popover.set_parent(self)
-        popover.set_autohide(True)
-
-        # Content box
-        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        content_box.set_margin_top(12)
-        content_box.set_margin_bottom(12)
-        content_box.set_margin_start(12)
-        content_box.set_margin_end(12)
-
-        # Title
-        title = Gtk.Label()
-        title.set_markup("<b>Manage Tags</b>")
-        title.set_halign(Gtk.Align.START)
-        content_box.append(title)
-
-        # Scrollable tag list
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_max_content_height(300)
-        scroll.set_propagate_natural_height(True)
-
-        # Tag list box
-        tag_list = Gtk.ListBox()
-        tag_list.set_selection_mode(Gtk.SelectionMode.NONE)
-        tag_list.add_css_class("boxed-list")
-
-        # Get item's current tags
-        item_id = self.item.get("id")
-        item_tags = self.item.get("tags", [])
-        item_tag_ids = [
-            tag.get("id") for tag in item_tags if isinstance(tag, dict)
-        ]
-
-        # Add all tags as checkbuttons
-        if hasattr(self.window, "all_tags"):
-            for tag in self.window.all_tags:
-                # Skip system tags
-                if tag.get("is_system"):
-                    continue
-
-                tag_id = tag.get("id")
-                tag_name = tag.get("name", "")
-                tag_color = tag.get("color", "#9a9996")
-
-                # Create row with checkbutton
-                row = Gtk.ListBoxRow()
-                row_box = Gtk.Box(
-                    orientation=Gtk.Orientation.HORIZONTAL, spacing=12
-                )
-                row_box.set_margin_top(6)
-                row_box.set_margin_bottom(6)
-                row_box.set_margin_start(6)
-                row_box.set_margin_end(6)
-
-                # Color indicator
-                color_box = Gtk.Box()
-                color_box.set_size_request(16, 16)
-                css_provider = Gtk.CssProvider()
-                css_data = f"box {{ background-color: {tag_color}; border-radius: 3px; }}"
-                css_provider.load_from_data(css_data.encode())
-                color_box.get_style_context().add_provider(
-                    css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-                )
-                row_box.append(color_box)
-
-                # Checkbutton with tag name
-                check = Gtk.CheckButton()
-                check.set_label(tag_name)
-                check.set_hexpand(True)
-                check.set_active(tag_id in item_tag_ids)
-                check.connect(
-                    "toggled",
-                    lambda cb, tid=tag_id, iid=item_id: self._on_tag_toggle(
-                        cb, tid, iid, popover
-                    ),
-                )
-                row_box.append(check)
-
-                row.set_child(row_box)
-                tag_list.append(row)
-
-            # No tags message
-            if not any(
-                not tag.get("is_system") for tag in self.window.all_tags
-            ):
-                no_tags_label = Gtk.Label()
-                no_tags_label.set_markup(
-                    "<i>No custom tags available.\nCreate tags in the Tags tab.</i>"
-                )
-                no_tags_label.set_justify(Gtk.Justification.CENTER)
-                content_box.append(no_tags_label)
-
-        scroll.set_child(tag_list)
-        content_box.append(scroll)
-
-        popover.set_child(content_box)
-        popover.popup()
-
-    def _on_tag_drop(self, drop_target, value, x, y):
-        """Handle tag drop on item."""
-        logger.info(f"[TAG_DROP] Received drop - value: {value}, type: {type(value)}")
-        try:
-            tag_id = value
-            item_id = self.item.get("id")
-            logger.info(f"[TAG_DROP] Attempting to add tag {tag_id} to item {item_id}")
-            if hasattr(self.window, "_on_tag_dropped_on_item"):
-                self.window._on_tag_dropped_on_item(tag_id, item_id)
-                logger.info(f"[TAG_DROP] Successfully called _on_tag_dropped_on_item")
-            else:
-                logger.error("[TAG_DROP] window._on_tag_dropped_on_item method not found")
-            return True
-        except Exception as e:
-            logger.error(f"[TAG_DROP] Error in _on_tag_drop: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-
-    def _on_tag_toggle(self, checkbutton, tag_id, item_id, popover):
-        """Handle tag checkbox toggle."""
-        is_active = checkbutton.get_active()
-
-        def send_tag_update():
-            try:
-
-                async def update_tag():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
-                        action = "add_tag" if is_active else "remove_tag"
-                        request = {
-                            "action": action,
-                            "item_id": item_id,
-                            "tag_id": tag_id,
-                        }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
-
-                        if data.get("type") in ["tag_added", "tag_removed"]:
-                            # Reload tags for this item
-                            GLib.idle_add(self.ws_service.load_item_tags)
-                            # Notify window to refresh if needed
-                            if hasattr(self.window, "_on_item_tags_changed"):
-                                GLib.idle_add(
-                                    self.window._on_item_tags_changed, item_id
-                                )
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(update_tag())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.error(f"[UI] Error toggling tag: {e}")
-                # Revert checkbox on error
-                GLib.idle_add(lambda: checkbutton.set_active(not is_active))
-
-        threading.Thread(target=send_tag_update, daemon=True).start()
+        """Display tags in the tags overlay - delegate to tag manager."""
+        if self.tag_manager:
+            self.tag_manager.display_tags(tags)
 
     def _on_card_clicked(self, gesture, n_press, x, y):
         """Handle card clicks - single click copies."""
         if n_press == 1:
             # Single click - copy to clipboard
             self._on_row_clicked(self)
-
-
-    def _show_save_dialog(self):
-        """Show file save dialog."""
-        item_type = self.item["type"]
-        self.item["id"]
-
-        # Create file chooser dialog
-        dialog = Gtk.FileDialog()
-
-        # Set default filename based on type
-        custom_name = self.item.get("name")
-        if item_type == "text" or item_type == "url":
-            filename = (
-                f"{custom_name}.txt"
-                if custom_name and not custom_name.endswith(".txt")
-                else custom_name
-                or ("url.txt" if item_type == "url" else "clipboard.txt")
-            )
-            dialog.set_initial_name(filename)
-        elif item_type.startswith("image/"):
-            ext = item_type.split("/")[-1]
-            filename = (
-                f"{custom_name}.{ext}"
-                if custom_name and not custom_name.endswith(f".{ext}")
-                else custom_name or f"clipboard.{ext}"
-            )
-            dialog.set_initial_name(filename)
-        elif item_type == "screenshot":
-            filename = (
-                f"{custom_name}.png"
-                if custom_name and not custom_name.endswith(".png")
-                else custom_name or "screenshot.png"
-            )
-            dialog.set_initial_name(filename)
-
-        window = self.get_root()
-
-        def on_save_finish(dialog_obj, result):
-            try:
-                file = dialog_obj.save_finish(result)
-                if file:
-                    path = file.get_path()
-                    if item_type == "text" or item_type == "url":
-                        with open(path, "w") as f:
-                            f.write(self.item["content"])
-                        logger.info(
-                            f"Saved {'URL' if item_type == 'url' else 'text'} to {path}"
-                        )
-                    elif (
-                        item_type.startswith("image/")
-                        or item_type == "screenshot"
-                    ):
-                        # Save image from base64 data
-                        image_data = base64.b64decode(self.item["content"])
-                        with open(path, "wb") as f:
-                            f.write(image_data)
-                        logger.info(f"Saved image to {path}")
-            except Exception as e:
-                logger.error(f"Error saving file: {e}")
-
-        dialog.save(window, None, on_save_finish)
-
-    def _show_view_dialog(self):
-        """Show full item view dialog."""
-        item_type = self.item["type"]
-        window = self.get_root()
-
-        dialog = Adw.Window(modal=True, transient_for=window)
-        dialog.set_title("Full Clipboard Item")
-        dialog.set_default_size(800, 600)
-
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        main_box.set_margin_start(18)
-        main_box.set_margin_end(18)
-        main_box.set_margin_top(12)
-        main_box.set_margin_bottom(12)
-
-        # Header with close button
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        header_box.set_hexpand(True)
-
-        spacer = Gtk.Box()
-        spacer.set_hexpand(True)
-        header_box.append(spacer)
-
-        close_button = Gtk.Button()
-        close_button.set_icon_name("window-close-symbolic")
-        close_button.set_tooltip_text("Close")
-        close_button.connect("clicked", lambda btn: dialog.close())
-        header_box.append(close_button)
-
-        main_box.append(header_box)
-
-        # Content area
-        content_scroll = Gtk.ScrolledWindow()
-        content_scroll.set_vexpand(True)
-        content_scroll.set_hexpand(True)
-
-        if item_type == "text" or item_type == "url":
-            content_label = Gtk.Label(label=self.item["content"])
-            content_label.set_wrap(True)
-            content_label.set_selectable(True)
-            content_label.set_halign(Gtk.Align.START)
-            content_label.set_valign(Gtk.Align.START)
-            content_scroll.set_child(content_label)
-
-        elif item_type.startswith("image/") or item_type == "screenshot":
-            image_data = base64.b64decode(self.item["content"])
-            loader = GdkPixbuf.PixbufLoader()
-            loader.write(image_data)
-            loader.close()
-            pixbuf = loader.get_pixbuf()
-            texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-
-            picture = Gtk.Picture.new_for_paintable(texture)
-            picture.set_halign(Gtk.Align.CENTER)
-            picture.set_valign(Gtk.Align.CENTER)
-            picture.set_content_fit(Gtk.ContentFit.CONTAIN)
-            content_scroll.set_child(picture)
-
-        elif item_type == "file":
-            file_metadata = self.item.get("content", {})
-            is_directory = file_metadata.get("is_directory", False)
-            original_path = file_metadata.get("original_path", "")
-
-            if is_directory and original_path and Path(original_path).exists():
-                # Show folder contents with FileChooserWidget
-                folder_box = Gtk.Box(
-                    orientation=Gtk.Orientation.VERTICAL, spacing=12
-                )
-
-                # Info label
-                info_label = Gtk.Label()
-                folder_name = file_metadata.get("name", "Folder")
-                info_label.set_markup(
-                    f"<b>Folder:</b> {GLib.markup_escape_text(folder_name)}"
-                )
-                info_label.set_halign(Gtk.Align.START)
-                folder_box.append(info_label)
-
-                # Path label
-                path_label = Gtk.Label(label=original_path)
-                path_label.add_css_class("caption")
-                path_label.add_css_class("dim-label")
-                path_label.set_halign(Gtk.Align.START)
-                path_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-                folder_box.append(path_label)
-
-                # FileChooserWidget to show folder tree
-                file_chooser = Gtk.FileChooserWidget(
-                    action=Gtk.FileChooserAction.OPEN
-                )
-                file_chooser.set_current_folder(
-                    Gio.File.new_for_path(original_path)
-                )
-                file_chooser.set_vexpand(True)
-                file_chooser.set_hexpand(True)
-
-                folder_box.append(file_chooser)
-                content_scroll.set_child(folder_box)
-            else:
-                # Regular file or folder doesn't exist
-                file_info_box = Gtk.Box(
-                    orientation=Gtk.Orientation.VERTICAL, spacing=12
-                )
-                file_info_box.set_valign(Gtk.Align.CENTER)
-                file_info_box.set_halign(Gtk.Align.CENTER)
-
-                file_name = file_metadata.get("name", "Unknown file")
-                name_label = Gtk.Label()
-                name_label.set_markup(
-                    f"<b>{GLib.markup_escape_text(file_name)}</b>"
-                )
-                file_info_box.append(name_label)
-
-                if original_path:
-                    if not Path(original_path).exists():
-                        error_label = Gtk.Label(
-                            label="File/folder no longer exists at original location"
-                        )
-                        error_label.add_css_class("dim-label")
-                        file_info_box.append(error_label)
-
-                    path_label = Gtk.Label(label=original_path)
-                    path_label.add_css_class("caption")
-                    path_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-                    path_label.set_max_width_chars(50)
-                    file_info_box.append(path_label)
-
-                # File metadata details
-                details_box = Gtk.Box(
-                    orientation=Gtk.Orientation.VERTICAL, spacing=6
-                )
-                details_box.set_margin_top(12)
-
-                file_size = file_metadata.get("size", 0)
-                if file_size > 0:
-                    size_mb = file_size / (1024 * 1024)
-                    size_label = Gtk.Label(label=f"Size: {size_mb:.2f} MB")
-                    size_label.add_css_class("caption")
-                    details_box.append(size_label)
-
-                mime_type = file_metadata.get("mime_type", "")
-                if mime_type:
-                    type_label = Gtk.Label(label=f"Type: {mime_type}")
-                    type_label.add_css_class("caption")
-                    details_box.append(type_label)
-
-                file_info_box.append(details_box)
-                content_scroll.set_child(file_info_box)
-
-        main_box.append(content_scroll)
-        dialog.set_content(main_box)
-        dialog.present()
