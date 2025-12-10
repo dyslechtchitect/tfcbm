@@ -1,0 +1,9 @@
+{
+  "name": "Popup App Hotkey",
+  "description": "Global hotkey support for Popup App",
+  "uuid": "popup-app-hotkey@example.com",
+  "shell-version": [
+    "45"
+  ],
+  "url": ""
+}
