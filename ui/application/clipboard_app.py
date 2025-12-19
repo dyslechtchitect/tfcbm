@@ -96,6 +96,10 @@ class ClipboardApp(Adw.Application):
                     <method name="Activate">
                         <arg type="u" name="timestamp" direction="in"/>
                     </method>
+                    <method name="ShowSettings">
+                        <arg type="u" name="timestamp" direction="in"/>
+                    </method>
+                    <method name="Exit"/>
                 </interface>
             </node>
             """
@@ -157,6 +161,47 @@ class ClipboardApp(Adw.Application):
 
                 except Exception as e:
                     logger.error(f"Error toggling window: {e}")
+
+        elif method_name == "ShowSettings":
+            timestamp = parameters.unpack()[0] if parameters else 0
+            logger.info(f"DBus ShowSettings called with timestamp {timestamp}")
+
+            invocation.return_value(None)
+
+            win = self.props.active_window
+            if win:
+                try:
+                    # Show window if hidden
+                    if not win.is_visible():
+                        win.show()
+                        win.unminimize()
+                        win.present()
+
+                    # Navigate to settings page
+                    GLib.idle_add(win._show_settings_page, None)
+                    logger.info("Navigated to settings page via DBus")
+
+                except Exception as e:
+                    logger.error(f"Error showing settings: {e}")
+
+        elif method_name == "Exit":
+            logger.info("DBus Exit called")
+
+            invocation.return_value(None)
+
+            # Kill backend server if we have the PID
+            if self.server_pid:
+                try:
+                    import signal
+                    import os
+                    os.kill(self.server_pid, signal.SIGTERM)
+                    logger.info(f"Sent SIGTERM to backend server (PID: {self.server_pid})")
+                except Exception as e:
+                    logger.error(f"Error killing backend server: {e}")
+
+            # Quit the application
+            GLib.idle_add(self.quit)
+            logger.info("Application quit requested")
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""

@@ -474,98 +474,19 @@ class MainWindowBuilder:
         return flow_child
 
     def _create_settings_page(self):
-        settings_page = Adw.PreferencesPage()
+        # Use the proper SettingsPage class which includes keyboard shortcut recorder
+        from ui.pages.settings_page import SettingsPage
 
-        display_group = Adw.PreferencesGroup()
-        display_group.set_title("Display Settings")
-        display_group.set_description("Configure how clipboard items are displayed")
-
-        item_width_row = Adw.SpinRow()
-        item_width_row.set_title("Item Width")
-        item_width_row.set_subtitle("Width of clipboard item cards in pixels (50-1000)")
-        item_width_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.window.settings.settings.display.item_width,
-                lower=50,
-                upper=1000,
-                step_increment=10,
-                page_increment=50,
-                page_size=0,
-            )
+        settings_page_obj = SettingsPage(
+            settings=self.window.settings,
+            on_save=self.window._handle_settings_save,
+            on_notification=self.window.show_notification
         )
-        item_width_row.set_digits(0)
-        self.window.item_width_spin = item_width_row
-        display_group.add(item_width_row)
+        settings_page = settings_page_obj.build()
 
-        item_height_row = Adw.SpinRow()
-        item_height_row.set_title("Item Height")
-        item_height_row.set_subtitle("Height of clipboard item cards in pixels (50-1000)")
-        item_height_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.window.settings.settings.display.item_height,
-                lower=50,
-                upper=1000,
-                step_increment=10,
-                page_increment=50,
-                page_size=0,
-            )
-        )
-        item_height_row.set_digits(0)
-        self.window.item_height_spin = item_height_row
-        display_group.add(item_height_row)
-
-        page_length_row = Adw.SpinRow()
-        page_length_row.set_title("Max Page Length")
-        page_length_row.set_subtitle("Maximum number of items to load per page (1-100)")
-        page_length_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.window.settings.settings.display.max_page_length,
-                lower=1,
-                upper=100,
-                step_increment=1,
-                page_increment=10,
-                page_size=0,
-            )
-        )
-        page_length_row.set_digits(0)
-        self.window.page_length_spin = page_length_row
-        display_group.add(page_length_row)
-
-        settings_page.add(display_group)
-
-        storage_group = Adw.PreferencesGroup()
-        storage_group.set_title("Storage")
-        storage_group.set_description("Database storage information")
-
-        db_size_row = Adw.ActionRow()
-        db_size_row.set_title("Database Size")
-
-        db_path = Path.home() / ".local" / "share" / "tfcbm" / "clipboard.db"
-        if db_path.exists():
-            size_bytes = os.path.getsize(db_path)
-            size_mb = size_bytes / (1024 * 1024)
-            db_size_row.set_subtitle(f"{size_mb:.2f} MB")
-        else:
-            db_size_row.set_subtitle("Database not found")
-
-        storage_group.add(db_size_row)
-        settings_page.add(storage_group)
-
-        actions_group = Adw.PreferencesGroup()
-        actions_group.set_title("Actions")
-
-        save_row = Adw.ActionRow()
-        save_row.set_title("Save Settings")
-        save_row.set_subtitle("Apply changes and save to settings.yml")
-
-        save_button = Gtk.Button()
-        save_button.set_label("Apply & Save")
-        save_button.add_css_class("suggested-action")
-        save_button.set_valign(Gtk.Align.CENTER)
-        save_button.connect("clicked", self.window._on_save_settings)
-        save_row.add_suffix(save_button)
-
-        actions_group.add(save_row)
-        settings_page.add(actions_group)
+        # Store references to spin rows for compatibility
+        self.window.item_width_spin = settings_page_obj.item_width_spin
+        self.window.item_height_spin = settings_page_obj.item_height_spin
+        self.window.page_length_spin = settings_page_obj.page_length_spin
 
         return settings_page

@@ -39,12 +39,16 @@ export default class ClipboardMonitorExtension extends Extension {
                         connection.call_finish(result);
                         log('[TFCBM] UI activated successfully');
                     } catch (e) {
-                        log('[TFCBM] Error activating UI: ' + e.message);
+                        log('[TFCBM] Error activating UI, attempting to launch: ' + e.message);
+                        // If DBus call fails, the app is not running - launch it
+                        this._launchUI();
                     }
                 }
             );
         } catch (e) {
             log('[TFCBM] Error calling DBus: ' + e.message);
+            // If DBus call fails, the app is not running - launch it
+            this._launchUI();
         }
     }
 
@@ -56,14 +60,20 @@ export default class ClipboardMonitorExtension extends Extension {
 
             log(`[TFCBM] Attempting to launch from: ${projectPath}`);
 
-            // Launch using the venv python
-            GLib.spawn_async(
-                projectPath,
-                ['/bin/bash', '-c', `cd "${projectPath}" && .venv/bin/python3 ui/main.py`],
-                null,
-                GLib.SpawnFlags.SEARCH_PATH,
-                null
-            );
+            // Check if backend server is running, start it if not, and get its PID
+            // Then launch UI with the server PID
+            const launchCmd = `
+                cd "${projectPath}" && \
+                SERVER_PID=$(pgrep -f "tfcbm_server.py") && \
+                if [ -z "$SERVER_PID" ]; then \
+                    "${projectPath}/.venv/bin/python3" -u tfcbm_server.py >> /tmp/tfcbm_server.log 2>&1 & \
+                    sleep 2 && \
+                    SERVER_PID=$(pgrep -f "tfcbm_server.py"); \
+                fi && \
+                "${projectPath}/.venv/bin/python3" ui/main.py --server-pid=$SERVER_PID >> /tmp/tfcbm_ui.log 2>&1 &
+            `;
+
+            GLib.spawn_command_line_async(`/bin/bash -c '${launchCmd}'`);
 
             log('[TFCBM] UI launch command sent');
         } catch (e) {
@@ -71,17 +81,104 @@ export default class ClipboardMonitorExtension extends Extension {
         }
     }
 
-    _showAbout() {
-        log('[TFCBM] Showing about dialog...');
-        // We'll trigger the UI and let it show the about dialog
-        this._toggleUI();
+    _showSettings() {
+        log('[TFCBM] Opening settings page...');
+        try {
+            const timestamp = global.display.get_current_time_roundtrip();
+            Gio.DBus.session.call(
+                DBUS_NAME,
+                DBUS_PATH,
+                DBUS_IFACE,
+                'ShowSettings',
+                new GLib.Variant('(u)', [timestamp]),
+                null,
+                Gio.DBusCallFlags.NONE,
+                -1,
+                null,
+                (connection, result) => {
+                    try {
+                        connection.call_finish(result);
+                        log('[TFCBM] Settings page opened successfully');
+                    } catch (e) {
+                        log('[TFCBM] Error opening settings, attempting to launch: ' + e.message);
+                        // If DBus call fails, the app is not running - launch it
+                        this._launchUI();
+                    }
+                }
+            );
+        } catch (e) {
+            log('[TFCBM] Error calling DBus ShowSettings: ' + e.message);
+            // If DBus call fails, the app is not running - launch it
+            this._launchUI();
+        }
     }
 
-    _openSettings() {
-        log('[TFCBM] Opening settings...');
-        // We'll trigger the UI to show settings page
-        // The UI can detect this via a DBus call parameter in the future
-        this._toggleUI();
+    _confirmExit() {
+        log('[TFCBM] Confirming exit...');
+
+        // Import dialog dependencies
+        const ModalDialog = imports.ui.modalDialog;
+        const Dialog = imports.ui.dialog;
+        const Clutter = imports.gi.Clutter;
+
+        // Create confirmation dialog
+        const dialog = new ModalDialog.ModalDialog();
+
+        const content = new Dialog.MessageDialogContent({
+            title: 'Exit TFCBM?',
+            description: 'Are you sure you want to exit TFCBM?\n\nThis will close the clipboard manager and stop monitoring clipboard changes.'
+        });
+        dialog.contentLayout.add_child(content);
+
+        // Add "Cancel" button
+        dialog.addButton({
+            label: 'Nah',
+            action: () => {
+                log('[TFCBM] Exit cancelled');
+                dialog.close();
+            },
+            key: Clutter.KEY_Escape
+        });
+
+        // Add "Exit" button
+        dialog.addButton({
+            label: 'Yea',
+            action: () => {
+                log('[TFCBM] Exit confirmed, calling DBus Exit...');
+                dialog.close();
+                this._exitApp();
+            },
+            default: true
+        });
+
+        dialog.open();
+    }
+
+    _exitApp() {
+        log('[TFCBM] Exiting application...');
+        try {
+            Gio.DBus.session.call(
+                DBUS_NAME,
+                DBUS_PATH,
+                DBUS_IFACE,
+                'Exit',
+                null,
+                null,
+                Gio.DBusCallFlags.NONE,
+                -1,
+                null,
+                (connection, result) => {
+                    try {
+                        connection.call_finish(result);
+                        log('[TFCBM] Application exited successfully');
+                    } catch (e) {
+                        log('[TFCBM] Error exiting application: ' + e.message);
+                    }
+                }
+            );
+        } catch (e) {
+            log('[TFCBM] Error calling DBus Exit: ' + e.message);
+        }
     }
 
     enable() {
@@ -147,16 +244,19 @@ export default class ClipboardMonitorExtension extends Extension {
             const settingsItem = new PopupMenu.PopupMenuItem('Settings');
             settingsItem.connect('activate', () => {
                 log('[TFCBM] Settings menu item clicked');
-                this._openSettings();
+                this._showSettings();
             });
             this._indicator.menu.addMenuItem(settingsItem);
 
-            const aboutItem = new PopupMenu.PopupMenuItem('About');
-            aboutItem.connect('activate', () => {
-                log('[TFCBM] About menu item clicked');
-                this._showAbout();
+            // Add separator
+            this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+            const exitItem = new PopupMenu.PopupMenuItem('Exit');
+            exitItem.connect('activate', () => {
+                log('[TFCBM] Exit menu item clicked');
+                this._confirmExit();
             });
-            this._indicator.menu.addMenuItem(aboutItem);
+            this._indicator.menu.addMenuItem(exitItem);
 
             // Left-click handler - toggle UI
             this._indicator.connect('button-press-event', (actor, event) => {
