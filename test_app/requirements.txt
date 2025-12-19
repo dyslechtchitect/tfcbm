@@ -1,0 +1,21 @@
+# Shortcut Recorder POC - Python Dependencies
+# Python 3.14 compatible
+
+# Testing framework
+pytest==8.3.4
+pytest-cov==6.0.0
+
+# GTK and GNOME libraries (system packages, listed for documentation)
+# Install with: sudo dnf install python3-gobject gtk4 libadwaita
+# - PyGObject (gi)
+# - GTK 4.0
+# - Libadwaita 1
+
+# Code quality (optional, for development)
+black==24.10.0
+flake8==7.1.1
+mypy==1.14.0
+isort==5.13.2
+
+# Type stubs for better type checking
+types-setuptools==80.9.0.20250822
