@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import threading
 from typing import Callable, Optional, Set
 
@@ -40,6 +41,10 @@ class WebSocketClient:
                 self._websocket = await websockets.connect(self.uri, max_size=self.max_size, open_timeout=5) # 5 seconds timeout
                 self._is_connected = True
                 logger.info("Connected to WebSocket server")
+
+                # Register UI PID with server for cleanup
+                await self._register_ui_pid()
+
                 await self._listen_for_messages()
             except websockets.exceptions.ConnectionClosedError:
                 logger.info("WebSocket connection closed")
@@ -50,12 +55,22 @@ class WebSocketClient:
                 self._reconnect_attempt += 1
                 logger.warning(f"WebSocket connection failed: {e}. Retrying in {2 ** self._reconnect_attempt} seconds...")
                 await asyncio.sleep(2 ** self._reconnect_attempt) # Exponential backoff
-        
+
         if not self._is_connected:
             logger.error("Failed to connect to WebSocket server after multiple attempts.")
             if self.on_error:
                 GLib.idle_add(self.on_error, "Failed to connect to WebSocket server.")
             self.stop() # Stop the client if unable to connect
+
+    async def _register_ui_pid(self):
+        """Register UI process PID with server for cleanup when server exits"""
+        try:
+            ui_pid = os.getpid()
+            request = {"action": "register_ui_pid", "pid": ui_pid}
+            await self._websocket.send(json.dumps(request))
+            logger.info(f"Registered UI PID {ui_pid} with server")
+        except Exception as e:
+            logger.error(f"Failed to register UI PID: {e}")
 
     async def _listen_for_messages(self):
         self._listener_running = True # Set flag to True

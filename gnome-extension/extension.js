@@ -63,14 +63,16 @@ export default class ClipboardMonitorExtension extends Extension {
             // Check if backend server is running, start it if not, and get its PID
             // Then launch UI with the server PID
             const launchCmd = `
-                cd "${projectPath}" && \
-                SERVER_PID=$(pgrep -f "tfcbm_server.py") && \
-                if [ -z "$SERVER_PID" ]; then \
-                    "${projectPath}/.venv/bin/python3" -u tfcbm_server.py >> /tmp/tfcbm_server.log 2>&1 & \
-                    sleep 2 && \
-                    SERVER_PID=$(pgrep -f "tfcbm_server.py"); \
-                fi && \
-                "${projectPath}/.venv/bin/python3" ui/main.py --server-pid=$SERVER_PID >> /tmp/tfcbm_ui.log 2>&1 &
+                cd "${projectPath}" || exit 1
+                SERVER_PID=$(pgrep -f "tfcbm_server.py")
+                if [ -z "$SERVER_PID" ]; then
+                    "${projectPath}/.venv/bin/python3" -u tfcbm_server.py >> /tmp/tfcbm_server.log 2>&1 &
+                    sleep 2
+                    SERVER_PID=$(pgrep -f "tfcbm_server.py")
+                fi
+                if [ -n "$SERVER_PID" ]; then
+                    "${projectPath}/.venv/bin/python3" ui/main.py --server-pid="$SERVER_PID" >> /tmp/tfcbm_ui.log 2>&1 &
+                fi
             `;
 
             GLib.spawn_command_line_async(`/bin/bash -c '${launchCmd}'`);
@@ -170,14 +172,29 @@ export default class ClipboardMonitorExtension extends Extension {
                 (connection, result) => {
                     try {
                         connection.call_finish(result);
-                        log('[TFCBM] Application exited successfully');
+                        log('[TFCBM] Application exited successfully via DBus');
                     } catch (e) {
-                        log('[TFCBM] Error exiting application: ' + e.message);
+                        log('[TFCBM] Error exiting via DBus, killing processes directly: ' + e.message);
+                        this._killProcesses();
                     }
                 }
             );
         } catch (e) {
-            log('[TFCBM] Error calling DBus Exit: ' + e.message);
+            log('[TFCBM] Error calling DBus Exit, killing processes directly: ' + e.message);
+            this._killProcesses();
+        }
+    }
+
+    _killProcesses() {
+        log('[TFCBM] Killing TFCBM processes directly...');
+        try {
+            // Kill UI processes
+            GLib.spawn_command_line_async('/bin/bash -c "pkill -f \'python.*ui/main.py\'"');
+            // Kill server processes
+            GLib.spawn_command_line_async('/bin/bash -c "pkill -f \'python.*tfcbm_server.py\'"');
+            log('[TFCBM] Kill commands sent');
+        } catch (e) {
+            log('[TFCBM] Error killing processes: ' + e.message);
         }
     }
 

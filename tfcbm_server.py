@@ -10,8 +10,10 @@ import logging
 import mimetypes
 import os
 import re
+import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -49,6 +51,9 @@ db_lock = threading.Lock()  # Lock for thread-safe database access
 
 # Thread pool for thumbnail generation
 thumbnail_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumbnail")
+
+# Track UI process PID for cleanup
+ui_pid = None
 
 
 def generate_thumbnail(image_data: bytes, max_size: int = 250) -> bytes:
@@ -406,6 +411,18 @@ async def websocket_handler(websocket):
                     ui_items = [prepare_item_for_ui(item) for item in items]
 
                     response = {"type": "history", "items": ui_items, "total_count": total_count, "offset": offset}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "register_ui_pid":
+                    # Register UI process PID for cleanup when server exits
+                    global ui_pid
+                    pid = data.get("pid")
+                    if pid:
+                        ui_pid = pid
+                        logging.info(f"Registered UI PID: {ui_pid}")
+                        response = {"type": "ui_pid_registered", "success": True}
+                    else:
+                        response = {"type": "ui_pid_registered", "success": False, "error": "pid is required"}
                     await websocket.send(json.dumps(response))
 
                 elif action == "get_full_image":
@@ -836,8 +853,32 @@ async def start_websocket_server():
         await asyncio.Future()  # Run forever
 
 
+def signal_handler(signum, frame):
+    """Handle shutdown signals and cleanup"""
+    global ui_pid
+    logging.info(f"\nReceived signal {signum}, shutting down...")
+
+    # Kill UI process if it's running
+    if ui_pid:
+        try:
+            logging.info(f"Killing UI process (PID: {ui_pid})...")
+            os.kill(ui_pid, signal.SIGTERM)
+            logging.info("UI process terminated")
+        except ProcessLookupError:
+            logging.info("UI process already terminated")
+        except Exception as e:
+            logging.error(f"Error killing UI process: {e}")
+
+    logging.info("Server shutdown complete")
+    sys.exit(0)
+
+
 def start_server():
     """Start UNIX socket server to receive clipboard data"""
+    # Set up signal handlers for cleanup
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
     socket_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "simple-clipboard.sock")
 
     # Remove existing socket if it exists
