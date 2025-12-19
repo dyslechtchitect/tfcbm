@@ -96,9 +96,12 @@ export default class ShortcutRecorderExtension extends Extension {
             });
 
             // Add to the panel
+            log('[ShortcutRecorder] Adding indicator to panel...');
             Main.panel.addToStatusArea('shortcut-recorder-indicator', this._indicator);
+            log('[ShortcutRecorder] Indicator added to panel successfully!');
 
             // Add the keybinding
+            log('[ShortcutRecorder] Adding keybinding...');
             Main.wm.addKeybinding(
                 'toggle-shortcut-recorder',
                 this._settings,
@@ -109,9 +112,10 @@ export default class ShortcutRecorderExtension extends Extension {
                     this._toggleWindow();
                 }
             );
+            log('[ShortcutRecorder] Keybinding added successfully!');
 
-            log('[ShortcutRecorder] Extension enabled successfully');
-            log('[ShortcutRecorder] Tray icon added - click to launch/focus app');
+            log('[ShortcutRecorder] === Extension enabled successfully ===');
+            log('[ShortcutRecorder] Tray icon should be visible in top panel');
             log('[ShortcutRecorder] Press Ctrl+Shift+K to toggle the window');
         } catch (e) {
             log('[ShortcutRecorder] Error enabling extension: ' + e);
