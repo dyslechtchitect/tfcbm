@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.shortcut-recorder-poc" path="/org/gnome/shell/extensions/shortcut-recorder-poc/">
+    <key name="toggle-shortcut-recorder" type="as">
+      <default>['&lt;Ctrl&gt;&lt;Shift&gt;k']</default>
+      <summary>Toggle Shortcut Recorder window</summary>
+      <description>Keyboard shortcut to show/hide the Shortcut Recorder window</description>
+    </key>
+  </schema>
+</schemalist>

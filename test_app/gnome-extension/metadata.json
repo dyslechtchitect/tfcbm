@@ -1,9 +1,14 @@
 {
-  "name": "Popup App Hotkey",
-  "description": "Global hotkey support for Popup App",
-  "uuid": "popup-app-hotkey@example.com",
+  "name": "Shortcut Recorder POC",
+  "description": "POC for keyboard shortcut activation using GApplication Actions",
+  "uuid": "shortcut-recorder-poc@example.org",
   "shell-version": [
-    "45"
+    "45",
+    "46",
+    "47",
+    "48",
+    "49"
   ],
-  "url": ""
+  "version": 1,
+  "settings-schema": "org.gnome.shell.extensions.shortcut-recorder-poc"
 }

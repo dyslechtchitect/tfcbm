@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Popup App Activator
-Exec=/home/ron/Documents/git/test_app/activate_app.sh
-NoDisplay=true
-Terminal=false

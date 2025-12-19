@@ -1,93 +1,137 @@
-/* extension.js
- *
- * Simple GNOME Shell extension to provide global hotkey for Popup App
- * This avoids the notification that appears with custom-keybindings on Wayland
- */
-
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import Meta from 'gi://Meta';
-import Shell from 'gi://Shell';
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const DBUS_NAME = 'com.example.PopupApp';
-const DBUS_PATH = '/com/example/PopupApp';
-const DBUS_INTERFACE = 'com.example.PopupApp';
+const APP_ID = 'org.example.ShortcutRecorder';
+const DBUS_NAME = APP_ID;
+const DBUS_PATH = '/org/example/ShortcutRecorder';
 
-export default class PopupAppHotkeyExtension {
-    constructor() {
+export default class ShortcutRecorderExtension extends Extension {
+    constructor(metadata) {
+        super(metadata);
         this._settings = null;
+        this._indicator = null;
     }
 
-    enable() {
-        console.log('Enabling Popup App Hotkey extension');
+    _launchOrFocusApp() {
+        log('[ShortcutRecorder] Launching or focusing app...');
 
-        // Add keybinding
-        Main.wm.addKeybinding(
-            'popup-app-hotkey',
-            this._getSettings(),
-            Meta.KeyBindingFlags.NONE,
-            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
-            () => this._activateApp()
+        // First, try to focus existing window via DBus
+        Gio.DBus.session.call(
+            DBUS_NAME,
+            DBUS_PATH,
+            'org.gtk.Actions',
+            'Activate',
+            new GLib.Variant('(sava{sv})', ['show-window', [], {}]),
+            null,
+            Gio.DBusCallFlags.NONE,
+            -1,
+            null,
+            (connection, result) => {
+                try {
+                    connection.call_finish(result);
+                    log('[ShortcutRecorder] Window toggled successfully');
+                } catch (e) {
+                    // App not running, launch it
+                    log('[ShortcutRecorder] App not running, launching...');
+                    this._launchApp();
+                }
+            }
         );
     }
 
-    disable() {
-        console.log('Disabling Popup App Hotkey extension');
-
-        // Remove keybinding
-        Main.wm.removeKeybinding('popup-app-hotkey');
-
-        this._settings = null;
-    }
-
-    _getSettings() {
-        if (!this._settings) {
-            const GioSSS = Gio.SettingsSchemaSource;
-            const schemaDir = GLib.build_filenamev([
-                import.meta.url.slice(7, import.meta.url.lastIndexOf('/')),
-                'schemas'
-            ]);
-            const schemaSource = GioSSS.new_from_directory(
-                schemaDir,
-                GioSSS.get_default(),
-                false
-            );
-            const schema = schemaSource.lookup(
-                'org.gnome.shell.extensions.popup-app-hotkey',
-                false
-            );
-            this._settings = new Gio.Settings({ settings_schema: schema });
-        }
-        return this._settings;
-    }
-
-    _activateApp() {
-        console.log('Hotkey pressed, activating Popup App');
-
-        // Call D-Bus method to activate the app
+    _launchApp() {
         try {
-            Gio.DBus.session.call(
-                DBUS_NAME,
-                DBUS_PATH,
-                DBUS_INTERFACE,
-                'Activate',
+            // Get the directory where the extension is installed
+            const extensionPath = this.metadata.path;
+            const appPath = extensionPath.replace('/gnome-shell/extensions/' + this.metadata.uuid, '');
+
+            log(`[ShortcutRecorder] Attempting to launch from: ${appPath}`);
+
+            // Launch the app using run.sh or main.py
+            GLib.spawn_async(
+                appPath,
+                ['bash', appPath + '/run.sh'],
                 null,
-                null,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                null,
-                (connection, result) => {
-                    try {
-                        connection.call_finish(result);
-                        console.log('Successfully activated Popup App');
-                    } catch (e) {
-                        console.error(`Failed to activate Popup App: ${e.message}`);
-                    }
+                GLib.SpawnFlags.SEARCH_PATH,
+                null
+            );
+
+            log('[ShortcutRecorder] Launch command sent');
+        } catch (e) {
+            log('[ShortcutRecorder] Error launching app: ' + e.message);
+        }
+    }
+
+    _toggleWindow() {
+        log('[ShortcutRecorder] Keyboard shortcut pressed!');
+        this._launchOrFocusApp();
+    }
+
+    enable() {
+        log('[ShortcutRecorder] Enabling extension...');
+
+        try {
+            this._settings = this.getSettings();
+
+            // Create the system tray indicator
+            this._indicator = new PanelMenu.Button(0.0, 'Shortcut Recorder', false);
+
+            // Create icon using symbolic icon
+            let icon = new St.Icon({
+                icon_name: 'input-keyboard-symbolic',
+                style_class: 'system-status-icon',
+            });
+
+            this._indicator.add_child(icon);
+
+            // Connect click handler
+            this._indicator.connect('button-press-event', () => {
+                log('[ShortcutRecorder] Tray icon clicked!');
+                this._launchOrFocusApp();
+                return true;
+            });
+
+            // Add to the panel
+            Main.panel.addToStatusArea('shortcut-recorder-indicator', this._indicator);
+
+            // Add the keybinding
+            Main.wm.addKeybinding(
+                'toggle-shortcut-recorder',
+                this._settings,
+                0, // Gio.SettingsBindFlags.DEFAULT
+                1, // Shell.ActionMode.NORMAL
+                () => {
+                    log('[ShortcutRecorder] Keybinding triggered!');
+                    this._toggleWindow();
                 }
             );
+
+            log('[ShortcutRecorder] Extension enabled successfully');
+            log('[ShortcutRecorder] Tray icon added - click to launch/focus app');
+            log('[ShortcutRecorder] Press Ctrl+Shift+K to toggle the window');
         } catch (e) {
-            console.error(`Error calling D-Bus: ${e.message}`);
+            log('[ShortcutRecorder] Error enabling extension: ' + e);
+            log('[ShortcutRecorder] Stack: ' + e.stack);
         }
+    }
+
+    disable() {
+        log('[ShortcutRecorder] Disabling extension...');
+
+        if (this._settings) {
+            Main.wm.removeKeybinding('toggle-shortcut-recorder');
+            this._settings = null;
+        }
+
+        if (this._indicator) {
+            this._indicator.destroy();
+            this._indicator = null;
+        }
+
+        log('[ShortcutRecorder] Extension disabled');
     }
 }
