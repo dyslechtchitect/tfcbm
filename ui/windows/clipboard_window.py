@@ -84,6 +84,13 @@ class ClipboardWindow(Adw.ApplicationWindow):
         # Connect focus change handler to clear secret authentication
         self.connect("notify::is-active", self._on_focus_changed)
 
+        # Add global click handler to clear secret authentication when clicking elsewhere
+        # Use BUBBLE phase so buttons can handle clicks first, then we clear auth
+        click_gesture = Gtk.GestureClick.new()
+        click_gesture.set_propagation_phase(Gtk.PropagationPhase.BUBBLE)
+        click_gesture.connect("released", self._on_window_clicked)
+        self.add_controller(click_gesture)
+
         # Set window properties
         display = Gdk.Display.get_default()
         if display:
@@ -508,6 +515,16 @@ class ClipboardWindow(Adw.ApplicationWindow):
             # Window lost focus or was minimized - clear secret authentication
             logger.info("Window focus lost, clearing secret authentication")
             self.password_service.clear_authentication()
+
+    def _on_window_clicked(self, gesture, n_press, x, y):
+        """Handle clicks anywhere in the window - clear secret authentication.
+
+        This runs in BUBBLE phase AFTER child widgets handle the click.
+        Secret buttons claim their events in CAPTURE phase, so if we get here,
+        it means the user clicked somewhere other than an action button.
+        """
+        logger.debug("Window click detected, clearing secret authentication")
+        self.password_service.clear_authentication()
 
     def _reload_current_tab(self):
         """Reload items in the current tab"""

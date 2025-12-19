@@ -52,9 +52,29 @@ class ClipboardBackend:
             except BaseException:
                 content = base64.b64encode(data).decode("utf-8") if isinstance(data, bytes) else data
 
-        return {"id": item["id"], "type": item_type, "content": content, "timestamp": item["timestamp"]}
+        # Build UI item with all fields
+        ui_item = {
+            "id": item["id"],
+            "type": item_type,
+            "content": content,
+            "timestamp": item["timestamp"],
+            "name": item.get("name"),
+            "is_secret": item.get("is_secret", False),
+            # Support both pasted_at and pasted_timestamp field names
+            "pasted_at": item.get("pasted_at") or item.get("pasted_timestamp"),
+        }
 
-    async def handle_client(self, websocket, path):
+        # Add tags - check if already included in item, otherwise fetch
+        if "tags" in item:
+            ui_item["tags"] = item["tags"]
+        else:
+            item_id = item["id"]
+            tags = self.db.get_tags_for_item(item_id)
+            ui_item["tags"] = tags
+
+        return ui_item
+
+    async def handle_client(self, websocket):
         """Handle WebSocket client connection"""
         print(f"Client connected from {websocket.remote_address}")
         self.clients.add(websocket)
@@ -67,12 +87,157 @@ class ClipboardBackend:
                 if action == "get_history":
                     # Send all items
                     limit = data.get("limit", 100)
-                    items = self.db.get_items(limit=limit)
+                    offset = data.get("offset", 0)
+                    sort_order = data.get("sort_order", "DESC")
+                    filters = data.get("filters", None)
+
+                    print(f"[BACKEND] get_history: limit={limit}, offset={offset}, sort_order={sort_order}, filters={filters}")
+
+                    items = self.db.get_items(
+                        limit=limit,
+                        offset=offset,
+                        sort_order=sort_order,
+                        filters=filters
+                    )
 
                     # Convert to UI format
                     ui_items = [self.prepare_item_for_ui(item) for item in items]
 
-                    response = {"type": "history", "items": ui_items}
+                    # Get total count for pagination
+                    total_count = self.db.get_total_count()
+
+                    response = {"type": "history", "items": ui_items, "total_count": total_count, "offset": offset}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "get_recently_pasted":
+                    # Get recently pasted items
+                    limit = data.get("limit", 100)
+                    offset = data.get("offset", 0)
+                    sort_order = data.get("sort_order", "DESC")
+                    filters = data.get("filters", None)
+
+                    print(f"[BACKEND] get_recently_pasted: limit={limit}, offset={offset}, sort_order={sort_order}, filters={filters}")
+
+                    items = self.db.get_recently_pasted(
+                        limit=limit,
+                        offset=offset,
+                        sort_order=sort_order,
+                        filters=filters
+                    )
+
+                    # Convert to UI format
+                    ui_items = [self.prepare_item_for_ui(item) for item in items]
+
+                    # Get total count for pagination
+                    total_count = self.db.get_pasted_count()
+
+                    response = {"type": "recently_pasted", "items": ui_items, "total_count": total_count, "offset": offset}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "get_tags":
+                    # Get all tags
+                    print("[BACKEND] get_tags request")
+                    tags = self.db.get_all_tags()
+                    response = {"type": "tags", "tags": tags}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "create_tag":
+                    # Create new tag
+                    name = data.get("name")
+                    color = data.get("color", "#808080")
+                    print(f"[BACKEND] create_tag: name={name}, color={color}")
+                    tag_id = self.db.create_tag(name, color)
+                    response = {"type": "tag_created", "tag_id": tag_id, "name": name, "color": color}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "update_tag":
+                    # Update existing tag
+                    tag_id = data.get("tag_id")
+                    name = data.get("name")
+                    color = data.get("color")
+                    print(f"[BACKEND] update_tag: id={tag_id}, name={name}, color={color}")
+                    self.db.update_tag(tag_id, name, color)
+                    response = {"type": "tag_updated", "tag_id": tag_id}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "delete_tag":
+                    # Delete tag
+                    tag_id = data.get("tag_id")
+                    print(f"[BACKEND] delete_tag: id={tag_id}")
+                    self.db.delete_tag(tag_id)
+                    response = {"type": "tag_deleted", "tag_id": tag_id}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "add_item_tag":
+                    # Add tag to item
+                    item_id = data.get("item_id")
+                    tag_id = data.get("tag_id")
+                    print(f"[BACKEND] add_item_tag: item_id={item_id}, tag_id={tag_id}")
+                    success = self.db.add_tag_to_item(item_id, tag_id)
+                    response = {"type": "item_tag_added", "item_id": item_id, "tag_id": tag_id, "success": success}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "remove_item_tag":
+                    # Remove tag from item
+                    item_id = data.get("item_id")
+                    tag_id = data.get("tag_id")
+                    print(f"[BACKEND] remove_item_tag: item_id={item_id}, tag_id={tag_id}")
+                    success = self.db.remove_tag_from_item(item_id, tag_id)
+                    response = {"type": "item_tag_removed", "item_id": item_id, "tag_id": tag_id, "success": success}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "get_item_tags":
+                    # Get tags for a specific item
+                    item_id = data.get("item_id")
+                    print(f"[BACKEND] get_item_tags: item_id={item_id}")
+                    tags = self.db.get_tags_for_item(item_id)
+                    response = {"type": "item_tags", "item_id": item_id, "tags": tags}
+                    await websocket.send(json.dumps(response))
+
+                elif action == "toggle_secret":
+                    # Toggle secret status of an item
+                    item_id = data.get("item_id")
+                    is_secret = data.get("is_secret")
+                    name = data.get("name")
+
+                    print(f"[BACKEND] toggle_secret: item_id={item_id}, is_secret={is_secret}, name={name}")
+
+                    success = self.db.toggle_secret(item_id, is_secret, name)
+
+                    if success:
+                        # Get updated item to return current state
+                        item = self.db.get_item(item_id)
+                        response = {
+                            "type": "secret_toggled",
+                            "success": True,
+                            "item_id": item_id,
+                            "is_secret": item.get("is_secret", False) if item else is_secret,
+                            "name": item.get("name") if item else name
+                        }
+                    else:
+                        response = {
+                            "type": "secret_toggled",
+                            "success": False,
+                            "item_id": item_id,
+                            "error": "Failed to toggle secret status"
+                        }
+
+                    await websocket.send(json.dumps(response))
+
+                elif action == "search":
+                    # Search for items
+                    query = data.get("query", "")
+                    limit = data.get("limit", 100)
+                    filters = data.get("filters", None)
+
+                    print(f"[BACKEND] search: query='{query}', limit={limit}, filters={filters}")
+
+                    items = self.db.search_items(query, limit=limit, filters=filters)
+
+                    # Convert to UI format
+                    ui_items = [self.prepare_item_for_ui(item) for item in items]
+
+                    response = {"type": "search_results", "items": ui_items, "count": len(ui_items)}
                     await websocket.send(json.dumps(response))
 
                 elif action == "delete_item":

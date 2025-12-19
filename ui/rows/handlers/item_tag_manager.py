@@ -223,7 +223,7 @@ class ItemTagManager:
 
                 async def update_tag():
                     async with websockets.connect(self.ws_uri) as websocket:
-                        action = "add_tag" if is_active else "remove_tag"
+                        action = "add_item_tag" if is_active else "remove_item_tag"
                         request = {
                             "action": action,
                             "item_id": item_id,
@@ -233,7 +233,7 @@ class ItemTagManager:
                         response = await websocket.recv()
                         data = json.loads(response)
 
-                        if data.get("type") in ["tag_added", "tag_removed"]:
+                        if data.get("type") in ["item_tag_added", "item_tag_removed"]:
                             # Reload tags for this item
                             GLib.idle_add(self.ws_service.load_item_tags)
                             # Notify window to refresh if needed

@@ -750,17 +750,14 @@ class ClipboardDB:
 
         # Update FTS: remove content if making secret, restore if unmarking
         cursor.execute(
-            "SELECT type, data FROM clipboard_items WHERE id = ?", (item_id,)
+            "SELECT type, data, name FROM clipboard_items WHERE id = ?", (item_id,)
         )
         row = cursor.fetchone()
         if row: # Make sure the item exists
             item_type = row["type"]
             item_data = row["data"]
-
-            # Get current name from FTS or item's name
-            cursor.execute("SELECT name FROM clipboard_fts WHERE rowid = ?", (item_id,))
-            fts_name_row = cursor.fetchone()
-            current_fts_name = fts_name_row["name"] if fts_name_row else (name if name else "")
+            # Use the current name from clipboard_items (which was just updated if name was provided)
+            item_name = row["name"] if row["name"] else ""
 
             fts_content = ""
             if item_type == "text" and not is_secret:
@@ -776,7 +773,7 @@ class ClipboardDB:
             try:
                 cursor.execute(
                     "INSERT OR REPLACE INTO clipboard_fts (rowid, content, name) VALUES (?, ?, ?)",
-                    (item_id, fts_content, current_fts_name),
+                    (item_id, fts_content, item_name),
                 )
             except Exception as e:
                 logging.warning(
