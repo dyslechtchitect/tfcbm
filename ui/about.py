@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TFCBM About Dialog - Shows version and information
+TFCBM About Dialog - Shows logo, title, and subtitle
 """
 
 from pathlib import Path
@@ -8,14 +8,11 @@ from pathlib import Path
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
-
-# Version information
-VERSION = "1.0.0"
+from gi.repository import Gdk, GdkPixbuf, Gtk
 
 
 class AboutWindow(Gtk.Window):
-    """About dialog showing version, description, and haiku"""
+    """About dialog showing logo, title, and subtitle"""
 
     def __init__(self):
         super().__init__()
@@ -39,12 +36,11 @@ class AboutWindow(Gtk.Window):
         # Try to load TFCBM logo (try SVG first, then PNG)
         try:
             svg_path = Path(__file__).parent.parent / "resouces" / "tfcbm.svg"
-            png_path = Path(__file__).parent.parent / "resouces" / "tfcbm.png"
 
             icon_path = (
                 svg_path
                 if svg_path.exists()
-                else (png_path if png_path.exists() else None)
+                else None
             )
 
             if icon_path:
@@ -66,84 +62,10 @@ class AboutWindow(Gtk.Window):
         content_box.append(title)
 
         # Subtitle
-        subtitle = Gtk.Label(label="The F*cking Clipboard Manager")
+        subtitle = Gtk.Label(label="A clipboard manager that actually f***ing works!")
         subtitle.add_css_class("title-4")
         subtitle.add_css_class("dim-label")
         content_box.append(subtitle)
-
-        # Version
-        version_label = Gtk.Label(label=f"Version {VERSION}")
-        version_label.add_css_class("caption")
-        version_label.add_css_class("dim-label")
-        content_box.append(version_label)
-
-        # Separator
-        separator1 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        separator1.set_margin_top(10)
-        separator1.set_margin_bottom(10)
-        content_box.append(separator1)
-
-        # Inspiring paragraph
-        description_label = Gtk.Label()
-        description_label.set_markup(
-            "<b>A clipboard manager that just works.</b>\n\n"
-            "TFCBM is your faithful companion in the digital realm, "
-            "tirelessly capturing every snippet, every fragment of text and image "
-            "that passes through your clipboard. No more losing that perfect quote, "
-            "that crucial code snippet, or that hilarious meme. "
-            "Your clipboard history is now your superpower."
-        )
-        description_label.set_wrap(True)
-        description_label.set_justify(Gtk.Justification.CENTER)
-        description_label.set_max_width_chars(50)
-        content_box.append(description_label)
-
-        # Separator
-        separator2 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        separator2.set_margin_top(10)
-        separator2.set_margin_bottom(10)
-        content_box.append(separator2)
-
-        # Keyboard shortcut section
-        shortcut_box = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL, spacing=16
-        )
-        shortcut_box.set_halign(Gtk.Align.CENTER)
-
-        # Keys container
-        keys_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
-        keys_box.set_halign(Gtk.Align.CENTER)
-
-        # Ctrl key
-        ctrl_key = self._create_key_widget("Ctrl")
-        keys_box.append(ctrl_key)
-        self.ctrl_key = ctrl_key  # Store for animation
-
-        # Plus sign
-        plus_label = Gtk.Label(label="+")
-        plus_label.add_css_class("title-1")
-        keys_box.append(plus_label)
-
-        # Backtick/Tilde key
-        backtick_key = self._create_key_widget("`\n~", is_dual=True)
-        keys_box.append(backtick_key)
-        self.backtick_key = backtick_key  # Store for animation
-
-        shortcut_box.append(keys_box)
-
-        # Instruction text
-        instruction_label = Gtk.Label()
-        instruction_label.set_markup(
-            "<b>Hit Ctrl + ` to bring TFCBM to life.</b>"
-        )
-        instruction_label.set_justify(Gtk.Justification.CENTER)
-        shortcut_box.append(instruction_label)
-
-        content_box.append(shortcut_box)
-
-        # Start animation
-        self.animation_state = 0
-        GLib.timeout_add(100, self._animate_keys)
 
         main_box.append(content_box)
 
@@ -161,61 +83,3 @@ class AboutWindow(Gtk.Window):
         main_box.append(button_box)
 
         self.set_child(main_box)
-
-        # Make the window close on any click in the content area
-        click_gesture = Gtk.GestureClick.new()
-        click_gesture.connect("released", self._on_content_clicked)
-        content_box.add_controller(click_gesture)
-
-    def _create_key_widget(self, text, is_dual=False):
-        """Create a keyboard key widget"""
-        # Frame for the key
-        key_frame = Gtk.Frame()
-        key_frame.add_css_class("keyboard-key")
-
-        # Inner box with padding - vertically centered
-        key_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        key_box.set_margin_top(16)
-        key_box.set_margin_bottom(16)
-        key_box.set_margin_start(24)
-        key_box.set_margin_end(24)
-        key_box.set_valign(Gtk.Align.CENTER)
-
-        # Label - vertically centered
-        key_label = Gtk.Label(label=text)
-        key_label.set_valign(Gtk.Align.CENTER)
-        key_label.set_halign(Gtk.Align.CENTER)
-        if is_dual:
-            key_label.add_css_class("title-2")
-        else:
-            key_label.add_css_class("title-3")
-        key_box.append(key_label)
-
-        key_frame.set_child(key_box)
-        return key_frame
-
-    def _animate_keys(self):
-        """Animate the keyboard keys with a pulsing effect"""
-        import math
-
-        # Increment animation state
-        self.animation_state += 1
-
-        # Calculate scale using sine wave for smooth pulsing
-        # Period of ~20 iterations (2 seconds at 100ms intervals)
-        1.0 + 0.1 * math.sin(self.animation_state * 0.3)
-
-        # Apply scaling effect by adjusting opacity
-        # We'll pulse between 0.7 and 1.0 opacity
-        opacity = 0.85 + 0.15 * math.sin(self.animation_state * 0.3)
-
-        # Apply opacity to keys
-        self.ctrl_key.set_opacity(opacity)
-        self.backtick_key.set_opacity(opacity)
-
-        # Continue animation
-        return True
-
-    def _on_content_clicked(self, gesture, n_press, x, y):
-        """Close window when content area is clicked"""
-        self.close()
