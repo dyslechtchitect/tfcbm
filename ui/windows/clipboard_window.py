@@ -291,6 +291,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
             self, self.search_entry, self.copied_listbox
         )
 
+        # Register UI PID with server for cleanup
+        GLib.idle_add(self._register_ui_pid_with_server)
+
         logger.info(
             f"ClipboardWindow initialized in {time.time() - start_time:.2f} seconds"
         )
@@ -488,6 +491,31 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Update settings using the settings manager
         self.settings.update_settings(**settings_update)
+
+    def _register_ui_pid_with_server(self):
+        """Register UI PID with server so server can kill UI on exit"""
+        try:
+            import websockets
+
+            async def register_pid():
+                try:
+                    uri = "ws://localhost:8765"
+                    async with websockets.connect(uri) as websocket:
+                        request = {"action": "register_ui_pid", "pid": os.getpid()}
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        logger.info(f"UI PID registration response: {response}")
+                except Exception as e:
+                    logger.error(f"Failed to register UI PID with server: {e}")
+
+            # Run in new event loop since we're in GTK main loop
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(register_pid())
+            loop.close()
+        except Exception as e:
+            logger.error(f"Error in PID registration: {e}")
 
     def _on_close_request(self, window):
         """Handle window close request - kill server before exiting"""

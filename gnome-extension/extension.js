@@ -5,6 +5,8 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
+import Clutter from 'gi://Clutter';
 import { ClipboardMonitorService } from './src/ClipboardMonitorService.js';
 import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { UnixSocketNotifier } from './src/adapters/UnixSocketNotifier.js';
@@ -13,6 +15,29 @@ import { PollingScheduler } from './src/PollingScheduler.js';
 const DBUS_NAME = 'org.tfcbm.ClipboardManager';
 const DBUS_PATH = '/org/tfcbm/ClipboardManager';
 const DBUS_IFACE = 'org.tfcbm.ClipboardManager';
+
+// Custom PanelMenu.Button that intercepts left-click to toggle UI instead of showing menu
+const TFCBMIndicator = GObject.registerClass(
+class TFCBMIndicator extends PanelMenu.Button {
+    _init(extension) {
+        super._init(0.0, 'TFCBM', false);
+        this._extension = extension;
+    }
+
+    vfunc_event(event) {
+        // Intercept left-click to toggle UI instead of opening menu
+        if (event.type() === Clutter.EventType.BUTTON_PRESS) {
+            const button = event.get_button();
+            if (button === 1) { // Left click
+                log('[TFCBM] Tray icon left-clicked');
+                this._extension._toggleUI();
+                return Clutter.EVENT_STOP; // Stop event propagation (don't open menu)
+            }
+        }
+        // For all other events (including right-click), use default behavior (show menu)
+        return super.vfunc_event(event);
+    }
+});
 
 export default class ClipboardMonitorExtension extends Extension {
     constructor(metadata) {
@@ -24,6 +49,14 @@ export default class ClipboardMonitorExtension extends Extension {
         log('[TFCBM] Toggling UI via DBus...');
         try {
             const timestamp = global.display.get_current_time_roundtrip();
+
+            // Set a timeout to launch UI if DBus call doesn't respond within 500ms
+            let timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+                log('[TFCBM] DBus call timed out, launching UI...');
+                this._launchUI();
+                return GLib.SOURCE_REMOVE;
+            });
+
             Gio.DBus.session.call(
                 DBUS_NAME,
                 DBUS_PATH,
@@ -35,6 +68,9 @@ export default class ClipboardMonitorExtension extends Extension {
                 -1,
                 null,
                 (connection, result) => {
+                    // Cancel the timeout if we got a response
+                    GLib.source_remove(timeoutId);
+
                     try {
                         connection.call_finish(result);
                         log('[TFCBM] UI activated successfully');
@@ -55,25 +91,13 @@ export default class ClipboardMonitorExtension extends Extension {
     _launchUI() {
         log('[TFCBM] Launching UI...');
         try {
-            const extensionPath = this.metadata.path;
-            const projectPath = extensionPath.replace('/gnome-extension', '');
+            // The project path is hardcoded since the extension is installed to a different location
+            const projectPath = '/home/ron/Documents/git/TFCBM';
 
             log(`[TFCBM] Attempting to launch from: ${projectPath}`);
 
-            // Check if backend server is running, start it if not, and get its PID
-            // Then launch UI with the server PID
-            const launchCmd = `
-                cd "${projectPath}" || exit 1
-                SERVER_PID=$(pgrep -f "tfcbm_server.py")
-                if [ -z "$SERVER_PID" ]; then
-                    "${projectPath}/.venv/bin/python3" -u tfcbm_server.py >> /tmp/tfcbm_server.log 2>&1 &
-                    sleep 2
-                    SERVER_PID=$(pgrep -f "tfcbm_server.py")
-                fi
-                if [ -n "$SERVER_PID" ]; then
-                    "${projectPath}/.venv/bin/python3" ui/main.py --server-pid="$SERVER_PID" >> /tmp/tfcbm_ui.log 2>&1 &
-                fi
-            `;
+            // Use the launcher script to start both server and UI
+            const launchCmd = `"${projectPath}/.venv/bin/python3" "${projectPath}/launcher.py" >> /tmp/tfcbm_launcher.log 2>&1 &`;
 
             GLib.spawn_command_line_async(`/bin/bash -c '${launchCmd}'`);
 
@@ -116,44 +140,10 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     _confirmExit() {
-        log('[TFCBM] Confirming exit...');
-
-        // Import dialog dependencies
-        const ModalDialog = imports.ui.modalDialog;
-        const Dialog = imports.ui.dialog;
-        const Clutter = imports.gi.Clutter;
-
-        // Create confirmation dialog
-        const dialog = new ModalDialog.ModalDialog();
-
-        const content = new Dialog.MessageDialogContent({
-            title: 'Exit TFCBM?',
-            description: 'Are you sure you want to exit TFCBM?\n\nThis will close the clipboard manager and stop monitoring clipboard changes.'
-        });
-        dialog.contentLayout.add_child(content);
-
-        // Add "Cancel" button
-        dialog.addButton({
-            label: 'Nah',
-            action: () => {
-                log('[TFCBM] Exit cancelled');
-                dialog.close();
-            },
-            key: Clutter.KEY_Escape
-        });
-
-        // Add "Exit" button
-        dialog.addButton({
-            label: 'Yea',
-            action: () => {
-                log('[TFCBM] Exit confirmed, calling DBus Exit...');
-                dialog.close();
-                this._exitApp();
-            },
-            default: true
-        });
-
-        dialog.open();
+        log('[TFCBM] Confirming exit - calling _exitApp directly...');
+        // Directly exit without confirmation dialog for now
+        // User can cancel from menu if they change their mind
+        this._exitApp();
     }
 
     _exitApp() {
@@ -234,7 +224,7 @@ export default class ClipboardMonitorExtension extends Extension {
         // Create system tray indicator
         try {
             log('[TFCBM] Creating tray indicator...');
-            this._indicator = new PanelMenu.Button(0.0, 'TFCBM', false);
+            this._indicator = new TFCBMIndicator(this);
 
             // Load custom icon from resources
             const iconPath = `${this.metadata.path}/../resouces/tfcbm.svg`;
@@ -257,6 +247,19 @@ export default class ClipboardMonitorExtension extends Extension {
 
             this._indicator.add_child(icon);
 
+            // Make the icon reactive and add click handler
+            icon.reactive = true;
+            icon.connect('button-press-event', (actor, event) => {
+                const button = event.get_button();
+                log(`[TFCBM] Icon clicked, button=${button}`);
+                if (button === 1) { // Left click
+                    log('[TFCBM] Left click on icon, toggling UI');
+                    this._toggleUI();
+                    return Clutter.EVENT_STOP;
+                }
+                return Clutter.EVENT_PROPAGATE;
+            });
+
             // Create popup menu (right-click)
             const settingsItem = new PopupMenu.PopupMenuItem('Settings');
             settingsItem.connect('activate', () => {
@@ -274,17 +277,6 @@ export default class ClipboardMonitorExtension extends Extension {
                 this._confirmExit();
             });
             this._indicator.menu.addMenuItem(exitItem);
-
-            // Left-click handler - toggle UI
-            this._indicator.connect('button-press-event', (actor, event) => {
-                const button = event.get_button();
-                if (button === 1) { // Left click
-                    log('[TFCBM] Tray icon left-clicked');
-                    this._toggleUI();
-                    return true;
-                }
-                return false;
-            });
 
             // Add to panel
             Main.panel.addToStatusArea('tfcbm-indicator', this._indicator);
