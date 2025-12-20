@@ -245,6 +245,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
             get_current_tab=lambda: self.current_tab,
             on_tag_drag_prepare=self._on_tag_drag_prepare,
             on_tag_drag_begin=self._on_tag_drag_begin,
+            window=self,
         )
 
         # Initialize HistoryLoaderManager

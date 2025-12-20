@@ -131,21 +131,40 @@ class MainWindowBuilder:
         tag_container.set_margin_end(8)
 
         tag_scrolled = Gtk.ScrolledWindow()
-        tag_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
+        tag_scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
         tag_scrolled.set_max_content_height(40)
         tag_scrolled.set_min_content_height(32)
         tag_scrolled.set_propagate_natural_height(True)
         tag_scrolled.set_hexpand(True)
+        tag_scrolled.set_kinetic_scrolling(True)
 
-        tag_flowbox = Gtk.FlowBox()
-        tag_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
-        tag_flowbox.set_homogeneous(False)
-        tag_flowbox.set_column_spacing(4)
-        tag_flowbox.set_row_spacing(4)
-        tag_flowbox.set_max_children_per_line(15)
+        # Add mouse wheel scroll support
+        scroll_controller = Gtk.EventControllerScroll.new(
+            Gtk.EventControllerScrollFlags.HORIZONTAL
+        )
+        scroll_controller.connect("scroll", self._on_tag_scroll)
+        tag_scrolled.add_controller(scroll_controller)
+
+        # Use horizontal Box instead of FlowBox to prevent wrapping
+        tag_flowbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         tag_scrolled.set_child(tag_flowbox)
 
         tag_container.append(tag_scrolled)
+
+        # Store reference for scroll handling
+        self.tag_scrolled = tag_scrolled
+
+        add_tag_btn = Gtk.Button()
+        add_tag_btn.set_icon_name("list-add-symbolic")
+        add_tag_btn.add_css_class("flat")
+        add_tag_btn.set_tooltip_text("Create new tag")
+        add_tag_btn.set_valign(Gtk.Align.CENTER)
+        css_provider_add = Gtk.CssProvider()
+        css_data_add = "button { min-width: 20px; min-height: 20px; padding: 2px; }"
+        css_provider_add.load_from_data(css_data_add.encode())
+        add_tag_btn.get_style_context().add_provider(css_provider_add, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        add_tag_btn.connect("clicked", lambda btn: self.window._on_create_tag(btn))
+        tag_container.append(add_tag_btn)
 
         clear_btn = Gtk.Button()
         clear_btn.set_icon_name("window-close-symbolic")
@@ -258,39 +277,9 @@ class MainWindowBuilder:
         settings_page = self._create_settings_page()
         main_stack.add_named(settings_page, "settings")
 
-        tag_manager_scrolled = Gtk.ScrolledWindow()
-        tag_manager_scrolled.set_vexpand(True)
-        tag_manager_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        tag_manager_page = Adw.PreferencesPage()
-
-        tags_group = Adw.PreferencesGroup()
-        tags_group.set_title("User-Defined Tags")
-        tags_group.set_description("Manage your custom tags for organizing clipboard items")
-
-        create_tag_row = Adw.ActionRow()
-        create_tag_row.set_title("Create New Tag")
-        create_tag_row.set_subtitle("Add a new tag to organize your clipboard items")
-
-        create_tag_button = Gtk.Button()
-        create_tag_button.set_label("New Tag")
-        create_tag_button.add_css_class("suggested-action")
-        create_tag_button.set_valign(Gtk.Align.CENTER)
-        create_tag_button.connect("clicked", self.window._on_create_tag)
-        create_tag_row.add_suffix(create_tag_button)
-
-        tags_group.add(create_tag_row)
-        tag_manager_page.add(tags_group)
-
+        # Create user_tags_group but don't add it to a tab - it will be used elsewhere if needed
         user_tags_group = Adw.PreferencesGroup()
         user_tags_group.set_title("Your Tags")
-        tag_manager_page.add(user_tags_group)
-
-        tag_manager_scrolled.set_child(tag_manager_page)
-
-        tag_manager_tab = tab_view.append(tag_manager_scrolled)
-        tag_manager_tab.set_title("Tags")
-        tag_manager_tab.set_icon(Gio.ThemedIcon.new("tag-symbolic"))
 
         tab_view.connect("notify::selected-page", self.window._on_tab_switched)
 
@@ -342,6 +331,36 @@ class MainWindowBuilder:
             filter_sort_btn=self.filter_sort_btn,
             builder=self,  # Pass self here
         )
+
+    def _on_tag_scroll(self, controller, dx, dy):
+        """Handle mouse wheel scrolling on tags bar.
+
+        Args:
+            controller: The scroll event controller
+            dx: Horizontal scroll delta
+            dy: Vertical scroll delta
+
+        Returns:
+            bool: True if handled
+        """
+        if not hasattr(self, 'tag_scrolled'):
+            return False
+
+        # Get horizontal adjustment
+        hadj = self.tag_scrolled.get_hadjustment()
+        if not hadj:
+            return False
+
+        # Scroll horizontally based on vertical wheel movement
+        # Use dy (vertical scroll) to scroll horizontally
+        scroll_amount = dy * 30  # Adjust sensitivity
+        new_value = hadj.get_value() + scroll_amount
+
+        # Clamp to valid range
+        new_value = max(hadj.get_lower(), min(new_value, hadj.get_upper() - hadj.get_page_size()))
+        hadj.set_value(new_value)
+
+        return True
 
     def _create_loader(self) -> Gtk.Widget:
         loader_path = Path(__file__).parent.parent.parent / "resouces" / "loader.svg"

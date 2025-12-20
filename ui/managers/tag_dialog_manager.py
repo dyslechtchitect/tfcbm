@@ -325,3 +325,131 @@ class TagDialogManager:
                     )
 
         threading.Thread(target=run_update, daemon=True).start()
+
+    def show_rename_dialog(self, tag):
+        """Show dialog to rename a tag.
+
+        Args:
+            tag: Tag data dict
+        """
+        dialog = Adw.MessageDialog.new(self.parent_window)
+        dialog.set_heading("Rename Tag")
+        dialog.set_body(f"Rename '{tag['name']}'")
+
+        # Create entry for new name
+        entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        entry_box.set_margin_top(12)
+        entry_box.set_margin_bottom(12)
+        entry_box.set_margin_start(12)
+        entry_box.set_margin_end(12)
+
+        name_entry = Gtk.Entry()
+        name_entry.set_text(tag.get("name", ""))
+        name_entry.set_placeholder_text("Tag name")
+        entry_box.append(name_entry)
+
+        dialog.set_extra_child(entry_box)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("rename", "Rename")
+        dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+
+        def on_response(dialog, response):
+            if response == "rename":
+                new_name = name_entry.get_text().strip()
+                if not new_name:
+                    logger.warning("Tag name cannot be empty")
+                    return
+                self._update_tag_on_server(tag['id'], new_name, tag.get('color', self.COLORS[0]))
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def show_color_picker_dialog(self, tag):
+        """Show dialog to change tag color.
+
+        Args:
+            tag: Tag data dict
+        """
+        dialog = Adw.MessageDialog.new(self.parent_window)
+        dialog.set_heading("Change Tag Color")
+        dialog.set_body(f"Choose a new color for '{tag['name']}'")
+
+        # Color picker
+        entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        entry_box.set_margin_top(12)
+        entry_box.set_margin_bottom(12)
+        entry_box.set_margin_start(12)
+        entry_box.set_margin_end(12)
+
+        color_flow = self._create_color_picker()
+
+        # Select current color
+        current_color_index = 0
+        if tag.get("color") in self.COLORS:
+            current_color_index = self.COLORS.index(tag.get("color"))
+        color_flow.select_child(color_flow.get_child_at_index(current_color_index))
+        entry_box.append(color_flow)
+
+        dialog.set_extra_child(entry_box)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("save", "Save")
+        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+
+        def on_response(dialog, response):
+            if response == "save":
+                selected_color = self._get_selected_color(color_flow, current_color_index)
+                self._update_tag_on_server(tag['id'], tag.get('name', ''), selected_color)
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def delete_tag(self, tag_id):
+        """Delete a tag from the server.
+
+        Args:
+            tag_id: Tag ID to delete
+        """
+        def run_delete():
+            try:
+                async def delete_tag_async():
+                    async with websockets.connect(self.websocket_uri) as websocket:
+                        request = {
+                            "action": "delete_tag",
+                            "tag_id": tag_id,
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "tag_deleted" or data.get("success"):
+                            logger.info(f"Tag deleted successfully")
+                            if hasattr(self.parent_window, "show_notification"):
+                                GLib.idle_add(
+                                    self.parent_window.show_notification,
+                                    "Tag deleted",
+                                )
+                            GLib.idle_add(self.on_tag_updated)
+                        else:
+                            error_msg = data.get("error", "Failed to delete tag")
+                            logger.error(error_msg)
+                            if hasattr(self.parent_window, "show_notification"):
+                                GLib.idle_add(
+                                    self.parent_window.show_notification,
+                                    error_msg,
+                                )
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(delete_tag_async())
+                finally:
+                    loop.close()
+            except Exception as e:
+                logger.error(f"Error deleting tag: {e}")
+                if hasattr(self.parent_window, "show_notification"):
+                    GLib.idle_add(
+                        self.parent_window.show_notification,
+                        f"Error deleting tag: {e}",
+                    )
+
+        threading.Thread(target=run_delete, daemon=True).start()

@@ -7,7 +7,8 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gtk
+gi.require_version("Gio", "2.0")
+from gi.repository import Gdk, Gio, Gtk
 
 logger = logging.getLogger("TFCBM.TagDisplayManager")
 
@@ -17,32 +18,35 @@ class TagDisplayManager:
 
     def __init__(
         self,
-        tag_flowbox: Gtk.FlowBox,
+        tag_flowbox,
         tag_filter_manager,
         copied_listbox: Gtk.ListBox,
         pasted_listbox: Gtk.ListBox,
         get_current_tab: Callable[[], str],
         on_tag_drag_prepare: Callable,
         on_tag_drag_begin: Callable,
+        window=None,
     ):
         """Initialize TagDisplayManager.
 
         Args:
-            tag_flowbox: FlowBox widget for displaying tags
+            tag_flowbox: Box widget for displaying tags (horizontal layout)
             tag_filter_manager: TagFilterManager instance for handling filtering
             copied_listbox: ListBox for copied items
             pasted_listbox: ListBox for pasted items
             get_current_tab: Callback to get current active tab
             on_tag_drag_prepare: Callback for tag drag prepare event
             on_tag_drag_begin: Callback for tag drag begin event
+            window: Reference to the main window
         """
-        self.tag_flowbox = tag_flowbox
+        self.tag_flowbox = tag_flowbox  # Actually a Box now, not FlowBox
         self.tag_filter_manager = tag_filter_manager
         self.copied_listbox = copied_listbox
         self.pasted_listbox = pasted_listbox
         self.get_current_tab = get_current_tab
         self.on_tag_drag_prepare = on_tag_drag_prepare
         self.on_tag_drag_begin = on_tag_drag_begin
+        self.window = window
 
         # State
         self.tag_buttons: Dict[int, Gtk.Button] = {}
@@ -99,6 +103,12 @@ class TagDisplayManager:
             btn.add_controller(drag_source)
 
             btn.connect("clicked", lambda b, tid=tag_id: self._on_tag_clicked(tid))
+
+            # Add right-click menu
+            right_click = Gtk.GestureClick.new()
+            right_click.set_button(3)  # Right click
+            right_click.connect("pressed", self._on_tag_right_click, tag)
+            btn.add_controller(right_click)
 
             self.tag_buttons[tag_id] = btn
             self.tag_flowbox.append(btn)
@@ -174,3 +184,106 @@ class TagDisplayManager:
             Dict[int, Gtk.Button]: Dictionary mapping tag IDs to button widgets
         """
         return self.tag_buttons
+
+    def _on_tag_right_click(self, gesture, n_press, x, y, tag):
+        """Handle right-click on a tag to show context menu.
+
+        Args:
+            gesture: The gesture that triggered this
+            n_press: Number of presses
+            x: X coordinate
+            y: Y coordinate
+            tag: The tag data dict
+        """
+        # Create a simple popover with buttons instead of menu
+        popover = Gtk.Popover()
+        popover.set_parent(gesture.get_widget())
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+
+        # Rename button
+        rename_btn = Gtk.Button(label="Rename")
+        rename_btn.add_css_class("flat")
+        rename_btn.set_halign(Gtk.Align.FILL)
+        rename_btn.connect("clicked", lambda b, p=popover, t=tag: (self._on_rename_tag(t), p.popdown()))
+        box.append(rename_btn)
+
+        # Change color button
+        color_btn = Gtk.Button(label="Change Color")
+        color_btn.add_css_class("flat")
+        color_btn.set_halign(Gtk.Align.FILL)
+        color_btn.connect("clicked", lambda b, p=popover, t=tag: (self._on_change_tag_color(t), p.popdown()))
+        box.append(color_btn)
+
+        # Delete button
+        delete_btn = Gtk.Button(label="Delete")
+        delete_btn.add_css_class("flat")
+        delete_btn.add_css_class("destructive-action")
+        delete_btn.set_halign(Gtk.Align.FILL)
+        delete_btn.connect("clicked", lambda b, p=popover, t=tag: (self._on_delete_tag(t), p.popdown()))
+        box.append(delete_btn)
+
+        popover.set_child(box)
+        popover.popup()
+
+    def _on_rename_tag(self, tag):
+        """Handle rename tag action.
+
+        Args:
+            tag: The tag data dict
+        """
+        if not self.window:
+            return
+
+        # Use the window's tag dialog manager to show rename dialog
+        if hasattr(self.window, 'tag_dialog_manager'):
+            self.window.tag_dialog_manager.show_rename_dialog(tag)
+
+    def _on_change_tag_color(self, tag):
+        """Handle change tag color action.
+
+        Args:
+            tag: The tag data dict
+        """
+        if not self.window:
+            return
+
+        # Use the window's tag dialog manager to show color picker
+        if hasattr(self.window, 'tag_dialog_manager'):
+            self.window.tag_dialog_manager.show_color_picker_dialog(tag)
+
+    def _on_delete_tag(self, tag):
+        """Handle delete tag action with confirmation.
+
+        Args:
+            tag: The tag data dict
+        """
+        if not self.window:
+            return
+
+        # Show confirmation dialog
+        dialog = Gtk.AlertDialog()
+        dialog.set_message(f"Delete tag '{tag['name']}'?")
+        dialog.set_detail("This tag will be removed from all tagged items and will no longer be available for use.")
+        dialog.set_buttons(["Cancel", "Delete"])
+        dialog.set_cancel_button(0)
+        dialog.set_default_button(0)
+
+        dialog.choose(self.window, None, self._on_delete_confirmed, tag)
+
+    def _on_delete_confirmed(self, dialog, result, tag):
+        """Handle delete confirmation response.
+
+        Args:
+            dialog: The alert dialog
+            result: The async result
+            tag: The tag data dict
+        """
+        try:
+            button_index = dialog.choose_finish(result)
+            if button_index == 1:  # Delete button
+                # Use the window's tag dialog manager to delete the tag
+                if self.window and hasattr(self.window, 'tag_dialog_manager'):
+                    self.window.tag_dialog_manager.delete_tag(tag['id'])
+        except Exception as e:
+            logger.error(f"Error in delete confirmation: {e}")
