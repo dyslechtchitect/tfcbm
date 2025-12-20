@@ -49,7 +49,7 @@ class TFCBMLauncher:
                     [self.python_path, '-u', server_script],
                     stdout=log_file,
                     stderr=subprocess.STDOUT,
-                    start_new_session=True  # Detach from parent
+                    start_new_session=True  # Detach from parent process
                 )
 
             logging.info(f"Server process started with PID: {self.server_process.pid}")
@@ -98,7 +98,8 @@ class TFCBMLauncher:
                 self.ui_process = subprocess.Popen(
                     cmd,
                     stdout=log_file,
-                    stderr=subprocess.STDOUT
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True  # Detach from parent process
                 )
 
             logging.info(f"✓ UI process started with PID: {self.ui_process.pid}")
@@ -123,11 +124,10 @@ class TFCBMLauncher:
             return 1
 
         logging.info("=== TFCBM launched successfully ===")
+        logging.info("Server and UI are now running independently")
 
-        # Wait for UI to exit (but don't monitor server - let it run independently)
-        if self.ui_process:
-            self.ui_process.wait()
-
+        # Don't wait - let both processes run independently
+        # The server will keep running even after UI closes
         return 0
 
 def main():

@@ -157,6 +157,18 @@ echo "=========================================="
 echo "Setup Complete!"
 echo "=========================================="
 echo ""
+
+# Reload the extension (disable then enable to ensure reload)
+echo "Reloading GNOME extension..."
+if gnome-extensions list --enabled | grep -q "simple-clipboard@tfcbm"; then
+    echo "    Disabling extension..."
+    gnome-extensions disable simple-clipboard@tfcbm
+    sleep 1
+fi
+echo "    Enabling extension..."
+gnome-extensions enable simple-clipboard@tfcbm
+sleep 2
+
 echo "Starting the TFCBM UI..."
 echo "Server logs are shown below"
 echo "Press Ctrl+C to stop"

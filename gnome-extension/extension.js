@@ -140,49 +140,38 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     _confirmExit() {
-        log('[TFCBM] Confirming exit - calling _exitApp directly...');
-        // Directly exit without confirmation dialog for now
-        // User can cancel from menu if they change their mind
-        this._exitApp();
+        log('[TFCBM] Confirming exit - killing all processes and removing tray icon...');
+
+        // Kill all processes
+        this._killProcesses();
+
+        // Remove the tray icon
+        if (this._indicator) {
+            this._indicator.destroy();
+            this._indicator = null;
+            log('[TFCBM] Tray icon removed');
+        }
+
+        // Stop clipboard monitoring
+        if (this.scheduler) {
+            this.scheduler.stop();
+            this.scheduler = null;
+            log('[TFCBM] Clipboard monitoring stopped');
+        }
     }
 
     _exitApp() {
-        log('[TFCBM] Exiting application...');
-        try {
-            Gio.DBus.session.call(
-                DBUS_NAME,
-                DBUS_PATH,
-                DBUS_IFACE,
-                'Exit',
-                null,
-                null,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                null,
-                (connection, result) => {
-                    try {
-                        connection.call_finish(result);
-                        log('[TFCBM] Application exited successfully via DBus');
-                    } catch (e) {
-                        log('[TFCBM] Error exiting via DBus, killing processes directly: ' + e.message);
-                        this._killProcesses();
-                    }
-                }
-            );
-        } catch (e) {
-            log('[TFCBM] Error calling DBus Exit, killing processes directly: ' + e.message);
-            this._killProcesses();
-        }
+        // This is now just an alias to _confirmExit
+        this._confirmExit();
     }
 
     _killProcesses() {
         log('[TFCBM] Killing TFCBM processes directly...');
         try {
-            // Kill UI processes
-            GLib.spawn_command_line_async('/bin/bash -c "pkill -f \'python.*ui/main.py\'"');
-            // Kill server processes
-            GLib.spawn_command_line_async('/bin/bash -c "pkill -f \'python.*tfcbm_server.py\'"');
-            log('[TFCBM] Kill commands sent');
+            // Kill both UI and server processes
+            GLib.spawn_command_line_sync('/bin/bash -c "pkill -9 -f \'python.*ui/main.py\' 2>/dev/null || true"');
+            GLib.spawn_command_line_sync('/bin/bash -c "pkill -9 -f \'python.*tfcbm_server.py\' 2>/dev/null || true"');
+            log('[TFCBM] All processes killed');
         } catch (e) {
             log('[TFCBM] Error killing processes: ' + e.message);
         }

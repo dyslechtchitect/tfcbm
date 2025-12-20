@@ -518,22 +518,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
             logger.error(f"Error in PID registration: {e}")
 
     def _on_close_request(self, window):
-        """Handle window close request - kill server before exiting"""
-        if self.server_pid:
-            try:
-
-                print(f"\nKilling server (PID: {self.server_pid})...")
-                os.kill(self.server_pid, signal.SIGTERM)
-
-                # Also kill the tee process if it exists
-
-                subprocess.run(
-                    ["pkill", "-P", str(self.server_pid)],
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception as e:
-                print(f"Error killing server: {e}")
-
+        """Handle window close request - just hide/close the UI, leave server running"""
+        logger.info("UI closing, server will continue running in background")
         print("Exiting UI...")
         return False  # Allow window to close
 

@@ -190,14 +190,8 @@ class ClipboardApp(Adw.Application):
             invocation.return_value(None)
 
             # Kill backend server if we have the PID
-            if self.server_pid:
-                try:
-                    import signal
-                    import os
-                    os.kill(self.server_pid, signal.SIGTERM)
-                    logger.info(f"Sent SIGTERM to backend server (PID: {self.server_pid})")
-                except Exception as e:
-                    logger.error(f"Error killing backend server: {e}")
+            # Don't kill the server - it should keep running independently
+            logger.info("UI exiting, server will continue running in background")
 
             # Quit the application
             GLib.idle_add(self.quit)
