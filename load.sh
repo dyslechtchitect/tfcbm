@@ -113,6 +113,28 @@ echo "Desktop launcher installed to: $DESKTOP_FILE"
 echo "You can now launch TFCBM from Activities (Super key, type 'TFCBM')"
 echo "Logs are saved to: /tmp/tfcbm_server.log and /tmp/tfcbm_ui.log"
 
+# --- 3.6. Enable autostart by default ---
+echo ""
+echo "--> Enabling autostart (load on startup)..."
+AUTOSTART_DIR="$HOME/.config/autostart"
+AUTOSTART_FILE="$AUTOSTART_DIR/tfcbm.desktop"
+mkdir -p "$AUTOSTART_DIR"
+
+cat > "$AUTOSTART_FILE" << EOF
+[Desktop Entry]
+Type=Application
+Name=TFCBM
+Comment=Clipboard Manager - Manage your clipboard history
+Exec=$INSTALL_DIR/tfcbm-launcher.sh
+Icon=$INSTALL_DIR/resouces/icon-256.png
+Terminal=false
+Categories=Utility;GTK;
+StartupNotify=true
+X-GNOME-Autostart-enabled=true
+EOF
+
+echo "Autostart enabled: $AUTOSTART_FILE"
+
 # --- 4. Create and set up Python Virtual Environment ---
 echo ""
 echo "--> Setting up Python virtual environment..."

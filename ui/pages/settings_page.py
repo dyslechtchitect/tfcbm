@@ -50,7 +50,22 @@ class SettingsPage:
     def build(self) -> Adw.PreferencesPage:
         settings_page = Adw.PreferencesPage()
 
-        # Keyboard shortcut group (FIRST!)
+        # General settings group (FIRST!)
+        general_group = Adw.PreferencesGroup()
+        general_group.set_title("General")
+        general_group.set_description("General application settings")
+
+        # Load on startup switch
+        startup_row = Adw.SwitchRow()
+        startup_row.set_title("Load on Startup")
+        startup_row.set_subtitle("Automatically start TFCBM when you log in")
+        startup_row.set_active(self._is_autostart_enabled())
+        startup_row.connect("notify::active", self._on_autostart_toggled)
+        general_group.add(startup_row)
+
+        settings_page.add(general_group)
+
+        # Keyboard shortcut group
         shortcut_group = self._build_shortcut_group()
         settings_page.add(shortcut_group)
 
@@ -341,3 +356,59 @@ class SettingsPage:
         self.record_btn.set_label("Record")
         self.record_btn.remove_css_class("destructive-action")
         self.record_btn.add_css_class("suggested-action")
+
+    def _is_autostart_enabled(self) -> bool:
+        """Check if autostart is enabled."""
+        autostart_dir = Path.home() / ".config" / "autostart"
+        autostart_file = autostart_dir / "tfcbm.desktop"
+        return autostart_file.exists()
+
+    def _on_autostart_toggled(self, switch_row, _param):
+        """Handle autostart toggle."""
+        is_enabled = switch_row.get_active()
+
+        try:
+            if is_enabled:
+                self._enable_autostart()
+                self.on_notification("TFCBM will now start automatically on login")
+            else:
+                self._disable_autostart()
+                self.on_notification("TFCBM autostart disabled")
+        except Exception as e:
+            self.on_notification(f"Error toggling autostart: {e}")
+            print(f"Error toggling autostart: {e}")
+
+    def _enable_autostart(self):
+        """Enable autostart by creating .desktop file in autostart directory."""
+        autostart_dir = Path.home() / ".config" / "autostart"
+        autostart_dir.mkdir(parents=True, exist_ok=True)
+
+        autostart_file = autostart_dir / "tfcbm.desktop"
+
+        # Get the installation directory
+        install_dir = Path(__file__).parent.parent.parent
+        launcher_script = install_dir / "tfcbm-launcher.sh"
+
+        # Create the autostart desktop entry
+        desktop_content = f"""[Desktop Entry]
+Type=Application
+Name=TFCBM
+Comment=Clipboard Manager - Manage your clipboard history
+Exec={launcher_script}
+Icon={install_dir}/resouces/icon-256.png
+Terminal=false
+Categories=Utility;GTK;
+StartupNotify=true
+X-GNOME-Autostart-enabled=true
+"""
+
+        autostart_file.write_text(desktop_content)
+        print(f"Autostart enabled: {autostart_file}")
+
+    def _disable_autostart(self):
+        """Disable autostart by removing the .desktop file."""
+        autostart_file = Path.home() / ".config" / "autostart" / "tfcbm.desktop"
+
+        if autostart_file.exists():
+            autostart_file.unlink()
+            print(f"Autostart disabled: {autostart_file}")
