@@ -889,14 +889,15 @@ def handle_clipboard_event_dbus(event_data: dict):
 
     Args:
         event_data: Dictionary with clipboard event data from extension
-                   Format: {"type": "text|image/...|file", "data": "..."}
+                   Format: {"type": "text|image/...|file", "content": "..."}
     """
     try:
         event_type = event_data.get("type")
-        content_data = event_data.get("data")
+        # New extension sends "content", old one sent "data" - support both
+        content_data = event_data.get("content") or event_data.get("data")
 
         if not event_type or content_data is None:
-            logging.warning(f"Invalid clipboard event: missing type or data")
+            logging.warning(f"Invalid clipboard event: missing type or content")
             return
 
         logging.info(f"Processing clipboard event via DBus: {event_type}")
@@ -907,8 +908,9 @@ def handle_clipboard_event_dbus(event_data: dict):
             text_bytes = text.encode("utf-8")
 
             # Extract formatted content if present
-            format_type = event_data.get("formatType")
-            formatted_content_b64 = event_data.get("formattedContent")
+            # New extension uses snake_case, old used camelCase - support both
+            format_type = event_data.get("format_type") or event_data.get("formatType")
+            formatted_content_b64 = event_data.get("formatted_content") or event_data.get("formattedContent")
             formatted_content = None
 
             if format_type and formatted_content_b64:
