@@ -1,6 +1,0 @@
-1. tags cannot be assigned to items
-2. when clearin search nothing shows up - or after succeful search no way to reset
-3. tags icon on item is almost invisible
-4. tabs show a close option that shouldn't be there - once closed no way to repopen them - THEY SHOULDN"T BE ALLOWED TO CLOSE
-5. recent pasted does not filter by tags
-
