@@ -299,12 +299,14 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked."""
+        logger.info(f"[KEYBOARD] Row clicked for item {self.item.get('id')}")
         self.clipboard_ops.perform_copy_to_clipboard(
             self.item["type"], self.item["id"], self.item["content"]
         )
 
         # If activated via keyboard shortcut, hide window and auto-paste
         if hasattr(self.window, "keyboard_handler"):
+            logger.info(f"[KEYBOARD] activated_via_keyboard = {self.window.keyboard_handler.activated_via_keyboard}")
             if self.window.keyboard_handler.activated_via_keyboard:
                 logger.info(
                     "[KEYBOARD] Auto-hiding window and pasting after click"
@@ -313,7 +315,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
                 self.window.keyboard_handler.activated_via_keyboard = False
 
                 # Wait for focus to return, then simulate paste
+                logger.info("[KEYBOARD] Scheduling paste simulation in 150ms")
                 GLib.timeout_add(150, self.clipboard_ops.simulate_paste)
+            else:
+                logger.info("[KEYBOARD] Not activated via keyboard, skipping auto-paste")
 
     def _on_tags_action(self):
         """Handle tags button click - delegate to tag manager."""

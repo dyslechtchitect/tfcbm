@@ -120,68 +120,9 @@ class KeyboardShortcutHandler:
             if isinstance(row, ClipboardItemRow):
                 # Found the row! Copy it
                 logger.info(f"[KEYBOARD] Copying item {row.item.get('id')} via keyboard")
+                # Note: _on_row_clicked already handles the paste simulation
+                # when activated_via_keyboard is True, so we don't need to do it here
                 row._on_row_clicked(row)
-
-                # If activated via keyboard shortcut, hide window and paste
-                if self.activated_via_keyboard:
-                    logger.info("[KEYBOARD] Auto-pasting and hiding window")
-                    # Hide window first
-                    self.window.hide()
-                    self.activated_via_keyboard = False  # Clear flag
-
-                    # Give the window time to hide and focus to return
-                    def simulate_paste() -> bool:
-                        """Simulate Ctrl+V paste after window hides."""
-                        # Try xdotool first (X11)
-                        if shutil.which("xdotool"):
-                            try:
-                                subprocess.run(
-                                    ["xdotool", "key", "ctrl+v"],
-                                    check=False,
-                                    timeout=2,
-                                )
-                                logger.info(
-                                    "[KEYBOARD] Simulated Ctrl+V paste with xdotool"
-                                )
-                                return False
-                            except Exception as e:
-                                logger.error(f"[KEYBOARD] xdotool failed: {e}")
-
-                        # Try ydotool (Wayland)
-                        if shutil.which("ydotool"):
-                            try:
-                                # ydotool uses different key codes: 29=Ctrl, 47=v
-                                subprocess.run(
-                                    [
-                                        "ydotool",
-                                        "key",
-                                        "29:1",
-                                        "47:1",
-                                        "47:0",
-                                        "29:0",
-                                    ],
-                                    check=False,
-                                    timeout=2,
-                                )
-                                logger.info(
-                                    "[KEYBOARD] Simulated Ctrl+V paste with ydotool"
-                                )
-                                return False
-                            except Exception as e:
-                                logger.error(f"[KEYBOARD] ydotool failed: {e}")
-
-                        # No tool available
-                        logger.warning(
-                            "[KEYBOARD] Neither xdotool nor ydotool found. Auto-paste disabled."
-                        )
-                        logger.warning(
-                            "[KEYBOARD] Install xdotool: sudo dnf install xdotool"
-                        )
-                        return False
-
-                    # Wait a bit for focus to return, then paste
-                    GLib.timeout_add(150, simulate_paste)
-
                 return True  # Event handled
 
             # Move up the widget hierarchy

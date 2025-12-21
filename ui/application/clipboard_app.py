@@ -12,6 +12,10 @@ gi.require_version("GdkPixbuf", "2.0")
 
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk
 
+# Add parent directory to path to import dbus_service
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from dbus_service import TFCBMDBusService
+
 logger = logging.getLogger("TFCBM.UI")
 
 
@@ -24,6 +28,7 @@ class ClipboardApp(Adw.Application):
             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self.server_pid = server_pid
+        self.dbus_service = None
 
         self.add_main_option(
             "activate",
@@ -74,7 +79,9 @@ class ClipboardApp(Adw.Application):
         except Exception as e:
             print(f"Warning: Could not load custom CSS: {e}")
 
-        self._setup_dbus()
+        # Setup DBus service using the new modular service
+        self.dbus_service = TFCBMDBusService(self)
+        self.dbus_service.start()
 
         activate_action = Gio.SimpleAction.new("show-window", None)
         activate_action.connect("activate", self._on_show_window_action)
@@ -84,118 +91,6 @@ class ClipboardApp(Adw.Application):
         """Handle show-window action"""
         logger.info("show-window action triggered")
         self.activate()
-
-    def _setup_dbus(self):
-        """Set up DBus service for window activation"""
-        try:
-            dbus_xml = """
-            <!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
-            "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
-            <node>
-                <interface name="org.tfcbm.ClipboardManager">
-                    <method name="Activate">
-                        <arg type="u" name="timestamp" direction="in"/>
-                    </method>
-                    <method name="ShowSettings">
-                        <arg type="u" name="timestamp" direction="in"/>
-                    </method>
-                    <method name="Exit"/>
-                </interface>
-            </node>
-            """
-
-            node_info = Gio.DBusNodeInfo.new_for_xml(dbus_xml)
-
-            connection = self.get_dbus_connection()
-            if connection:
-                connection.register_object(
-                    "/org/tfcbm/ClipboardManager",
-                    node_info.interfaces[0],
-                    self._handle_dbus_method_call,
-                    None,
-                    None,
-                )
-                logger.info("DBus service registered for window activation")
-        except Exception as e:
-            logger.error(f"Failed to setup DBus service: {e}")
-
-    def _handle_dbus_method_call(
-        self,
-        connection,
-        sender,
-        object_path,
-        interface_name,
-        method_name,
-        parameters,
-        invocation,
-    ):
-        """Handle DBus method calls"""
-        if method_name == "Activate":
-            timestamp = parameters.unpack()[0] if parameters else 0
-            logger.info(f"DBus Activate called with timestamp {timestamp}")
-
-            with open("/tmp/tfcbm_dbus_debug.txt", "a") as f:
-                f.write(f"DBus Activate called at {timestamp}\n")
-
-            invocation.return_value(None)
-
-            win = self.props.active_window
-            if win:
-                try:
-                    is_visible = win.is_visible()
-
-                    if is_visible:
-                        win.hide()
-                        win.keyboard_handler.activated_via_keyboard = False
-                        logger.info("Window hidden via DBus")
-                    else:
-                        win.show()
-                        win.unminimize()
-                        win.present()
-                        win.keyboard_handler.activated_via_keyboard = True
-                        logger.info(
-                            "Window shown via DBus (keyboard shortcut)"
-                        )
-
-                        GLib.idle_add(win.keyboard_handler.focus_first_item)
-
-                except Exception as e:
-                    logger.error(f"Error toggling window: {e}")
-
-        elif method_name == "ShowSettings":
-            timestamp = parameters.unpack()[0] if parameters else 0
-            logger.info(f"DBus ShowSettings called with timestamp {timestamp}")
-
-            invocation.return_value(None)
-
-            win = self.props.active_window
-            if win:
-                try:
-                    # Show window if hidden
-                    if not win.is_visible():
-                        win.show()
-                        win.unminimize()
-                        win.present()
-
-                    # Navigate to settings page
-                    GLib.idle_add(win._show_settings_page, None)
-                    logger.info("Navigated to settings page via DBus")
-
-                except Exception as e:
-                    logger.error(f"Error showing settings: {e}")
-
-        elif method_name == "Exit":
-            logger.info("DBus Exit called")
-
-            invocation.return_value(None)
-
-            # Kill backend server if we have the PID
-            # Don't kill the server - it should keep running independently
-            logger.info("UI exiting, server will continue running in background")
-
-            # Quit the application
-            GLib.idle_add(self.quit)
-            logger.info("Application quit requested")
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""

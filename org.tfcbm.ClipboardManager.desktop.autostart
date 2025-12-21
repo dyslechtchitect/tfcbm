@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=TFCBM Clipboard Manager
+Comment=The Fucking Clipboard Manager - monitors and manages clipboard history
+Exec=/home/ron/Documents/git/TFCBM/.venv/bin/python3 /home/ron/Documents/git/TFCBM/launcher.py
+Icon=/home/ron/Documents/git/TFCBM/resouces/icon.svg
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=2
+Categories=Utility;
+Keywords=clipboard;manager;history;
+StartupNotify=false
+Hidden=false

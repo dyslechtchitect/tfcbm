@@ -26,8 +26,14 @@ from urllib.parse import unquote, urlparse
 import websockets
 from PIL import Image
 
+# Import GLib for DBus support
+import gi
+gi.require_version('GLib', '2.0')
+from gi.repository import GLib
+
 from database import ClipboardDB
 from settings import get_settings
+from dbus_service import TFCBMDBusService
 
 # Configure logging with module name
 logging.basicConfig(
@@ -473,6 +479,7 @@ async def websocket_handler(websocket):
                     for i, item in enumerate(items):
                         ui_items[i]["pasted_timestamp"] = item["pasted_timestamp"]
 
+                    logging.info(f"Sending {len(ui_items)} pasted items (total: {total_count}, offset: {offset})")
                     response = {"type": "recently_pasted", "items": ui_items, "total_count": total_count, "offset": offset}
                     await websocket.send(json.dumps(response))
 
@@ -483,6 +490,9 @@ async def websocket_handler(websocket):
                         with db_lock:
                             paste_id = db.add_pasted_item(item_id)
                         logging.info(f"Recorded paste for item {item_id} (paste_id={paste_id})")
+                        # Send confirmation response
+                        response = {"type": "paste_recorded", "success": True, "paste_id": paste_id}
+                        await websocket.send(json.dumps(response))
 
                 elif action == "search":
                     query = data.get("query", "").strip()
@@ -873,6 +883,146 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
+def handle_clipboard_event_dbus(event_data: dict):
+    """
+    Handle clipboard event from GNOME extension via DBus
+
+    Args:
+        event_data: Dictionary with clipboard event data from extension
+                   Format: {"type": "text|image/...|file", "data": "..."}
+    """
+    try:
+        event_type = event_data.get("type")
+        content_data = event_data.get("data")
+
+        if not event_type or content_data is None:
+            logging.warning(f"Invalid clipboard event: missing type or data")
+            return
+
+        logging.info(f"Processing clipboard event via DBus: {event_type}")
+
+        if event_type == "text":
+            # Handle text clipboard
+            text = content_data
+            text_bytes = text.encode("utf-8")
+
+            # Extract formatted content if present
+            format_type = event_data.get("formatType")
+            formatted_content_b64 = event_data.get("formattedContent")
+            formatted_content = None
+
+            if format_type and formatted_content_b64:
+                formatted_content = base64.b64decode(formatted_content_b64)
+                logging.info(f"  Detected {format_type} formatting ({len(formatted_content)} bytes)")
+
+            # Check for URL
+            url_pattern = re.compile(r'https?://\S+')
+            is_url = url_pattern.search(text) is not None
+            item_type = "url" if is_url else "text"
+
+            # Calculate hash for deduplication
+            text_hash = ClipboardDB.calculate_hash(text_bytes)
+            timestamp = datetime.now().isoformat()
+
+            with db_lock:
+                existing_item_id = db.get_item_by_hash(text_hash)
+
+            if existing_item_id:
+                # Duplicate - update timestamp
+                format_info = f" [{format_type}]" if format_type else ""
+                logging.info(f"↻ Updating duplicate {item_type} ({len(text)} chars){format_info}")
+                with db_lock:
+                    db.update_timestamp(existing_item_id, timestamp)
+                    item = db.get_item(existing_item_id)
+            else:
+                # New item
+                history.append({"type": item_type, "content": text, "timestamp": timestamp})
+
+                with db_lock:
+                    item_id = db.add_item(
+                        item_type, text_bytes, timestamp,
+                        data_hash=text_hash,
+                        format_type=format_type,
+                        formatted_content=formatted_content
+                    )
+                    item = db.get_item(item_id)
+
+                format_info = f" [{format_type}]" if format_type else ""
+                logging.info(f"✓ Copied {item_type} ({len(text)} chars){format_info}")
+
+        elif event_type.startswith("image/"):
+            # Handle image clipboard
+            image_content = json.loads(content_data)
+            image_data_b64 = image_content.get("data")
+            if not image_data_b64:
+                logging.warning("Image event missing data field")
+                return
+
+            image_bytes = base64.b64decode(image_data_b64)
+            image_hash = ClipboardDB.calculate_hash(image_bytes)
+            timestamp = datetime.now().isoformat()
+
+            with db_lock:
+                existing_item_id = db.get_item_by_hash(image_hash)
+
+            if existing_item_id:
+                # Duplicate
+                logging.info(f"↻ Updating duplicate image ({event_type}, {len(image_bytes)} bytes)")
+                with db_lock:
+                    db.update_timestamp(existing_item_id, timestamp)
+            else:
+                # New image
+                history.append({"type": event_type, "content": image_data_b64, "timestamp": timestamp})
+
+                with db_lock:
+                    item_id = db.add_item(event_type, image_bytes, timestamp, data_hash=image_hash)
+
+                # Generate thumbnail asynchronously
+                process_thumbnail_async(item_id, image_bytes)
+
+                logging.info(f"✓ Copied image ({event_type}, {len(image_bytes)} bytes)")
+
+        elif event_type == "file":
+            # Handle file clipboard
+            file_uri = content_data
+            logging.info(f"Received file URI: {file_uri}")
+
+            file_data = process_file(file_uri)
+
+            if file_data:
+                metadata = file_data['metadata']
+                file_content = file_data['content']
+
+                # Hash for deduplication
+                if metadata.get('is_directory'):
+                    hash_input = metadata['original_path'].encode('utf-8')
+                else:
+                    hash_input = file_content
+
+                file_hash = ClipboardDB.calculate_hash(hash_input)
+                timestamp = datetime.now().isoformat()
+
+                with db_lock:
+                    existing_item_id = db.get_item_by_hash(file_hash)
+
+                if existing_item_id:
+                    logging.info(f"↻ Updating duplicate file")
+                    with db_lock:
+                        db.update_timestamp(existing_item_id, timestamp)
+                else:
+                    history.append({"type": "file", "content": file_uri, "timestamp": timestamp})
+
+                    with db_lock:
+                        item_id = db.add_item("file", file_content, timestamp,
+                                            data_hash=file_hash, metadata=json.dumps(metadata))
+
+                    logging.info(f"✓ Copied file: {metadata.get('name', 'unknown')}")
+
+    except Exception as e:
+        logging.error(f"Error handling clipboard event from DBus: {e}")
+        logging.error(traceback.format_exc())
+
+
 def start_server():
     """Start UNIX socket server to receive clipboard data"""
     # Set up signal handlers for cleanup
@@ -915,6 +1065,35 @@ def start_server():
     websocket_thread = threading.Thread(target=run_websocket_server, daemon=True)
     websocket_thread.start()
     logging.info("WebSocket server started\n")
+
+    # Start DBus service in a separate thread
+    def run_dbus_service():
+        """Run DBus service with GLib main loop"""
+        # Create a mock app object that has the necessary methods
+        class DBusApp:
+            def get_dbus_connection(self):
+                from gi.repository import Gio
+                return Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+        dbus_app = DBusApp()
+        dbus_service = TFCBMDBusService(dbus_app, clipboard_handler=handle_clipboard_event_dbus)
+
+        if dbus_service.start():
+            logging.info("✓ DBus service started for GNOME extension integration")
+
+            # Run GLib main loop to handle DBus calls
+            from gi.repository import GLib
+            loop = GLib.MainLoop()
+            try:
+                loop.run()
+            except KeyboardInterrupt:
+                logging.info("DBus service stopped")
+        else:
+            logging.warning("Failed to start DBus service - extension integration won't work")
+
+    dbus_thread = threading.Thread(target=run_dbus_service, daemon=True)
+    dbus_thread.start()
+    logging.info("DBus service thread started\n")
 
     try:
         while True:
