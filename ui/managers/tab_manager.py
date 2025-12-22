@@ -54,15 +54,15 @@ class TabManager:
         title = selected_page.get_title()
         print(f"[DEBUG] Tab switched to: {title}", flush=True)
 
-        if title == "Recently Pasted":
+        if title == "Pasted":
             self._handle_pasted_tab()
-        elif title == "Recently Copied":
+        elif title == "Copied":
             self._handle_copied_tab()
         else:
             self._handle_other_tab(title)
 
     def _handle_pasted_tab(self) -> None:
-        """Handle switching to Recently Pasted tab."""
+        """Handle switching to Pasted tab."""
         self.current_tab = "pasted"
         # Reset pagination and reload pasted items from the beginning
         self.window.history_loader.reset_pagination("pasted")
@@ -76,7 +76,7 @@ class TabManager:
         )
 
     def _handle_copied_tab(self) -> None:
-        """Handle switching to Recently Copied tab."""
+        """Handle switching to Copied tab."""
         self.current_tab = "copied"
         # Show filter bar on clipboard tabs
         self.filter_bar.set_visible(True)

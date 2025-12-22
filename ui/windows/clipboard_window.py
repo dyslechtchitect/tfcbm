@@ -547,7 +547,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         if not current_page:
             return
 
-        is_copied_tab = current_page.get_title() == "Recently Copied"
+        is_copied_tab = current_page.get_title() == "Copied"
         if is_copied_tab:
             # Clear and reload copied items
             for row in list(self.copied_listbox):

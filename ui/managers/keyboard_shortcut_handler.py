@@ -52,7 +52,7 @@ class KeyboardShortcutHandler:
             False to prevent GLib timeout from repeating
         """
         try:
-            # Get the first row from the copied listbox (Recently Copied tab)
+            # Get the first row from the copied listbox (Copied tab)
             first_row = self.copied_listbox.get_row_at_index(0)
             if first_row:
                 # Set focus to the first row

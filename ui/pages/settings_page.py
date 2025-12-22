@@ -31,8 +31,15 @@ class SettingsPage:
         self.page_length_spin = None
 
         # Shortcut service setup
-        extension_dir = Path(__file__).parent.parent.parent / "gnome-extension"
+        # Look for the extension in the user's extensions directory
+        extension_dir = Path.home() / ".local/share/gnome-shell/extensions/tfcbm-clipboard-monitor@github.com"
         schema_dir = extension_dir / "schemas"
+
+        # Fall back to project directory if extension not installed
+        if not schema_dir.exists():
+            extension_dir = Path(__file__).parent.parent.parent / "gnome-extension"
+            schema_dir = extension_dir / "schemas"
+
         self.settings_store = GSettingsStore(
             schema_id="org.gnome.shell.extensions.simple-clipboard",
             key="toggle-tfcbm-ui",

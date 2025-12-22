@@ -79,18 +79,53 @@ class ClipboardApp(Adw.Application):
         except Exception as e:
             print(f"Warning: Could not load custom CSS: {e}")
 
-        # Setup DBus service using the new modular service
-        self.dbus_service = TFCBMDBusService(self)
-        self.dbus_service.start()
+        # NOTE: D-Bus service is registered by the server (tfcbm_server.py) which has
+        # the clipboard handler. The UI only needs to respond to D-Bus calls.
+        # Registering the service here causes a conflict and prevents clipboard monitoring.
+        # self.dbus_service = TFCBMDBusService(self)
+        # self.dbus_service.start()
 
         activate_action = Gio.SimpleAction.new("show-window", None)
         activate_action.connect("activate", self._on_show_window_action)
         self.add_action(activate_action)
 
+        # Add show-settings action for tray icon integration
+        settings_action = Gio.SimpleAction.new("show-settings", None)
+        settings_action.connect("activate", self._on_show_settings_action)
+        self.add_action(settings_action)
+
+        # Add quit action for tray icon integration
+        quit_action = Gio.SimpleAction.new("quit", None)
+        quit_action.connect("activate", self._on_quit_action)
+        self.add_action(quit_action)
+
     def _on_show_window_action(self, action, parameter):
         """Handle show-window action"""
         logger.info("show-window action triggered")
         self.activate()
+
+    def _on_show_settings_action(self, action, parameter):
+        """Handle show-settings action - show window and navigate to settings"""
+        logger.info("show-settings action triggered")
+        win = self.props.active_window
+        if not win:
+            # Create window first
+            self.activate()
+            win = self.props.active_window
+
+        if win:
+            # Show and present window
+            win.show()
+            win.unminimize()
+            win.present()
+            # Navigate to settings page
+            if hasattr(win, '_show_settings_page'):
+                GLib.idle_add(win._show_settings_page, None)
+
+    def _on_quit_action(self, action, parameter):
+        """Handle quit action"""
+        logger.info("quit action triggered")
+        self.quit()
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""

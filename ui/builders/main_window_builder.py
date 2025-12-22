@@ -230,7 +230,7 @@ class MainWindowBuilder:
         copied_vadj.connect("value-changed", lambda adj: self.window._on_scroll_changed(adj, "copied"))
 
         copied_page = tab_view.append(copied_scrolled)
-        copied_page.set_title("Recently Copied")
+        copied_page.set_title("Copied")
         copied_page.set_icon(Gio.ThemedIcon.new("edit-copy-symbolic"))
         copied_page.set_indicator_icon(None)
 
@@ -270,7 +270,7 @@ class MainWindowBuilder:
         pasted_vadj.connect("value-changed", lambda adj: self.window._on_scroll_changed(adj, "pasted"))
 
         pasted_page = tab_view.append(pasted_scrolled)
-        pasted_page.set_title("Recently Pasted")
+        pasted_page.set_title("Pasted")
         pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
         pasted_page.set_indicator_icon(None)
 
