@@ -79,11 +79,11 @@ class ClipboardApp(Adw.Application):
         except Exception as e:
             print(f"Warning: Could not load custom CSS: {e}")
 
-        # NOTE: D-Bus service is registered by the server (tfcbm_server.py) which has
-        # the clipboard handler. The UI only needs to respond to D-Bus calls.
-        # Registering the service here causes a conflict and prevents clipboard monitoring.
-        # self.dbus_service = TFCBMDBusService(self)
-        # self.dbus_service.start()
+        # Register D-Bus service for extension integration
+        # The UI handles Activate/ShowSettings/Quit commands
+        # The server handles OnClipboardChange events (different service name)
+        self.dbus_service = TFCBMDBusService(self)
+        self.dbus_service.start()
 
         activate_action = Gio.SimpleAction.new("show-window", None)
         activate_action.connect("activate", self._on_show_window_action)
@@ -144,16 +144,29 @@ class ClipboardApp(Adw.Application):
         return 0
 
     def do_activate(self):
-        """Activate the application"""
+        """Activate the application - toggle window visibility"""
         win = self.props.active_window
         if not win:
             from ui.windows.clipboard_window import ClipboardWindow
 
             win = ClipboardWindow(self, self.server_pid)
         else:
-            logger.info("Activating existing window...")
-            win.present()
-            logger.info("Window activation requested")
+            # Toggle window visibility instead of always showing
+            logger.info("Toggling window visibility...")
+            if win.is_visible():
+                logger.info("Hiding window")
+                win.hide()
+                if hasattr(win, 'keyboard_handler'):
+                    win.keyboard_handler.activated_via_keyboard = False
+            else:
+                logger.info("Showing window")
+                win.show()
+                win.unminimize()
+                win.present()
+                if hasattr(win, 'keyboard_handler'):
+                    win.keyboard_handler.activated_via_keyboard = True
+                    # Focus first item
+                    GLib.idle_add(win.keyboard_handler.focus_first_item)
 
 
 def main():
