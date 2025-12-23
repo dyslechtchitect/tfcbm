@@ -83,13 +83,13 @@ class TagDisplayManager:
             btn = Gtk.Button.new_with_label(tag_name)
             btn.add_css_class("pill")
 
-            # Apply color styling - selected tags colored, unselected greyed out
+            # Apply color styling - selected tags colored, unselected with weak color tint
             css_provider = Gtk.CssProvider()
             if is_selected:
                 css_data = f"button.pill {{ background-color: alpha({tag_color}, 0.25); color: {tag_color}; font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha({tag_color}, 0.4); border-radius: 2px; }}"
             else:
-                # Unselected: greyed out
-                css_data = "button.pill { background-color: alpha(#666666, 0.08); color: alpha(#666666, 0.5); font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha(#666666, 0.2); border-radius: 2px; }"
+                # Unselected: weak color tint (very subtle alpha on the tag color)
+                css_data = f"button.pill {{ background-color: alpha({tag_color}, 0.06); color: alpha({tag_color}, 0.4); font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha({tag_color}, 0.15); border-radius: 2px; }}"
             css_provider.load_from_data(css_data.encode())
             btn.get_style_context().add_provider(
                 css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION

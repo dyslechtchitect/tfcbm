@@ -28,9 +28,9 @@ class ItemTags:
         if self.on_click:
             tags_gesture = Gtk.GestureClick.new()
             tags_gesture.connect(
-                "released", lambda g, n, x, y: self.on_click()
+                "released", self._on_tags_clicked
             )
-            tags_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            tags_gesture.set_propagation_phase(Gtk.PropagationPhase.BUBBLE)
             tags_box.add_controller(tags_gesture)
 
         for tag in self.user_tags:
@@ -38,6 +38,14 @@ class ItemTags:
             tags_box.append(tag_label)
 
         return tags_box
+
+    def _on_tags_clicked(self, gesture, n_press, x, y):
+        """Handle tags click and prevent propagation to card."""
+        # Call the callback
+        if self.on_click:
+            self.on_click()
+        # Stop event propagation so card doesn't get clicked
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
 
     def _create_tag_label(self, tag: dict) -> Gtk.Label:
         tag_name = tag.get("name", "")

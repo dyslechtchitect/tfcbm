@@ -48,9 +48,13 @@ class ItemTagManager:
         self.tags_widget = None
         self.ws_uri = "ws://localhost:8765"
 
-    def handle_tags_action(self):
-        """Handle tags button click - show tags popover."""
-        self.show_tags_popover()
+    def handle_tags_action(self, anchor_to_tags=False):
+        """Handle tags button click - show tags popover.
+
+        Args:
+            anchor_to_tags: If True, anchor to tags widget; otherwise anchor to button
+        """
+        self.show_tags_popover(anchor_to_tags=anchor_to_tags)
 
     def display_tags(self, tags):
         """Display tags in the tags overlay.
@@ -63,22 +67,37 @@ class ItemTagManager:
             self.overlay.remove_overlay(self.tags_widget)
 
         # Create new tags widget
-        tags_component = ItemTags(tags=tags, on_click=self.on_tags_action_callback)
+        # When tags are clicked, we want to anchor the popover to the tags widget
+        tags_component = ItemTags(tags=tags, on_click=lambda: self.handle_tags_action(anchor_to_tags=True))
         self.tags_widget = tags_component.build()
 
         # Add new tags widget to overlay
         self.overlay.add_overlay(self.tags_widget)
 
-    def show_tags_popover(self):
-        """Show popover to manage tags for this item."""
+    def show_tags_popover(self, anchor_to_tags=False):
+        """Show popover to manage tags for this item.
+
+        Args:
+            anchor_to_tags: If True, anchor to tags widget; otherwise anchor to button
+        """
         # Create popover
         popover = Gtk.Popover()
-        # Anchor to the tags button if available, otherwise the row
-        if hasattr(self, "tags_button"):
+
+        # Anchor based on where it was clicked from
+        if anchor_to_tags and self.tags_widget:
+            # Clicked from tags display (bottom left) - anchor above tags
+            popover.set_parent(self.tags_widget)
+            popover.set_position(Gtk.PositionType.TOP)
+        elif hasattr(self, "tags_button") and self.tags_button:
+            # Clicked from Manage Tags button (top right) - anchor below button
             popover.set_parent(self.tags_button)
             popover.set_position(Gtk.PositionType.BOTTOM)
+        elif self.tags_widget:
+            # Fallback to tags widget if button not set
+            popover.set_parent(self.tags_widget)
+            popover.set_position(Gtk.PositionType.TOP)
         else:
-            # Fallback to overlay parent
+            # Final fallback to overlay
             popover.set_parent(self.overlay)
         popover.set_autohide(True)
 

@@ -199,6 +199,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             GObject.TYPE_STRING, Gdk.DragAction.COPY
         )
         drop_target.connect("drop", lambda dt, val, x, y: self.tag_manager.handle_tag_drop(dt, val, x, y) if self.tag_manager else False)
+        drop_target.connect("enter", lambda dt, x, y: self._on_drag_enter(card_frame))
+        drop_target.connect("leave", lambda dt: self._on_drag_leave(card_frame))
         main_box.add_controller(drop_target)
 
         self.overlay = Gtk.Overlay()
@@ -213,6 +215,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             on_tags_action=self._on_tags_action,
         )
 
+        # Set the tags button reference for popover anchoring
+        if hasattr(self.actions, 'tags_button'):
+            self.tag_manager.set_tags_button(self.actions.tags_button)
+
         # Build initial tags display using tag manager
         self.tag_manager.display_tags(self.item.get("tags", []))
 
@@ -224,6 +230,17 @@ class ClipboardItemRow(Gtk.ListBoxRow):
     def _load_item_tags(self):
         """Reload tags for this item - called by TagDisplayManager after drag-and-drop."""
         self.ws_service.load_item_tags()
+
+    def _on_drag_enter(self, card_frame):
+        """Handle drag enter - brighten card without border outline."""
+        # Add CSS class to brighten the card
+        card_frame.add_css_class("drag-hover")
+        return Gdk.DragAction.COPY
+
+    def _on_drag_leave(self, card_frame):
+        """Handle drag leave - remove brightening effect."""
+        # Remove CSS class
+        card_frame.remove_css_class("drag-hover")
 
     def _rebuild_content(self):
         """Rebuild the content area to reflect updated item data."""
@@ -267,6 +284,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
         # Build new header with updated actions
         new_actions_widget = self.actions.build()
+
+        # Update tags button reference in tag manager
+        if hasattr(self.actions, 'tags_button'):
+            self.tag_manager.set_tags_button(self.actions.tags_button)
+
         header = ItemHeader(
             item=self.item,
             on_name_save=self.ws_service.update_item_name,

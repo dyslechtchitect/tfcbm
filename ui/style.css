@@ -13,6 +13,11 @@
     background-color: rgba(128, 128, 128, 0.1); /* Light grey flash on hover */
 }
 
+.clipboard-item-card.drag-hover {
+    background-color: rgba(200, 200, 200, 0.2); /* Brighter when tag is dragged over */
+    transition: background-color 0.15s ease-in-out;
+}
+
 /* Content box will use Gtk.Box properties for layout */
 /* .clipboard-item-content {
     flex-grow: 1;
