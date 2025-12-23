@@ -35,7 +35,7 @@ class AboutWindow(Gtk.Window):
 
         # Try to load TFCBM logo (try SVG first, then PNG)
         try:
-            svg_path = Path(__file__).parent.parent / "resouces" / "tfcbm.svg"
+            svg_path = Path(__file__).parent.parent / "resouces" / "icon.svg"
 
             icon_path = (
                 svg_path
@@ -45,14 +45,14 @@ class AboutWindow(Gtk.Window):
 
             if icon_path:
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                    str(icon_path), 200, 200, True
+                    str(icon_path), 20, 20, True
                 )
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 logo = Gtk.Picture.new_for_paintable(texture)
-                logo.set_size_request(200, 200)
+                logo.set_size_request(20, 20)
                 content_box.append(logo)
             else:
-                print("TFCBM logo not found (tried tfcbm.svg and tfcbm.png)")
+                print("TFCBM logo not found (tried icon.svg and icon.png)")
         except Exception as e:
             print(f"Could not load about logo: {e}")
 
@@ -62,7 +62,7 @@ class AboutWindow(Gtk.Window):
         content_box.append(title)
 
         # Subtitle
-        subtitle = Gtk.Label(label="A clipboard manager that actually f***ing works!")
+        subtitle = Gtk.Label(label="A clipboard manager that just works!")
         subtitle.add_css_class("title-4")
         subtitle.add_css_class("dim-label")
         content_box.append(subtitle)

@@ -34,8 +34,8 @@ class SplashWindow(Gtk.Window):
         # Try to load TFCBM logo (try SVG first, then PNG)
         try:
             # Try SVG first
-            svg_path = Path(__file__).parent.parent / "resouces" / "tfcbm.svg"
-            png_path = Path(__file__).parent.parent / "resouces" / "tfcbm.png"
+            svg_path = Path(__file__).parent.parent / "resouces" / "icon.svg"
+            png_path = Path(__file__).parent.parent / "resouces" / "icon.png"
 
             icon_path = (
                 svg_path
@@ -52,7 +52,7 @@ class SplashWindow(Gtk.Window):
                 logo.set_size_request(256, 256)
                 box.append(logo)
             else:
-                print("TFCBM logo not found (tried tfcbm.svg and tfcbm.png)")
+                print("TFCBM logo not found (tried icon.svg and icon.png)")
         except Exception as e:
             print(f"Could not load splash logo: {e}")
 

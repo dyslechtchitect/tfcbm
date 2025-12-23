@@ -1083,6 +1083,19 @@ def start_server():
         if dbus_service.start():
             logging.info("✓ DBus service started for GNOME extension integration")
 
+            # Enable GNOME extension if it's disabled
+            try:
+                logging.info("Ensuring GNOME extension is enabled...")
+                result = subprocess.run([
+                    'gnome-extensions', 'enable', 'tfcbm-clipboard-monitor@github.com'
+                ], capture_output=True, timeout=5)
+                if result.returncode == 0:
+                    logging.info("✓ GNOME extension enabled")
+                else:
+                    logging.warning(f"Extension enable returned: {result.stderr.decode().strip()}")
+            except Exception as e:
+                logging.warning(f"Failed to enable GNOME extension: {e}")
+
             # Run GLib main loop to handle DBus calls
             from gi.repository import GLib
             loop = GLib.MainLoop()

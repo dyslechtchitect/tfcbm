@@ -243,6 +243,17 @@ class TFCBMDBusService:
 
         invocation.return_value(None)
 
+        # Disable the GNOME extension when quitting
+        try:
+            import subprocess
+            logger.info("Disabling GNOME extension...")
+            subprocess.run([
+                'gnome-extensions', 'disable', 'tfcbm-clipboard-monitor@github.com'
+            ], timeout=5)
+            logger.info("GNOME extension disabled")
+        except Exception as e:
+            logger.warning(f"Failed to disable GNOME extension: {e}")
+
         # Try to quit the app if it has a quit method
         if hasattr(self.app, 'quit'):
             GLib.idle_add(self.app.quit)

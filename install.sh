@@ -26,6 +26,14 @@ if [ "$1" = "run" ]; then
     : > /tmp/tfcbm_server.log
     : > /tmp/tfcbm_ui.log
 
+    # Enable the GNOME extension
+    print_status "Enabling GNOME extension..."
+    if gnome-extensions enable tfcbm-clipboard-monitor@github.com 2>/dev/null; then
+        print_success "GNOME extension enabled"
+    else
+        print_warning "Could not enable GNOME extension (may not be installed)"
+    fi
+
     # Check if server is already running
     if ! pgrep -f "tfcbm_server.py" > /dev/null; then
         # Start the server in the background
@@ -87,7 +95,7 @@ cat > "$DESKTOP_FILE" << EOF
 Name=TFCBM
 Comment=Clipboard Manager
 Exec=$INSTALL_DIR/install.sh run
-Icon=$INSTALL_DIR/resouces/icon-256.png
+Icon=$INSTALL_DIR/resouces/icon.svg
 Terminal=false
 Type=Application
 Categories=Utility;GTK;
@@ -105,7 +113,7 @@ cat > "$AUTOSTART_FILE" << EOF
 Type=Application
 Name=TFCBM
 Exec=$INSTALL_DIR/install.sh run
-Icon=$INSTALL_DIR/resouces/icon-256.png
+Icon=$INSTALL_DIR/resouces/icon.svg
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
