@@ -56,12 +56,19 @@ class ClipboardApp(Adw.Application):
                 Path(__file__).parent.parent.parent / "resouces" / "icon.svg"
             )
             if icon_path.exists():
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(icon_path))
-                Gdk.Texture.new_for_pixbuf(pixbuf)
+                # Add the icon directory to the icon theme search path
                 display = Gdk.Display.get_default()
                 if display:
                     icon_theme = Gtk.IconTheme.get_for_display(display)
                     icon_theme.add_search_path(str(icon_path.parent))
+
+                    # Copy the icon with the application ID name so GTK can find it
+                    import shutil
+                    app_icon_path = icon_path.parent / "org.tfcbm.ClipboardManager.svg"
+                    if not app_icon_path.exists():
+                        shutil.copy(icon_path, app_icon_path)
+
+                    print(f"Set up application icon at {icon_path}")
         except Exception as e:
             print(f"Warning: Could not set up application icon: {e}")
 

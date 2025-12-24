@@ -113,8 +113,21 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         self.page_size = self.settings.max_page_length
 
-        # Window icon is set through the desktop file and application
-        # GTK4/Adwaita doesn't use set_icon() anymore
+        # Set window icon
+        try:
+            icon_path = Path(__file__).parent.parent.parent / "resouces" / "icon.svg"
+            if icon_path.exists():
+                # GTK4 uses set_icon_name, but we need to install the icon first
+                # For now, load the icon as a texture and set it
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(icon_path))
+                texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+                # Create a paintable from the texture
+                paintable = texture
+                # For Adwaita windows, we set via icon-name if available, or use default-widget
+                # Actually, let's set it as the window icon via the application
+                self.set_icon_name("org.tfcbm.ClipboardManager")
+        except Exception as e:
+            logger.warning(f"Could not set window icon: {e}")
 
         # ========== UI Construction via MainWindowBuilder ==========
         builder = MainWindowBuilder(self)
