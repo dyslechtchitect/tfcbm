@@ -178,18 +178,20 @@ class ClipboardApp(Adw.Application):
         """Activate the application - toggle window visibility"""
         win = self.props.active_window
         if not win:
-            # Check if GNOME extension is installed
-            from ui.utils.extension_check import is_extension_installed
+            # Check if GNOME extension is ready (installed AND enabled)
+            from ui.utils.extension_check import get_extension_status
 
-            if not is_extension_installed():
-                logger.warning("GNOME extension not found - showing error window")
+            ext_status = get_extension_status()
+
+            if not ext_status['ready']:
+                logger.warning(f"GNOME extension not ready - showing setup window (installed={ext_status['installed']}, enabled={ext_status['enabled']})")
                 from ui.windows.extension_error_window import ExtensionErrorWindow
 
-                error_win = ExtensionErrorWindow(self)
+                error_win = ExtensionErrorWindow(self, ext_status)
                 error_win.present()
                 return
 
-            # Extension is installed, proceed with normal window
+            # Extension is ready, proceed with normal window
             from ui.windows.clipboard_window import ClipboardWindow
 
             win = ClipboardWindow(self, self.server_pid)

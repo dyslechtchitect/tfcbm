@@ -1,0 +1,25 @@
+# Flatpak App with Bundled GNOME Shell Extension — Implementation Plan
+
+## Goal
+Ship a Flatpak application that optionally installs a GNOME Shell extension for desktop integration, in a way that:
+- Is accepted by Fedora / Flathub reviewers
+- Respects GNOME Shell security and UX rules
+- Requires explicit user action
+- Works cleanly on Wayland (GNOME 45+)
+
+The app is primary. The extension is optional.
+
+---
+
+## Constraints (Non-Negotiable)
+- The GNOME Shell extension **must not auto-install**
+- The extension **must not auto-enable**
+- No system-wide writes
+- No modifying `/usr` or `/app/share/gnome-shell/extensions`
+- No silent Shell manipulation
+- Extension must do nothing if the app is not present
+
+---
+
+## Project Layout
+
