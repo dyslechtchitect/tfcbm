@@ -50,6 +50,38 @@ class ItemDialogHandler:
         self.ws_service = ws_service
         self.get_root = get_root
 
+    def _is_text_file(self, mime_type: str) -> bool:
+        """Check if a file is text-based and can be displayed.
+
+        Args:
+            mime_type: MIME type of the file
+
+        Returns:
+            bool: True if file can be displayed as text
+        """
+        if not mime_type:
+            return False
+
+        # Common text-based MIME types
+        text_mimes = [
+            "text/",  # All text/* types
+            "application/json",
+            "application/xml",
+            "application/javascript",
+            "application/x-sh",
+            "application/x-shellscript",
+            "application/x-python",
+            "application/x-perl",
+            "application/x-ruby",
+            "application/x-php",
+            "application/x-yaml",
+            "application/yaml",
+            "application/toml",
+            "application/x-httpd-php",
+        ]
+
+        return any(mime_type.startswith(prefix) for prefix in text_mimes)
+
     def handle_view_action(self):
         """Handle view button click - show full item dialog."""
         logger.info(f"VIEW ACTION TRIGGERED for item {self.item.get('id')} type={self.item.get('type')}")
@@ -101,6 +133,7 @@ class ItemDialogHandler:
 
     def handle_save_action(self):
         """Handle save button click - show save file dialog."""
+        logger.info(f"SAVE ACTION TRIGGERED for item {self.item.get('id')} type={self.item.get('type')}")
         # Check if item is secret and require authentication
         is_secret = self.item.get("is_secret", False)
         item_id = self.item.get("id")
@@ -202,6 +235,19 @@ class ItemDialogHandler:
                 else custom_name or "screenshot.png"
             )
             dialog.set_initial_name(filename)
+        elif item_type == "file":
+            # Get file metadata
+            file_metadata = self.item.get("content", {})
+            file_name = file_metadata.get("name", "file")
+            extension = file_metadata.get("extension", "")
+
+            # Use original filename with extension
+            if custom_name:
+                filename = custom_name
+            else:
+                filename = file_name
+
+            dialog.set_initial_name(filename)
 
         window = self.get_root()
 
@@ -217,11 +263,84 @@ class ItemDialogHandler:
                             f"Saved {'URL' if item_type == 'url' else 'text'} to {path}"
                         )
                     elif item_type.startswith("image/") or item_type == "screenshot":
-                        # Save image from base64 data
-                        image_data = base64.b64decode(self.item["content"])
-                        with open(path, "wb") as f:
-                            f.write(image_data)
-                        logger.info(f"Saved image to {path}")
+                        # Need to fetch full image from server
+                        import asyncio
+                        import json
+                        import websockets
+
+                        item_id = self.item.get("id")
+
+                        def fetch_and_save():
+                            try:
+                                async def get_full_image():
+                                    uri = "ws://localhost:8765"
+                                    max_size = 50 * 1024 * 1024
+                                    async with websockets.connect(uri, max_size=max_size) as websocket:
+                                        request = {"action": "get_full_image", "id": item_id}
+                                        await websocket.send(json.dumps(request))
+                                        response = await websocket.recv()
+                                        data = json.loads(response)
+
+                                        if data.get("type") == "full_image" and data.get("id") == item_id:
+                                            image_b64 = data.get("content")
+                                            if not image_b64:
+                                                raise Exception("No image data in response")
+
+                                            image_data = base64.b64decode(image_b64)
+                                            with open(path, "wb") as f:
+                                                f.write(image_data)
+                                            logger.info(f"Saved full image to {path}")
+
+                                            def show_success():
+                                                self.window.show_notification(f"Image saved to {Path(path).name}")
+                                                return False
+
+                                            GLib.idle_add(show_success)
+                                        else:
+                                            raise Exception("Invalid response from server")
+
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                try:
+                                    loop.run_until_complete(get_full_image())
+                                finally:
+                                    loop.close()
+
+                            except Exception as e:
+                                logger.error(f"Error fetching/saving image: {e}")
+                                def show_error():
+                                    self.window.show_notification(f"Error saving image: {str(e)}")
+                                    return False
+                                GLib.idle_add(show_error)
+
+                        # Run in thread
+                        import threading
+                        threading.Thread(target=fetch_and_save, daemon=True).start()
+                    elif item_type == "file":
+                        # Copy file from original location
+                        file_metadata = self.item.get("content", {})
+                        original_path = file_metadata.get("original_path", "")
+
+                        if original_path and Path(original_path).exists():
+                            import shutil
+                            try:
+                                if Path(original_path).is_dir():
+                                    # Copy directory recursively
+                                    shutil.copytree(original_path, path, dirs_exist_ok=True)
+                                    logger.info(f"Saved folder to {path}")
+                                    self.window.show_notification(f"Folder saved to {Path(path).name}")
+                                else:
+                                    # Copy file
+                                    shutil.copy2(original_path, path)
+                                    logger.info(f"Saved file to {path}")
+                                    self.window.show_notification(f"File saved to {Path(path).name}")
+                            except Exception as e:
+                                logger.error(f"Error copying file: {e}")
+                                self.window.show_notification(f"Error saving: {str(e)}")
+                        else:
+                            error_msg = "Original file no longer exists"
+                            logger.error(error_msg)
+                            self.window.show_notification(error_msg)
             except Exception as e:
                 logger.error(f"Error saving file: {e}")
 
@@ -435,7 +554,7 @@ class ItemDialogHandler:
                 folder_box.append(file_chooser)
                 content_scroll.set_child(folder_box)
             elif (not is_directory and original_path and Path(original_path).exists() and
-                  mime_type and mime_type.startswith("text/")):
+                  mime_type and self._is_text_file(mime_type)):
                 # Text file - read and display content
                 try:
                     with open(original_path, 'r', encoding='utf-8') as f:

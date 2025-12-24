@@ -185,7 +185,35 @@ def process_file(file_uri: str) -> dict:
         # Determine mime type
         mime_type, _ = mimetypes.guess_type(file_path)
         if not mime_type:
-            mime_type = "application/octet-stream"
+            # Special handling for common config files and dotfiles
+            file_lower = file_name.lower()
+            if file_lower in ['.bashrc', '.zshrc', '.bash_profile', '.profile', '.bash_logout',
+                             '.zprofile', '.zshenv', '.zlogin', '.zlogout']:
+                mime_type = "application/x-shellscript"
+            elif file_lower in ['.vimrc', '.nvimrc', '.editorconfig', '.gitignore',
+                               '.gitattributes', '.dockerignore', '.npmignore']:
+                mime_type = "text/plain"
+            elif file_lower in ['.eslintrc', '.prettierrc', '.babelrc']:
+                mime_type = "application/json"
+            elif file_lower.endswith('rc') and not file_lower.endswith('.src'):
+                # Generic rc files are usually text
+                mime_type = "text/plain"
+            else:
+                # Try to detect if it's text by reading first bytes
+                try:
+                    with open(file_path, 'rb') as test_file:
+                        sample = test_file.read(512)
+                        # Check if it's text (no null bytes, mostly printable)
+                        if b'\x00' not in sample:
+                            try:
+                                sample.decode('utf-8')
+                                mime_type = "text/plain"
+                            except UnicodeDecodeError:
+                                mime_type = "application/octet-stream"
+                        else:
+                            mime_type = "application/octet-stream"
+                except Exception:
+                    mime_type = "application/octet-stream"
 
         # Read file contents (with size limit for safety)
         MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB limit
@@ -1028,11 +1056,17 @@ def handle_clipboard_event_dbus(event_data: dict):
                     else:
                         history.append({"type": "file", "content": file_uri, "timestamp": timestamp})
 
+                        # Store as: metadata_json + separator + file_content
+                        # This allows UI to access both metadata AND file content
+                        metadata_json = json.dumps(metadata).encode('utf-8')
+                        separator = b'\n---FILE_CONTENT---\n'
+                        combined_data = metadata_json + separator + file_content
+
                         with db_lock:
-                            item_id = db.add_item("file", file_content, timestamp,
+                            item_id = db.add_item("file", combined_data, timestamp,
                                                 data_hash=file_hash, name=metadata.get('name', 'unknown'))
 
-                        logging.info(f"✓ Copied file/folder: {metadata.get('name', 'unknown')}")
+                        logging.info(f"✓ Copied file/folder: {metadata.get('name', 'unknown')} (mime: {metadata.get('mime_type', 'unknown')})")
 
     except Exception as e:
         logging.error(f"Error handling clipboard event from DBus: {e}")
