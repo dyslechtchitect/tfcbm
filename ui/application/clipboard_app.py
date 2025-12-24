@@ -80,10 +80,34 @@ class ClipboardApp(Adw.Application):
             print(f"Warning: Could not load custom CSS: {e}")
 
         # Register D-Bus service for extension integration
-        # The UI handles Activate/ShowSettings/Quit commands
-        # The server handles OnClipboardChange events (different service name)
-        self.dbus_service = TFCBMDBusService(self)
+        # The UI handles Activate/ShowSettings/Quit commands AND forwards clipboard events to server
+        self.dbus_service = TFCBMDBusService(self, clipboard_handler=self._handle_clipboard_event)
         self.dbus_service.start()
+
+    def _handle_clipboard_event(self, event_data):
+        """Forward clipboard events from GNOME extension to the server"""
+        import asyncio
+        import websockets
+        import json
+
+        async def send_to_server():
+            try:
+                async with websockets.connect('ws://localhost:8765') as websocket:
+                    await websocket.send(json.dumps({
+                        'action': 'clipboard_event',
+                        'data': event_data
+                    }))
+                    logger.info(f"Forwarded {event_data.get('type')} event to server")
+            except Exception as e:
+                logger.error(f"Failed to forward clipboard event to server: {e}")
+
+        # Run async task
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(send_to_server())
+        except Exception as e:
+            logger.error(f"Error handling clipboard event in UI: {e}")
 
         activate_action = Gio.SimpleAction.new("show-window", None)
         activate_action.connect("activate", self._on_show_window_action)

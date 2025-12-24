@@ -398,6 +398,7 @@ async def websocket_handler(websocket):
             try:
                 data = json.loads(message)
                 action = data.get("action")
+                logging.debug(f"WebSocket received action: {action}")
 
                 if action == "get_history":
                     limit = data.get("limit", settings.max_page_length)
@@ -796,6 +797,13 @@ async def websocket_handler(websocket):
                     await websocket.send(json.dumps(response))
                     logging.info(f"Sent {len(extensions)} file extensions")
 
+                elif action == "clipboard_event":
+                    # Handle clipboard events forwarded from UI (which received them from extension via DBus)
+                    event_data = data.get("data", {})
+                    logging.info(f"Received clipboard event via WebSocket: {event_data.get('type', 'unknown')}")
+                    handle_clipboard_event_dbus(event_data)
+                    # No response needed
+
             except Exception as e:
                 logging.error(f"Error handling WebSocket message: {e}")
 
@@ -985,40 +993,46 @@ def handle_clipboard_event_dbus(event_data: dict):
                 logging.info(f"✓ Copied image ({event_type}, {len(image_bytes)} bytes)")
 
         elif event_type == "file":
-            # Handle file clipboard
-            file_uri = content_data
-            logging.info(f"Received file URI: {file_uri}")
+            # Handle file clipboard - can be multiple files/folders separated by newlines
+            file_uris_raw = content_data
+            logging.info(f"Received file URI(s): {file_uris_raw[:200]}...")  # Truncate for logging
 
-            file_data = process_file(file_uri)
+            # Split by newlines and filter empty lines
+            file_uris = [uri.strip() for uri in file_uris_raw.split('\n') if uri.strip()]
+            logging.info(f"Processing {len(file_uris)} file(s)/folder(s)")
 
-            if file_data:
-                metadata = file_data['metadata']
-                file_content = file_data['content']
+            # Process each file/folder
+            for file_uri in file_uris:
+                file_data = process_file(file_uri)
 
-                # Hash for deduplication
-                if metadata.get('is_directory'):
-                    hash_input = metadata['original_path'].encode('utf-8')
-                else:
-                    hash_input = file_content
+                if file_data:
+                    metadata = file_data['metadata']
+                    file_content = file_data['content']
 
-                file_hash = ClipboardDB.calculate_hash(hash_input)
-                timestamp = datetime.now().isoformat()
+                    # Hash for deduplication
+                    if metadata.get('is_directory'):
+                        hash_input = metadata['original_path'].encode('utf-8')
+                    else:
+                        hash_input = file_content
 
-                with db_lock:
-                    existing_item_id = db.get_item_by_hash(file_hash)
-
-                if existing_item_id:
-                    logging.info(f"↻ Updating duplicate file")
-                    with db_lock:
-                        db.update_timestamp(existing_item_id, timestamp)
-                else:
-                    history.append({"type": "file", "content": file_uri, "timestamp": timestamp})
+                    file_hash = ClipboardDB.calculate_hash(hash_input)
+                    timestamp = datetime.now().isoformat()
 
                     with db_lock:
-                        item_id = db.add_item("file", file_content, timestamp,
-                                            data_hash=file_hash, metadata=json.dumps(metadata))
+                        existing_item_id = db.get_item_by_hash(file_hash)
 
-                    logging.info(f"✓ Copied file: {metadata.get('name', 'unknown')}")
+                    if existing_item_id:
+                        logging.info(f"↻ Updating duplicate file/folder")
+                        with db_lock:
+                            db.update_timestamp(existing_item_id, timestamp)
+                    else:
+                        history.append({"type": "file", "content": file_uri, "timestamp": timestamp})
+
+                        with db_lock:
+                            item_id = db.add_item("file", file_content, timestamp,
+                                                data_hash=file_hash, name=metadata.get('name', 'unknown'))
+
+                        logging.info(f"✓ Copied file/folder: {metadata.get('name', 'unknown')}")
 
     except Exception as e:
         logging.error(f"Error handling clipboard event from DBus: {e}")
@@ -1068,47 +1082,21 @@ def start_server():
     websocket_thread.start()
     logging.info("WebSocket server started\n")
 
-    # Start DBus service in a separate thread
-    def run_dbus_service():
-        """Run DBus service with GLib main loop"""
-        # Create a mock app object that has the necessary methods
-        class DBusApp:
-            def get_dbus_connection(self):
-                from gi.repository import Gio
-                return Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    # DBus service is now handled by the UI process, not the server
+    # The UI owns org.tfcbm.ClipboardManager and forwards clipboard events to the server via WebSocket
 
-        dbus_app = DBusApp()
-        dbus_service = TFCBMDBusService(dbus_app, clipboard_handler=handle_clipboard_event_dbus)
-
-        if dbus_service.start():
-            logging.info("✓ DBus service started for GNOME extension integration")
-
-            # Enable GNOME extension if it's disabled
-            try:
-                logging.info("Ensuring GNOME extension is enabled...")
-                result = subprocess.run([
-                    'gnome-extensions', 'enable', 'tfcbm-clipboard-monitor@github.com'
-                ], capture_output=True, timeout=5)
-                if result.returncode == 0:
-                    logging.info("✓ GNOME extension enabled")
-                else:
-                    logging.warning(f"Extension enable returned: {result.stderr.decode().strip()}")
-            except Exception as e:
-                logging.warning(f"Failed to enable GNOME extension: {e}")
-
-            # Run GLib main loop to handle DBus calls
-            from gi.repository import GLib
-            loop = GLib.MainLoop()
-            try:
-                loop.run()
-            except KeyboardInterrupt:
-                logging.info("DBus service stopped")
+    # Enable GNOME extension if it's disabled
+    try:
+        logging.info("Ensuring GNOME extension is enabled...")
+        result = subprocess.run([
+            'gnome-extensions', 'enable', 'tfcbm-clipboard-monitor@github.com'
+        ], capture_output=True, timeout=5)
+        if result.returncode == 0:
+            logging.info("✓ GNOME extension enabled")
         else:
-            logging.warning("Failed to start DBus service - extension integration won't work")
-
-    dbus_thread = threading.Thread(target=run_dbus_service, daemon=True)
-    dbus_thread.start()
-    logging.info("DBus service thread started\n")
+            logging.warning(f"Extension enable returned: {result.stderr.decode().strip()}")
+    except Exception as e:
+        logging.warning(f"Failed to enable GNOME extension: {e}")
 
     try:
         while True:

@@ -52,6 +52,7 @@ class ItemDialogHandler:
 
     def handle_view_action(self):
         """Handle view button click - show full item dialog."""
+        logger.info(f"VIEW ACTION TRIGGERED for item {self.item.get('id')} type={self.item.get('type')}")
         # Check if item is secret and require authentication
         is_secret = self.item.get("is_secret", False)
         item_id = self.item.get("id")
@@ -228,8 +229,10 @@ class ItemDialogHandler:
 
     def show_view_dialog(self):
         """Show full item view dialog."""
+        logger.info(f"SHOW_VIEW_DIALOG called for type={self.item.get('type')}")
         item_type = self.item["type"]
         window = self.get_root()
+        logger.info(f"Got root window: {window}")
 
         dialog = Adw.Window(modal=True, transient_for=window)
         dialog.set_title("Full Clipboard Item")
@@ -263,31 +266,144 @@ class ItemDialogHandler:
         content_scroll.set_hexpand(True)
 
         if item_type == "text" or item_type == "url":
-            content_label = Gtk.Label(label=self.item["content"])
-            content_label.set_wrap(True)
-            content_label.set_selectable(True)
-            content_label.set_halign(Gtk.Align.START)
-            content_label.set_valign(Gtk.Align.START)
-            content_scroll.set_child(content_label)
+            # Check if there's formatted content
+            format_type = self.item.get("format_type")
+            formatted_content_b64 = self.item.get("formatted_content")
+
+            if format_type and formatted_content_b64:
+                # Render formatted content
+                try:
+                    formatted_bytes = base64.b64decode(formatted_content_b64)
+
+                    if format_type.lower() == "html":
+                        # Use WebKit to render HTML
+                        try:
+                            import gi
+                            gi.require_version('WebKit', '6.0')
+                            from gi.repository import WebKit
+
+                            web_view = WebKit.WebView()
+                            web_view.load_html(formatted_bytes.decode('utf-8'), None)
+                            web_view.set_vexpand(True)
+                            web_view.set_hexpand(True)
+                            content_scroll.set_child(web_view)
+                            logger.info(f"Rendered HTML formatted content")
+                        except Exception as e:
+                            logger.warning(f"Could not render HTML, falling back to plain text: {e}")
+                            # Fallback to plain text
+                            content_label = Gtk.Label(label=self.item["content"])
+                            content_label.set_wrap(True)
+                            content_label.set_selectable(True)
+                            content_label.set_halign(Gtk.Align.START)
+                            content_label.set_valign(Gtk.Align.START)
+                            content_scroll.set_child(content_label)
+                    else:
+                        # For other formats (RTF, etc), show plain text with indicator
+                        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+
+                        format_label = Gtk.Label()
+                        format_label.set_markup(f"<b>Format:</b> {format_type.upper()}")
+                        format_label.set_halign(Gtk.Align.START)
+                        text_box.append(format_label)
+
+                        content_label = Gtk.Label(label=self.item["content"])
+                        content_label.set_wrap(True)
+                        content_label.set_selectable(True)
+                        content_label.set_halign(Gtk.Align.START)
+                        content_label.set_valign(Gtk.Align.START)
+                        text_box.append(content_label)
+
+                        content_scroll.set_child(text_box)
+                        logger.info(f"Displayed {format_type} formatted text (plain text fallback)")
+                except Exception as e:
+                    logger.error(f"Error rendering formatted content: {e}")
+                    # Fallback to plain text
+                    content_label = Gtk.Label(label=self.item["content"])
+                    content_label.set_wrap(True)
+                    content_label.set_selectable(True)
+                    content_label.set_halign(Gtk.Align.START)
+                    content_label.set_valign(Gtk.Align.START)
+                    content_scroll.set_child(content_label)
+            else:
+                # Plain text - no formatting
+                content_label = Gtk.Label(label=self.item["content"])
+                content_label.set_wrap(True)
+                content_label.set_selectable(True)
+                content_label.set_halign(Gtk.Align.START)
+                content_label.set_valign(Gtk.Align.START)
+                content_scroll.set_child(content_label)
 
         elif item_type.startswith("image/") or item_type == "screenshot":
-            image_data = base64.b64decode(self.item["content"])
-            loader = GdkPixbuf.PixbufLoader()
-            loader.write(image_data)
-            loader.close()
-            pixbuf = loader.get_pixbuf()
-            texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+            # Need to fetch full image from server
+            import asyncio
+            import json
+            import websockets
 
-            picture = Gtk.Picture.new_for_paintable(texture)
-            picture.set_halign(Gtk.Align.CENTER)
-            picture.set_valign(Gtk.Align.CENTER)
-            picture.set_content_fit(Gtk.ContentFit.CONTAIN)
-            content_scroll.set_child(picture)
+            item_id = self.item.get("id")
+            loading_label = Gtk.Label(label="Loading full image...")
+            content_scroll.set_child(loading_label)
+
+            def fetch_and_display():
+                try:
+                    async def get_full_image():
+                        uri = "ws://localhost:8765"
+                        max_size = 50 * 1024 * 1024  # 50MB max
+                        async with websockets.connect(uri, max_size=max_size) as websocket:
+                            request = {"action": "get_full_image", "id": item_id}
+                            await websocket.send(json.dumps(request))
+                            response = await websocket.recv()
+                            data = json.loads(response)
+
+                            if data.get("type") == "full_image" and data.get("id") == item_id:
+                                image_b64 = data.get("content")
+                                if not image_b64:
+                                    raise Exception("No image data in response")
+
+                                image_data = base64.b64decode(image_b64)
+                                loader = GdkPixbuf.PixbufLoader()
+                                loader.write(image_data)
+                                loader.close()
+                                pixbuf = loader.get_pixbuf()
+                                texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+
+                                def display_image():
+                                    picture = Gtk.Picture.new_for_paintable(texture)
+                                    picture.set_halign(Gtk.Align.CENTER)
+                                    picture.set_valign(Gtk.Align.CENTER)
+                                    picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+                                    content_scroll.set_child(picture)
+                                    logger.info(f"Displayed full image: {pixbuf.get_width()}x{pixbuf.get_height()}")
+                                    return False
+
+                                GLib.idle_add(display_image)
+                            else:
+                                raise Exception("Invalid response from server")
+
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(get_full_image())
+                    finally:
+                        loop.close()
+
+                except Exception as e:
+                    logger.error(f"Error fetching full image: {e}")
+                    def show_error():
+                        error_label = Gtk.Label(label=f"Error loading image: {str(e)}")
+                        error_label.add_css_class("error")
+                        content_scroll.set_child(error_label)
+                        return False
+                    GLib.idle_add(show_error)
+
+            # Run in thread to avoid blocking UI
+            import threading
+            threading.Thread(target=fetch_and_display, daemon=True).start()
 
         elif item_type == "file":
             file_metadata = self.item.get("content", {})
             is_directory = file_metadata.get("is_directory", False)
             original_path = file_metadata.get("original_path", "")
+            mime_type = file_metadata.get("mime_type", "")
 
             if is_directory and original_path and Path(original_path).exists():
                 # Show folder contents with FileChooserWidget
@@ -318,8 +434,31 @@ class ItemDialogHandler:
 
                 folder_box.append(file_chooser)
                 content_scroll.set_child(folder_box)
+            elif (not is_directory and original_path and Path(original_path).exists() and
+                  mime_type and mime_type.startswith("text/")):
+                # Text file - read and display content
+                try:
+                    with open(original_path, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+
+                    text_view = Gtk.TextView()
+                    text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+                    text_view.set_editable(False)
+                    text_view.set_cursor_visible(False)
+                    text_view.set_monospace(True)
+                    text_view.get_buffer().set_text(file_content)
+                    text_view.set_margin_start(12)
+                    text_view.set_margin_end(12)
+                    text_view.set_margin_top(12)
+                    text_view.set_margin_bottom(12)
+
+                    content_scroll.set_child(text_view)
+                except Exception as e:
+                    error_label = Gtk.Label(label=f"Error reading file: {str(e)}")
+                    error_label.add_css_class("error")
+                    content_scroll.set_child(error_label)
             else:
-                # Regular file or folder doesn't exist
+                # Regular file or folder doesn't exist or not a text file
                 file_info_box = Gtk.Box(
                     orientation=Gtk.Orientation.VERTICAL, spacing=12
                 )
@@ -356,7 +495,6 @@ class ItemDialogHandler:
                     size_label.add_css_class("caption")
                     details_box.append(size_label)
 
-                mime_type = file_metadata.get("mime_type", "")
                 if mime_type:
                     type_label = Gtk.Label(label=f"Type: {mime_type}")
                     type_label.add_css_class("caption")

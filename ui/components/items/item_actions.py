@@ -73,6 +73,7 @@ class ItemActions:
         button.set_tooltip_text("View full item")
 
         def on_click(gesture, n_press, x, y):
+            print(f"VIEW BUTTON CLICKED!!! item_id={self.item.get('id')}")
             self._trigger_view()
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
             return True
