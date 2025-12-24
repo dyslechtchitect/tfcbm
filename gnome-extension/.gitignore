@@ -1,0 +1,25 @@
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node modules (if added back for development)
+node_modules/
+
+# Compiled schemas (generated during installation)
+schemas/gschemas.compiled
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+
+# Build artifacts (if any)
+*.zip
+dist/
+build/
