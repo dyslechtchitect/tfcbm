@@ -1,0 +1,149 @@
+app-id: org.tfcbm.ClipboardManager
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: tfcbm
+
+finish-args:
+  # X11 + XShm access
+  - --share=ipc
+  - --socket=fallback-x11
+  # Wayland access
+  - --socket=wayland
+  # DBus access for clipboard and extension communication
+  - --socket=session-bus
+  - --system-talk-name=org.freedesktop.DBus
+  # Filesystem access for clipboard files
+  - --filesystem=xdg-download:rw
+  - --filesystem=xdg-documents:rw
+  # For clipboard operations
+  - --talk-name=org.gnome.Shell
+  - --talk-name=org.freedesktop.portal.Desktop
+  # Network (if WebSocket is used for IPC)
+  - --share=network
+
+modules:
+  # Python dependencies
+  - name: python3-pyyaml
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "pyyaml>=6.0.0" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/54/ed/79a089b6be93607fa5cdaedf301d7dfb23af5f25c398d5ead2525b063e17/pyyaml-6.0.2.tar.gz
+        sha256: d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e
+
+  - name: python3-pydantic
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "pydantic>=2.0.0" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/c4/88/853f6e49621fb3f2c87c39f8d963cf7e8bd5da6866c13d88f6ccf0935f73/pydantic-2.10.5.tar.gz
+        sha256: 15e7e1e334ae1b2f9610e4ca7e265f1a3f400c89b5b9f1c8e6de4db725b8e2c8
+      - type: file
+        url: https://files.pythonhosted.org/packages/c8/8f/2e88f7dc3b857f2a4a37fd33ebc1ca287d15bbc9f3fe0e866a0e1a6a18f1/pydantic_core-2.27.2.tar.gz
+        sha256: f684772f0fcb8e8f9c9bb25af6f57e14f508a18b4e2d4ca81c7762bd85d37e77
+      - type: file
+        url: https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f46f/annotated_types-0.7.0.tar.gz
+        sha256: aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89
+      - type: file
+        url: https://files.pythonhosted.org/packages/08/aa/cc0199a5f0ad350994d660967a8efb233fe0416e4639146c089643407ce6/typing_extensions-4.12.2.tar.gz
+        sha256: 1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8
+
+  - name: python3-pillow
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "Pillow>=10.0.0" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/a5/26/0d95c04c868f6bdb0c447e3ee2de5564411845e36a858cfd63766bc7b563/pillow-11.0.0.tar.gz
+        sha256: 72bacbaf24ac003fea9bff9837d1eedb6088758d41e100c1552930151f677739
+
+  - name: python3-websockets
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "websockets>=12.0" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/5f/77/1fe0e13ab2b9f8862aa1f0d9b82e6cc0d81ec66ce5a9faf3b0fb6b2235dc/websockets-14.1.tar.gz
+        sha256: 398b10c77d471c0aab20a845e7a60076b6390bfdaac7a6d2edb0d2c59d75e8f8
+
+  - name: python3-pygobject
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} "PyGObject>=3.42.0" --no-build-isolation
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/5e/91/bc1dd373a5e1e2c19d6c61cc5e8b46bcaf0c4e82d81f4e02cc157074ecb1/pygobject-3.50.0.tar.gz
+        sha256: 4fdc5fd1c3be03face4c399ce2dd3ad5ba73f7c0ad452b4fc3c8ef198f3c61e1
+
+  # Main application
+  - name: tfcbm
+    buildsystem: simple
+    build-commands:
+      # Install Python files
+      - install -d ${FLATPAK_DEST}/lib/tfcbm
+      - cp -r ui ${FLATPAK_DEST}/lib/tfcbm/
+      - cp database.py dbus_service.py settings.py tfcbm_server.py ${FLATPAK_DEST}/lib/tfcbm/
+      - cp settings.yml ${FLATPAK_DEST}/lib/tfcbm/
+
+      # Install resources
+      - install -d ${FLATPAK_DEST}/share/tfcbm
+      - cp -r resouces/* ${FLATPAK_DEST}/share/tfcbm/
+
+      # Install icons
+      - install -Dm644 resouces/org.tfcbm.ClipboardManager.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/org.tfcbm.ClipboardManager.svg
+
+      # Install desktop file and metainfo
+      - install -Dm644 org.tfcbm.ClipboardManager.desktop ${FLATPAK_DEST}/share/applications/org.tfcbm.ClipboardManager.desktop
+      - install -Dm644 org.tfcbm.ClipboardManager.metainfo.xml ${FLATPAK_DEST}/share/metainfo/org.tfcbm.ClipboardManager.metainfo.xml
+
+      # Install GNOME Shell extension to a user-accessible location
+      - install -d ${FLATPAK_DEST}/share/tfcbm/gnome-extension
+      - cp -r gnome-extension/* ${FLATPAK_DEST}/share/tfcbm/gnome-extension/
+
+      # Create wrapper script
+      - |
+        cat > ${FLATPAK_DEST}/bin/tfcbm << 'EOF'
+        #!/bin/bash
+        export PYTHONPATH="${FLATPAK_DEST}/lib/tfcbm:${PYTHONPATH}"
+        cd ${FLATPAK_DEST}/lib/tfcbm
+        exec python3 ui/main.py "$@"
+        EOF
+      - chmod +x ${FLATPAK_DEST}/bin/tfcbm
+
+      # Create extension installer script
+      - |
+        cat > ${FLATPAK_DEST}/bin/tfcbm-install-extension << 'EOF'
+        #!/bin/bash
+        EXTENSION_DIR="${HOME}/.local/share/gnome-shell/extensions/tfcbm-clipboard-monitor@github.com"
+        SOURCE_DIR="${FLATPAK_DEST}/share/tfcbm/gnome-extension"
+
+        if [ -d "${EXTENSION_DIR}" ]; then
+            echo "Extension already installed at ${EXTENSION_DIR}"
+            read -p "Do you want to reinstall? (y/N) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 0
+            fi
+            rm -rf "${EXTENSION_DIR}"
+        fi
+
+        echo "Installing GNOME Shell extension..."
+        mkdir -p "${HOME}/.local/share/gnome-shell/extensions"
+        cp -r "${SOURCE_DIR}" "${EXTENSION_DIR}"
+
+        echo "Extension installed successfully!"
+        echo "Please restart GNOME Shell and enable the extension:"
+        echo "  gnome-extensions enable tfcbm-clipboard-monitor@github.com"
+        EOF
+      - chmod +x ${FLATPAK_DEST}/bin/tfcbm-install-extension
+    sources:
+      - type: dir
+        path: .

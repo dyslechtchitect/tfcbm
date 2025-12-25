@@ -1,0 +1,110 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║                    TFCBM - BEFORE YOU SUBMIT                          ║
+║                   Critical Updates Required                           ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+🚨 DO THESE NOW (REQUIRED):
+
+1. UPDATE GITHUB URLs
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   File: org.tfcbm.ClipboardManager.metainfo.xml
+
+   Find and replace:
+   - "https://github.com/yourusername/tfcbm"
+     → YOUR ACTUAL GITHUB URL
+
+   Lines to update:
+   - Line 33: <url type="homepage">
+   - Line 34: <url type="bugtracker">
+   - Line 47: <image> (screenshot URL)
+
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   File: gnome-extension/metadata.json
+
+   Find and replace:
+   - Line 14: "url": "https://github.com/yourusername/tfcbm-gnome-extension"
+     → YOUR ACTUAL GITHUB URL
+
+2. ADD SCREENSHOTS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   mkdir screenshots
+
+   Take screenshots (1280x720 or higher):
+   ✓ Main window with clipboard items
+   ✓ Search/filter in action
+   ✓ Tag management (if applicable)
+   ✓ Settings page (if applicable)
+
+   Save as PNG and commit to GitHub, then update the URLs in
+   org.tfcbm.ClipboardManager.metainfo.xml
+
+3. VERIFY LICENSE FILE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Check if LICENSE file exists in root directory
+   If not, create one matching your declared license (GPL-3.0-or-later)
+
+4. TEST LOCALLY
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   # Install builder
+   sudo dnf install flatpak-builder
+
+   # Build and test
+   flatpak-builder --force-clean build-dir org.tfcbm.ClipboardManager.yml
+   flatpak-builder --user --install --force-clean build-dir org.tfcbm.ClipboardManager.yml
+   flatpak run org.tfcbm.ClipboardManager
+
+   # Test extension
+   gnome-extensions install tfcbm-gnome-extension.zip
+   gnome-extensions enable tfcbm-clipboard-monitor@github.com
+
+5. CREATE GITHUB RELEASE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   git add .
+   git commit -m "Add Flatpak and GNOME Extension packaging"
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin master
+   git push origin v1.0.0
+
+═══════════════════════════════════════════════════════════════════════
+
+📦 WHAT'S READY:
+
+✅ org.tfcbm.ClipboardManager.yml         - Flatpak manifest
+✅ org.tfcbm.ClipboardManager.metainfo.xml - AppData (needs URL updates)
+✅ org.tfcbm.ClipboardManager.desktop     - Desktop file
+✅ tfcbm-gnome-extension.zip              - Extension package (20KB)
+✅ icons/                                 - All icon sizes generated
+✅ FLATPAK_SUBMISSION_GUIDE.md           - Complete submission guide
+✅ RELEASE_CHECKLIST.md                  - Detailed checklist
+
+═══════════════════════════════════════════════════════════════════════
+
+📖 NEXT STEPS AFTER UPDATES:
+
+1. Read RELEASE_CHECKLIST.md for complete checklist
+2. Read FLATPAK_SUBMISSION_GUIDE.md for step-by-step instructions
+3. Submit to Flathub: https://github.com/flathub/flathub
+4. Upload extension: https://extensions.gnome.org/upload/
+
+═══════════════════════════════════════════════════════════════════════
+
+🎯 QUICK COMMANDS:
+
+# Validate your files
+appstream-util validate-relax org.tfcbm.ClipboardManager.metainfo.xml
+desktop-file-validate org.tfcbm.ClipboardManager.desktop
+
+# Build Flatpak
+flatpak-builder --force-clean build-dir org.tfcbm.ClipboardManager.yml
+
+# Run app
+flatpak run org.tfcbm.ClipboardManager
+
+═══════════════════════════════════════════════════════════════════════
+
+For detailed instructions, see:
+→ FLATPAK_SUBMISSION_GUIDE.md
+→ RELEASE_CHECKLIST.md
+→ README_PACKAGING.md
+
+Good luck! 🚀
