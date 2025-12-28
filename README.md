@@ -13,8 +13,9 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/GNOME-45+-blue.svg" alt="GNOME 45+">
+  <img src="https://img.shields.io/badge/GNOME-45--49-blue.svg" alt="GNOME 45-49">
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
+  <a href="https://github.com/dyslechtchitect/tfcbm/actions/workflows/flatpak-ci.yml"><img src="https://github.com/dyslechtchitect/tfcbm/actions/workflows/flatpak-ci.yml/badge.svg" alt="CI Status"></a>
 </p>
 
 ## Features
@@ -103,8 +104,8 @@ TFCBM consists of three components:
 ### Prerequisites
 
 - Python 3.11+
-- GNOME 45+
-- Flatpak SDK
+- GNOME 45-49
+- Flatpak SDK (for packaging)
 
 ### Setup
 
@@ -128,9 +129,30 @@ cd server
 ../.venv/bin/pytest test/integration -v
 
 # Extension tests
-cd gnome-extension/tests
-node --test
+cd gnome-extension
+npm test
 ```
+
+### CI/CD
+
+The project uses GitHub Actions for continuous integration:
+- Tests run on every push and PR
+- Flatpak builds tested against GNOME 45-49
+- Artifacts uploaded for each GNOME version
+
+**Run CI locally:**
+```bash
+# Run tests
+./run-ci-locally.sh test
+
+# Build Flatpak for GNOME 49
+./run-ci-locally.sh flatpak 49
+
+# Build for all versions
+./run-ci-locally.sh flatpak-all
+```
+
+See [.github/workflows/LOCAL_TESTING.md](.github/workflows/LOCAL_TESTING.md) for details.
 
 ## Configuration
 
