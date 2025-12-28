@@ -1,0 +1,215 @@
+/* ui/style.css */
+
+.clipboard-item-card {
+    background-color: @theme_bg_color; /* Use theme background color */
+    border-radius: 12px; /* Rounded corners */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+    margin: 8px; /* Space between cards */
+    padding: 12px; /* Inner padding */
+    transition: background-color 0.2s ease-in-out; /* Smooth transition for hover */
+}
+
+.clipboard-item-card:hover {
+    background-color: rgba(128, 128, 128, 0.1); /* Light grey flash on hover */
+}
+
+.clipboard-item-card.drag-hover {
+    background-color: rgba(200, 200, 200, 0.2); /* Brighter when tag is dragged over */
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* Content box will use Gtk.Box properties for layout */
+/* .clipboard-item-content {
+    flex-grow: 1;
+    overflow: hidden;
+} */
+
+/* Text truncation will be handled by Gtk.Label.set_ellipsize() */
+/* .clipboard-item-text {
+    white-space: normal;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-height: 120px;
+} */
+
+/* Image sizing will be handled by Gtk.Picture and its parent container */
+/* .clipboard-item-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+} */
+
+.full-item-dialog {
+    min-width: 400px;
+    min-height: 300px;
+}
+
+.full-item-text {
+    white-space: pre-wrap; /* Preserve whitespace and allow wrapping */
+    /* text-wrap: wrap; This is not a standard CSS property for GTK */
+}
+
+.full-item-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+.typewriter-text {
+    font-family: 'monospace'; /* Use a generic monospace font */
+    font-size: 1.1em; /* Slightly larger font size */
+}
+
+.big-quote {
+    font-family: 'Times New Roman', 'Liberation Serif', 'DejaVu Serif', Georgia, 'Noto Serif', serif; /* Classic serif fonts */
+    font-size: 2em; /* Much bigger than text */
+    font-weight: bold; /* Bold */
+    color: @theme_fg_color; /* Use theme foreground color */
+}
+
+.notification-area {
+    background-color: @theme_surface_container_low; /* Use light theme color */
+    color: @theme_fg_color; /* Foreground color for text */
+    font-weight: bold;
+    padding: 5px 10px;
+    border-top: 1px solid @theme_border_color;
+    overflow: hidden; /* Hide overflowing text */
+    position: relative; /* Needed for absolute positioning of marquee-text */
+}
+
+.notification-area .marquee-text {
+    display: inline-block; /* Allow text to be wider than its container */
+    white-space: nowrap; /* Prevent text from wrapping */
+    position: absolute; /* Position absolutely within the notification-area */
+    padding-left: 100%; /* Start text off-screen to the right */
+    animation: marquee 15s linear infinite; /* Apply marquee animation continuously */
+    font-family: 'monospace'; /* Use a generic monospace font */
+    font-size: 1.1em; /* Same as text items */
+}
+
+@keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); } /* Move text completely off-screen to the left */
+}
+
+/* Hide close buttons on tabs */
+tabbar tab button.close,
+tabbar tab .tab-close-button,
+tabview tab button,
+tabview tab .tab-close-button,
+tab button.close,
+.tab-close-button {
+    opacity: 0;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+}
+
+/* Filter bar styling */
+button.pill {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    min-height: 24px;
+    background: alpha(@theme_bg_color, 0.5);
+    border: 1px solid alpha(@borders, 0.3);
+}
+
+button.pill:hover {
+    background: alpha(@theme_bg_color, 0.7);
+}
+
+button.pill:checked {
+    background: @accent_bg_color;
+    color: @accent_fg_color;
+    border-color: @accent_bg_color;
+}
+
+button.pill image {
+    margin: 0;
+    padding: 0;
+}
+
+button.pill label {
+    font-weight: 500;
+}
+
+/* Header bar styling - yellow-green background */
+.tfcbm-header {
+    background: linear-gradient(to right, #9ACD32, #7FBA00); /* Yellow-green gradient */
+    color: white;
+}
+
+/* Title styling - white and bold */
+.tfcbm-title {
+    color: white;
+    font-weight: 900; /* Extra bold/black */
+    font-size: 1.3em;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Subtle shadow for depth */
+}
+
+/* Sort toggle button - cute and subtle */
+button.sort-toggle {
+    opacity: 0.7;
+    transition: opacity 0.2s ease-in-out, transform 0.1s ease-in-out;
+}
+
+button.sort-toggle:hover {
+    opacity: 1;
+    transform: scale(1.1); /* Slight bounce effect */
+}
+
+button.sort-toggle:active {
+    transform: scale(0.95);
+}
+
+/* Keyboard key styling - embossed and chiseled appearance */
+.keyboard-key {
+    background: linear-gradient(to bottom,
+        #fafafa 0%,      /* Very light top */
+        #f0f0f0 20%,     /* Light */
+        #e8e8e8 50%,     /* Mid */
+        #d8d8d8 80%,     /* Darker */
+        #c8c8c8 100%);   /* Darkest bottom */
+
+    border-top: 2px solid #ffffff;           /* Bright highlight on top */
+    border-left: 2px solid #e0e0e0;         /* Light on left */
+    border-right: 3px solid #a0a0a0;        /* Dark on right */
+    border-bottom: 4px solid #909090;       /* Darkest on bottom */
+    border-radius: 10px;
+
+    box-shadow:
+        /* Outer shadows for depth */
+        0 6px 0 #808080,                     /* Bottom edge - chiseled */
+        0 8px 12px rgba(0, 0, 0, 0.4),       /* Main drop shadow */
+
+        /* Inner shadows for embossing */
+        inset 0 2px 3px rgba(255, 255, 255, 0.8),  /* Top inner highlight */
+        inset 0 -3px 5px rgba(0, 0, 0, 0.15),      /* Bottom inner shadow */
+        inset 2px 0 2px rgba(255, 255, 255, 0.3),  /* Left inner highlight */
+        inset -2px 0 2px rgba(0, 0, 0, 0.1);       /* Right inner shadow */
+
+    padding: 0;
+    min-width: 70px;
+    min-height: 70px;
+    transition: all 0.1s ease-in-out;
+}
+
+.keyboard-key label {
+    color: #2a2a2a;
+    font-weight: 700;
+    /* Chiseled text effect - looks carved into the key */
+    text-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.9),    /* White highlight below */
+        0 -1px 0 rgba(0, 0, 0, 0.2),         /* Dark shadow above */
+        1px 0 0 rgba(255, 255, 255, 0.4),    /* Right highlight */
+        -1px 0 0 rgba(0, 0, 0, 0.1);         /* Left shadow */
+}

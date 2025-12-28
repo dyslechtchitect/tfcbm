@@ -1,0 +1,19 @@
+{
+  "name": "tfcbm-gnome-extension",
+  "version": "1.0.0",
+  "description": "TFCBM GNOME Shell Extension - Clipboard Monitor",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "test:watch": "node --test --watch test/**/*.test.js",
+    "test:verbose": "node --test test/**/*.test.js --test-reporter=spec"
+  },
+  "keywords": [
+    "gnome",
+    "extension",
+    "clipboard"
+  ],
+  "author": "TFCBM",
+  "license": "MIT",
+  "devDependencies": {}
+}

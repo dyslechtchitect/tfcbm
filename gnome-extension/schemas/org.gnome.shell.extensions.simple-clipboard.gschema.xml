@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.simple-clipboard" path="/org/gnome/shell/extensions/simple-clipboard/">
+    <key name="toggle-tfcbm-ui" type="as">
+      <default>['&lt;Control&gt;Escape']</default>
+      <summary>Toggle TFCBM UI</summary>
+      <description>Keyboard shortcut to bring the TFCBM UI to the foreground</description>
+    </key>
+    <key name="tfcbm-path" type="s">
+      <default>"/home/ron/Documents/git/TFCBM"</default>
+      <summary>Path to TFCBM installation</summary>
+      <description>The absolute path to the directory where TFCBM is installed.</description>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=TFCBM
+GenericName=Clipboard Manager
+Comment=The * Clipboard Manager - Track and manage your clipboard history
+Icon=org.tfcbm.ClipboardManager
+Exec=tfcbm
+Terminal=false
+Categories=Utility;GNOME;GTK;
+Keywords=clipboard;manager;history;copy;paste;
+StartupNotify=true
+X-GNOME-UsesNotifications=true

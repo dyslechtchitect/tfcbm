@@ -1,0 +1,246 @@
+"""Item action buttons component."""
+
+from typing import Callable
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk
+
+
+class ItemActions:
+    def __init__(
+        self,
+        item: dict,
+        on_copy: Callable[[], None],
+        on_view: Callable[[], None],
+        on_save: Callable[[], None],
+        on_tags: Callable[[], None],
+        on_secret: Callable[[], None],
+        on_delete: Callable[[], None],
+    ):
+        self.item = item
+        self.on_copy = on_copy
+        self.on_view = on_view
+        self.on_save = on_save
+        self.on_tags = on_tags
+        self.on_secret = on_secret
+        self.on_delete = on_delete
+
+    def build(self) -> Gtk.Widget:
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        header_box.set_hexpand(False)
+
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        header_box.append(spacer)
+
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        button_box.set_halign(Gtk.Align.END)
+
+        self._add_copy_button(button_box)
+        self._add_view_button(button_box)
+        self._add_save_button(button_box)
+        self._add_tags_button(button_box)
+        self._add_secret_button(button_box)
+        self._add_delete_button(button_box)
+
+        header_box.append(button_box)
+        return header_box
+
+    def _add_copy_button(self, container: Gtk.Box) -> None:
+        button = Gtk.Button()
+        button.set_icon_name("edit-copy-symbolic")
+        button.add_css_class("flat")
+        button.set_tooltip_text("Copy to clipboard")
+
+        def on_click(gesture, n_press, x, y):
+            self._trigger_copy()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
+        gesture = Gtk.GestureClick.new()
+        gesture.connect("released", on_click)
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        button.add_controller(gesture)
+
+        container.append(button)
+
+    def _add_view_button(self, container: Gtk.Box) -> None:
+        button = Gtk.Button()
+        button.set_icon_name("zoom-in-symbolic")
+        button.add_css_class("flat")
+        button.set_tooltip_text("View full item")
+
+        def on_click(gesture, n_press, x, y):
+            print(f"VIEW BUTTON CLICKED!!! item_id={self.item.get('id')}")
+            self._trigger_view()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
+        gesture = Gtk.GestureClick.new()
+        gesture.connect("released", on_click)
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        button.add_controller(gesture)
+
+        container.append(button)
+
+    def _add_save_button(self, container: Gtk.Box) -> None:
+        button = Gtk.Button()
+        button.set_icon_name("document-save-symbolic")
+        button.add_css_class("flat")
+        button.set_tooltip_text("Save to file")
+
+        def on_click(gesture, n_press, x, y):
+            self._trigger_save()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
+        gesture = Gtk.GestureClick.new()
+        gesture.connect("released", on_click)
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        button.add_controller(gesture)
+
+        container.append(button)
+
+    def _add_tags_button(self, container: Gtk.Box) -> None:
+        button = Gtk.Button()
+        button.set_icon_name("bookmark-new-symbolic")
+        button.add_css_class("flat")
+        button.set_tooltip_text("Manage tags")
+
+        css_provider = Gtk.CssProvider()
+        css_data = (
+            "button { color: #2e3436 !important; "
+            "-gtk-icon-palette: error #2e3436; }"
+        )
+        css_provider.load_from_data(css_data.encode())
+        button.get_style_context().add_provider(
+            css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
+        )
+
+        def on_click(gesture, n_press, x, y):
+            self._trigger_tags()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
+        gesture = Gtk.GestureClick.new()
+        gesture.connect("released", on_click)
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        button.add_controller(gesture)
+
+        # Store reference for popover anchoring
+        self.tags_button = button
+
+        container.append(button)
+
+    def _add_secret_button(self, container: Gtk.Box) -> None:
+        button = Gtk.Button()
+
+        # Choose icon based on secret status
+        is_secret = self.item.get("is_secret", False)
+        if is_secret:
+            button.set_icon_name("changes-prevent-symbolic")  # Locked
+            button.set_tooltip_text("Unmark as secret")
+        else:
+            button.set_icon_name("changes-allow-symbolic")  # Unlocked
+            button.set_tooltip_text("Mark as secret")
+
+        button.add_css_class("flat")
+
+        # Add visual styling for locked items
+        if is_secret:
+            css_provider = Gtk.CssProvider()
+            css_data = (
+                "button { color: #e01b24 !important; "
+                "-gtk-icon-palette: error #e01b24; }"
+            )
+            css_provider.load_from_data(css_data.encode())
+            button.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
+            )
+
+        def on_click(gesture, n_press, x, y):
+            self._trigger_secret()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
+        gesture = Gtk.GestureClick.new()
+        gesture.connect("released", on_click)
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        button.add_controller(gesture)
+
+        # Store reference for updating icon later
+        self.secret_button = button
+
+        container.append(button)
+
+    def update_secret_button_icon(self):
+        """Update the secret button icon based on current secret status."""
+        if not hasattr(self, 'secret_button') or not self.secret_button:
+            return
+
+        is_secret = self.item.get("is_secret", False)
+
+        # Update icon
+        if is_secret:
+            self.secret_button.set_icon_name("changes-prevent-symbolic")  # Locked
+            self.secret_button.set_tooltip_text("Unmark as secret")
+        else:
+            self.secret_button.set_icon_name("changes-allow-symbolic")  # Unlocked
+            self.secret_button.set_tooltip_text("Mark as secret")
+
+        # Update styling
+        if is_secret:
+            # Add red color for locked
+            css_provider = Gtk.CssProvider()
+            css_data = (
+                "button { color: #e01b24 !important; "
+                "-gtk-icon-palette: error #e01b24; }"
+            )
+            css_provider.load_from_data(css_data.encode())
+            self.secret_button.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
+            )
+        else:
+            # Remove red color for unlocked - reset to default
+            # We need to remove all providers and re-add only the default ones
+            context = self.secret_button.get_style_context()
+            # The button will naturally revert to default styling when CSS provider is removed
+            # GTK handles this automatically
+
+    def _add_delete_button(self, container: Gtk.Box) -> None:
+        button = Gtk.Button()
+        button.set_icon_name("user-trash-symbolic")
+        button.add_css_class("flat")
+        button.set_tooltip_text("Delete item")
+
+        def on_click(gesture, n_press, x, y):
+            self._trigger_delete()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            return True
+
+        gesture = Gtk.GestureClick.new()
+        gesture.connect("released", on_click)
+        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        button.add_controller(gesture)
+
+        container.append(button)
+
+    def _trigger_copy(self) -> None:
+        self.on_copy()
+
+    def _trigger_view(self) -> None:
+        self.on_view()
+
+    def _trigger_save(self) -> None:
+        self.on_save()
+
+    def _trigger_tags(self) -> None:
+        self.on_tags()
+
+    def _trigger_secret(self) -> None:
+        self.on_secret()
+
+    def _trigger_delete(self) -> None:
+        self.on_delete()

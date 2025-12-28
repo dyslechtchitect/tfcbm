@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+    <id>org.tfcbm.ClipboardManager</id>
+    <metadata_license>CC0-1.0</metadata_license>
+    <project_license>GPL-3.0-or-later</project_license>
+    <name>TFCBM</name>
+    <summary>The * Clipboard Manager - A powerful clipboard manager for GNOME</summary>
+
+    <description>
+        <p>
+            TFCBM (The * Clipboard Manager) is a feature-rich clipboard manager
+            designed for GNOME desktop environments. Keep track of your clipboard history,
+            manage multiple items, and quickly access your copied content.
+        </p>
+        <p>Features:</p>
+        <ul>
+            <li>Track unlimited clipboard history</li>
+            <li>Support for text, images, and files</li>
+            <li>Quick search and filtering</li>
+            <li>Tag and organize clipboard items</li>
+            <li>Secure storage for sensitive data</li>
+            <li>Keyboard shortcuts for quick access</li>
+            <li>Beautiful GTK4/Libadwaita interface</li>
+            <li>Optional GNOME Shell extension for seamless integration</li>
+        </ul>
+        <p>
+            The optional GNOME Shell extension provides system-wide clipboard monitoring
+            and quick access through a keyboard shortcut (Ctrl+Escape by default).
+        </p>
+    </description>
+
+    <launchable type="desktop-id">org.tfcbm.ClipboardManager.desktop</launchable>
+
+    <screenshots>
+        <screenshot type="default">
+            <caption>Main window showing clipboard history</caption>
+            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/general.png</image>
+        </screenshot>
+
+        <screenshot>
+            <caption>Organize clipboard items using tags</caption>
+            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/tags.png</image>
+        </screenshot>
+
+        <screenshot>
+            <caption>Search through clipboard history</caption>
+            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/search.png</image>
+        </screenshot>
+
+        <screenshot>
+            <caption>Protect sensitive clipboard items using Secrets</caption>
+            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/secret.png</image>
+        </screenshot>
+
+        <screenshot>
+            <caption>Filter clipboard items by content type</caption>
+            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/filter.png</image>
+        </screenshot>
+
+        <screenshot>
+            <caption>Configure keyboard shortcuts in the settings</caption>
+            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/settings.png</image>
+        </screenshot>
+    </screenshots>
+
+
+    <url type="homepage">https://github.com/dyslechtchitect/tfcbm</url>
+    <url type="bugtracker">https://github.com/dyslechtchitect/tfcbm/issues</url>
+    <url type="license">https://www.gnu.org/licenses/gpl-3.0.html</url>
+
+    <content_rating type="oars-1.1"/>
+
+    <releases>
+        <release version="1.0.0" date="2025-01-01">
+            <description>
+                <p>Initial release</p>
+                <ul>
+                    <li>Clipboard history tracking</li>
+                    <li>Text, image, and file support</li>
+                    <li>Search and filtering</li>
+                    <li>Tag management</li>
+                    <li>GNOME Shell extension integration</li>
+                </ul>
+            </description>
+        </release>
+    </releases>
+
+    <kudos>
+        <kudo>ModernToolkit</kudo>
+        <kudo>HiDpiIcon</kudo>
+    </kudos>
+
+    <requires>
+        <display_length compare="ge">360</display_length>
+    </requires>
+
+    <recommends>
+        <control>keyboard</control>
+        <control>pointing</control>
+    </recommends>
+
+    <developer id="org.tfcbm">
+        <name>TFCBM Developers</name>
+    </developer>
+
+    <categories>
+        <category>Utility</category>
+        <category>GNOME</category>
+    </categories>
+
+    <keywords>
+        <keyword>clipboard</keyword>
+        <keyword>manager</keyword>
+        <keyword>history</keyword>
+        <keyword>copy</keyword>
+        <keyword>paste</keyword>
+    </keywords>
+</component>

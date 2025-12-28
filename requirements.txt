@@ -1,0 +1,26 @@
+# TFCBM - The * Clipboard Manager
+# Minimal requirements for the actual project
+
+# GTK4 and Libadwaita (UI dependencies)
+PyGObject>=3.42.0
+
+# WebSocket support
+websockets>=12.0
+
+# Image processing (for thumbnails)
+Pillow>=10.0.0
+
+# Configuration and validation
+pydantic>=2.0.0
+pyyaml>=6.0.0
+
+# Testing (optional, only needed for running tests)
+pytest==8.4.2
+
+# System Dependencies (not Python packages, install via system package manager)
+# These are required for full functionality but are NOT installed via pip
+#
+# xdotool - Required for keyboard shortcut auto-paste feature
+#   Fedora: sudo dnf install xdotool
+#   Debian/Ubuntu: sudo apt install xdotool
+#   Alternative (Wayland): sudo dnf install ydotool

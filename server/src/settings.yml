@@ -1,0 +1,7 @@
+display:
+  item_height: 200
+  item_width: 200
+  max_page_length: 20
+retention:
+  enabled: true
+  max_items: 20
