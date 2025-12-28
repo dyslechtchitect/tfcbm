@@ -51,15 +51,15 @@ def _on_autostart_toggled(self, switch_row, _param):
 - ❌ Removed all DBus calls to GNOME Shell
 - ✅ Toggle now ONLY manages the autostart file
 
-#### 2. **Proper Autostart Enable** (`~/.config/autostart/io.github.dyslechtchitect.TFCBM.desktop`)
+#### 2. **Proper Autostart Enable** (`~/.config/autostart/io.github.dyslechtchitect.tfcbm.desktop`)
 
 ```ini
 [Desktop Entry]
 Type=Application
 Name=TFCBM
 Comment=The F* Clipboard Manager
-Exec=flatpak run io.github.dyslechtchitect.TFCBM
-Icon=io.github.dyslechtchitect.TFCBM
+Exec=flatpak run io.github.dyslechtchitect.tfcbm
+Icon=io.github.dyslechtchitect.tfcbm
 Terminal=false
 Categories=Utility;GTK;
 StartupNotify=false
@@ -113,7 +113,7 @@ This correctly reflects changes made by GNOME Settings!
 
 ### User Enables "Start on Login"
 1. Toggle switched ON
-2. Creates `~/.config/autostart/io.github.dyslechtchitect.TFCBM.desktop`
+2. Creates `~/.config/autostart/io.github.dyslechtchitect.tfcbm.desktop`
 3. Shows: **"TFCBM will start automatically on next login"**
 4. Current session: **No change**
 5. Next login: **TFCBM starts automatically**
@@ -147,7 +147,7 @@ This correctly reflects changes made by GNOME Settings!
 - Syncs with GNOME Settings without conflicts
 
 ### ✅ Flatpak Compatibility
-- Uses `flatpak run io.github.dyslechtchitect.TFCBM` for Exec command
+- Uses `flatpak run io.github.dyslechtchitect.tfcbm` for Exec command
 - Works inside Flatpak sandbox (autostart dir is accessible)
 - No system-wide modifications
 
@@ -173,7 +173,7 @@ This correctly reflects changes made by GNOME Settings!
 | Field | Purpose | Example |
 |-------|---------|---------|
 | `Type=Application` | Entry type | Required |
-| `Exec=...` | Command to run | `flatpak run io.github.dyslechtchitect.TFCBM` |
+| `Exec=...` | Command to run | `flatpak run io.github.dyslechtchitect.tfcbm` |
 | `Hidden=true` | XDG standard disable | Set when disabling autostart |
 | `X-GNOME-Autostart-enabled=false` | GNOME disable | Set for GNOME compatibility |
 | `StartupNotify=false` | No startup notification | Prevents "Starting..." banner |

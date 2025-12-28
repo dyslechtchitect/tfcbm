@@ -406,7 +406,7 @@ def get_extension_install_command() -> str:
     if is_flatpak():
         # Use the flatpak-install-extension command that's bundled with the flatpak
         # This is more reliable than trying to guess the flatpak installation path
-        return "flatpak run --command=tfcbm-install-extension io.github.dyslechtchitect.TFCBM"
+        return "flatpak run --command=tfcbm-install-extension io.github.dyslechtchitect.tfcbm"
     else:
         # Regular install - extension is in project directory
         project_root = Path(__file__).parent.parent.parent

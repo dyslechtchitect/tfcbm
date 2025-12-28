@@ -42,8 +42,8 @@ class ExtensionErrorWindow(Adw.ApplicationWindow):
         try:
             # Try Flatpak path first, then development path
             icon_paths = [
-                Path("/app/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.TFCBM.svg"),
-                Path(__file__).parent.parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "io.github.dyslechtchitect.TFCBM.svg"
+                Path("/app/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.tfcbm.svg"),
+                Path(__file__).parent.parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "io.github.dyslechtchitect.tfcbm.svg"
             ]
 
             for icon_path in icon_paths:

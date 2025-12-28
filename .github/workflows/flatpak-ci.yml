@@ -68,14 +68,14 @@ jobs:
         run: |
           # Create a version-specific manifest
           sed "s/runtime-version: '49'/runtime-version: '${{ matrix.gnome-version }}'/" \
-            io.github.dyslechtchitect.TFCBM.yml > \
-            io.github.dyslechtchitect.TFCBM-gnome${{ matrix.gnome-version }}.yml
+            io.github.dyslechtchitect.tfcbm.yml > \
+            io.github.dyslechtchitect.tfcbm-gnome${{ matrix.gnome-version }}.yml
 
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: tfcbm-gnome${{ matrix.gnome-version }}.flatpak
-          manifest-path: io.github.dyslechtchitect.TFCBM-gnome${{ matrix.gnome-version }}.yml
+          manifest-path: io.github.dyslechtchitect.tfcbm-gnome${{ matrix.gnome-version }}.yml
           cache-key: flatpak-builder-gnome${{ matrix.gnome-version }}-${{ github.sha }}
           arch: x86_64
           branch: test
@@ -106,11 +106,11 @@ jobs:
 
       - name: Lint manifest
         run: |
-          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.dyslechtchitect.TFCBM.yml || true
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.dyslechtchitect.tfcbm.yml || true
 
       - name: Build repo for linting
         run: |
-          flatpak-builder --user --disable-rofiles-fuse --repo=repo --force-clean build-dir io.github.dyslechtchitect.TFCBM.yml
+          flatpak-builder --user --disable-rofiles-fuse --repo=repo --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
 
       - name: Lint repo
         run: |

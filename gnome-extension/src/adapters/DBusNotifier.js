@@ -2,7 +2,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { NotificationPort } from '../domain/NotificationPort.js';
 
-const DBUS_NAME = 'io.github.dyslechtchitect.TFCBM';
+const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm';
 const DBUS_PATH = '/org/tfcbm/ClipboardService';
 const DBUS_IFACE = 'org.tfcbm.ClipboardService';
 

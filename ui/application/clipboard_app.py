@@ -24,7 +24,7 @@ class ClipboardApp(Adw.Application):
 
     def __init__(self, server_pid=None):
         super().__init__(
-            application_id="io.github.dyslechtchitect.TFCBM",
+            application_id="io.github.dyslechtchitect.tfcbm",
             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self.server_pid = server_pid
@@ -55,7 +55,7 @@ class ClipboardApp(Adw.Application):
 
         # Set the default icon name for the application
         # This tells GNOME Shell which icon to use from the icon theme
-        Gtk.Window.set_default_icon_name("io.github.dyslechtchitect.TFCBM")
+        Gtk.Window.set_default_icon_name("io.github.dyslechtchitect.tfcbm")
 
         try:
             css_path = Path(__file__).parent.parent / "style.css"

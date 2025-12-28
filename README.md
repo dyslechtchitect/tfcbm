@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  <img src="resouces/io.github.dyslechtchitect.TFCBM.logo.png" alt="TFCBM Logo" width="36" height="36">
+  <img src="resouces/io.github.dyslechtchitect.tfcbm.logo.png" alt="TFCBM Logo" width="36" height="36">
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 ### From Flathub (Recommended)
 
 ```bash
-flatpak install flathub io.github.dyslechtchitect.TFCBM
+flatpak install flathub io.github.dyslechtchitect.tfcbm
 ```
 
 ### From Source
@@ -55,12 +55,12 @@ flatpak install flathub io.github.dyslechtchitect.TFCBM
    ```bash
    git clone https://github.com/dyslechtchitect/tfcbm.git
    cd tfcbm
-   flatpak-builder --user --install --force-clean build-dir io.github.dyslechtchitect.TFCBM.yml
+   flatpak-builder --user --install --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
    ```
 
 4. Run:
    ```bash
-   flatpak run io.github.dyslechtchitect.TFCBM
+   flatpak run io.github.dyslechtchitect.tfcbm
    ```
 
 ## Usage
@@ -166,7 +166,7 @@ See [.github/workflows/LOCAL_TESTING.md](.github/workflows/LOCAL_TESTING.md) for
 
 Or via command line:
 ```bash
-flatpak uninstall io.github.dyslechtchitect.TFCBM
+flatpak uninstall io.github.dyslechtchitect.tfcbm
 gnome-extensions uninstall tfcbm-clipboard-monitor@github.com
 ```
 

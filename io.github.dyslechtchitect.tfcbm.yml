@@ -1,4 +1,4 @@
-app-id: io.github.dyslechtchitect.TFCBM
+app-id: io.github.dyslechtchitect.tfcbm
 runtime: org.gnome.Platform
 runtime-version: '49'
 sdk: org.gnome.Sdk
@@ -57,11 +57,11 @@ modules:
   - name: python3-pydantic-core
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic_core-*.tar.gz
+      - pip3 install --no-deps --prefix=/app pydantic_core-*.whl
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/fc/01/f3e5ac5e7c25833db5eb555f7b7ab24cd6f8c322d3a3ad2d67a952dc0abc/pydantic_core-2.27.2.tar.gz
-        sha256: eb026e5a4c1fee05726072337ff51d1efb6f59090b7da90d30ea58625b1ffb39
+        url: https://files.pythonhosted.org/packages/a6/74/d12b2cd841d8724dc8ffb13fc5cef86566a53ed358103150209ecd5d1999/pydantic_core-2.27.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        sha256: bd8086fa684c4775c27f03f062cbb9eaa6e17f064307e86b21b9e0abc9c0f02e
 
   - name: python3-pydantic
     buildsystem: simple
@@ -75,20 +75,20 @@ modules:
   - name: python3-pillow
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app pillow-*.tar.gz
+      - pip3 install --no-deps --prefix=/app pillow-*.whl
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/a5/26/0d95c04c868f6bdb0c447e3ee2de5564411845e36a858cfd63766bc7b563/pillow-11.0.0.tar.gz
-        sha256: 72bacbaf24ac003fea9bff9837d1eedb6088758d41e100c1552930151f677739
+        url: https://files.pythonhosted.org/packages/cd/e8/686d0caeed6b998351d57796496a70185376ed9c8ec7d99e1d19ad591fc6/pillow-11.0.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        sha256: d69bfd8ec3219ae71bcde1f942b728903cad25fafe3100ba2258b973bd2bc1b2
 
   - name: python3-websockets
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app websockets-*.tar.gz
+      - pip3 install --no-deps --prefix=/app websockets-*.whl
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/f4/1b/380b883ce05bb5f45a905b61790319a28958a9ab1e4b6b95ff5464b60ca1/websockets-14.1.tar.gz
-        sha256: 398b10c77d471c0aab20a845e7a60076b6390bfdaac7a6d2edb0d2c59d75e8d8
+        url: https://files.pythonhosted.org/packages/cf/03/8faa5c9576299b2adf34dcccf278fc6bbbcda8a3efcc4d817369026be421/websockets-14.1-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        sha256: 77569d19a13015e840b81550922056acabc25e3f52782625bc6843cfa034e1da
 
   # Main application
   - name: tfcbm
@@ -106,14 +106,14 @@ modules:
       - cp -r resouces/* ${FLATPAK_DEST}/share/tfcbm/
 
       # Install icons
-      - install -Dm644 icons/hicolor/scalable/apps/io.github.dyslechtchitect.TFCBM.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.TFCBM.svg
+      - install -Dm644 icons/hicolor/scalable/apps/io.github.dyslechtchitect.tfcbm.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.tfcbm.svg
 
       # Install desktop file and metainfo
-      - install -Dm644 io.github.dyslechtchitect.TFCBM.desktop ${FLATPAK_DEST}/share/applications/io.github.dyslechtchitect.TFCBM.desktop
-      - install -Dm644 io.github.dyslechtchitect.TFCBM.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.dyslechtchitect.TFCBM.metainfo.xml
+      - install -Dm644 io.github.dyslechtchitect.tfcbm.desktop ${FLATPAK_DEST}/share/applications/io.github.dyslechtchitect.tfcbm.desktop
+      - install -Dm644 io.github.dyslechtchitect.tfcbm.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.dyslechtchitect.tfcbm.metainfo.xml
 
       # Install D-Bus service file
-      - install -Dm644 io.github.dyslechtchitect.TFCBM.service ${FLATPAK_DEST}/share/dbus-1/services/io.github.dyslechtchitect.TFCBM.service
+      - install -Dm644 io.github.dyslechtchitect.tfcbm.service ${FLATPAK_DEST}/share/dbus-1/services/io.github.dyslechtchitect.tfcbm.service
 
       # Create GNOME Shell extension zip package for installation
       - install -d ${FLATPAK_DEST}/share/tfcbm

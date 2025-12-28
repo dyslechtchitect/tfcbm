@@ -63,7 +63,7 @@ class TFCBMDBusService:
                 return False
 
             # Own the bus name (only if we're the server, not the UI)
-            # The UI already owns io.github.dyslechtchitect.TFCBM via its application_id
+            # The UI already owns io.github.dyslechtchitect.tfcbm via its application_id
             if not hasattr(self.app, 'props'):
                 # This is the server (mock DBusApp), so own the bus name
                 self.bus_name_id = Gio.bus_own_name_on_connection(
@@ -185,7 +185,7 @@ class TFCBMDBusService:
                 import subprocess
                 result = subprocess.run([
                     'gdbus', 'call', '--session',
-                    '--dest', 'io.github.dyslechtchitect.TFCBM',
+                    '--dest', 'io.github.dyslechtchitect.tfcbm',
                     '--object-path', '/org/tfcbm/ClipboardManager',
                     '--method', 'org.gtk.Application.Activate',
                     '{}'
@@ -232,7 +232,7 @@ class TFCBMDBusService:
                 import subprocess
                 result = subprocess.run([
                     'gdbus', 'call', '--session',
-                    '--dest', 'io.github.dyslechtchitect.TFCBM',
+                    '--dest', 'io.github.dyslechtchitect.tfcbm',
                     '--object-path', '/org/tfcbm/ClipboardManager',
                     '--method', 'org.freedesktop.Application.ActivateAction',
                     'show-settings', '[]', '{}'
@@ -283,7 +283,7 @@ class TFCBMDBusService:
                 # Try to quit the UI gracefully
                 result = subprocess.run([
                     'gdbus', 'call', '--session',
-                    '--dest', 'io.github.dyslechtchitect.TFCBM',
+                    '--dest', 'io.github.dyslechtchitect.tfcbm',
                     '--object-path', '/org/tfcbm/ClipboardManager',
                     '--method', 'org.freedesktop.Application.ActivateAction',
                     'quit', '[]', '{}'

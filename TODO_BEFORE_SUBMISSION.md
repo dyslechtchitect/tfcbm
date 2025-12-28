@@ -51,6 +51,7 @@ cat LICENSE | head -5
 # Build and install
 flatpak-builder --user --install --force-clean build-dir org.tfcbm.ClipboardManager.yml
 
+
 # Run
 flatpak run org.tfcbm.ClipboardManager
 

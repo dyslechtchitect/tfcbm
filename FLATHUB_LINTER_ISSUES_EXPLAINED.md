@@ -114,12 +114,12 @@ Replace all instances of `yourusername` with your actual GitHub username: `dysle
 
 Change your app ID to be based on your GitHub repository:
 - Current: `org.tfcbm.ClipboardManager`
-- Recommended: `io.github.dyslechtchitect.TFCBM`
+- Recommended: `io.github.dyslechtchitect.tfcbm`
 
 This is a common pattern for GitHub-hosted projects. You would need to rename:
-- `org.tfcbm.ClipboardManager.yml` → `io.github.dyslechtchitect.TFCBM.yml`
-- `org.tfcbm.ClipboardManager.metainfo.xml` → `io.github.dyslechtchitect.TFCBM.metainfo.xml`
-- `org.tfcbm.ClipboardManager.desktop` → `io.github.dyslechtchitect.TFCBM.desktop`
+- `org.tfcbm.ClipboardManager.yml` → `io.github.dyslechtchitect.tfcbm.yml`
+- `org.tfcbm.ClipboardManager.metainfo.xml` → `io.github.dyslechtchitect.tfcbm.metainfo.xml`
+- `org.tfcbm.ClipboardManager.desktop` → `io.github.dyslechtchitect.tfcbm.desktop`
 - Update all references in these files
 
 **Option 2: Keep current App ID and request exception**
@@ -245,7 +245,7 @@ This is a **valid use case** and reviewers will likely approve it once they unde
 
 ### RECOMMENDED (Improve Your Submission)
 
-5. ⚠️ **Consider changing App ID** to `io.github.dyslechtchitect.TFCBM` to avoid domain ownership questions
+5. ⚠️ **Consider changing App ID** to `io.github.dyslechtchitect.tfcbm` to avoid domain ownership questions
 
 ### DOCUMENTATION NEEDED (For Flathub Reviewers)
 

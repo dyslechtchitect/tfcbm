@@ -7,11 +7,11 @@ echo ""
 # 1. Kill any running TFCBM processes
 echo "Killing TFCBM processes..."
 killall -9 python3 2>/dev/null || true
-flatpak kill io.github.dyslechtchitect.TFCBM 2>/dev/null || true
+flatpak kill io.github.dyslechtchitect.tfcbm 2>/dev/null || true
 
 # 2. Uninstall Flatpak
 echo "Uninstalling Flatpak..."
-flatpak uninstall --user io.github.dyslechtchitect.TFCBM -y 2>/dev/null || true
+flatpak uninstall --user io.github.dyslechtchitect.tfcbm -y 2>/dev/null || true
 
 # 3. Remove GNOME extension
 echo "Removing GNOME extension..."
@@ -20,7 +20,7 @@ rm -rf ~/.local/share/gnome-shell/extensions/tfcbm-clipboard-monitor@github.com
 
 # 4. Remove Flatpak data directory
 echo "Removing Flatpak data..."
-rm -rf ~/.var/app/io.github.dyslechtchitect.TFCBM
+rm -rf ~/.var/app/io.github.dyslechtchitect.tfcbm
 
 # 5. Remove cache files
 echo "Removing cache files..."
@@ -29,19 +29,19 @@ rm -f ~/.cache/tfcbm-clipboard-monitor@github.com.zip
 
 # 6. Remove autostart file
 echo "Removing autostart..."
-rm -f ~/.config/autostart/io.github.dyslechtchitect.TFCBM.desktop
+rm -f ~/.config/autostart/io.github.dyslechtchitect.tfcbm.desktop
 
 # 7. Remove any desktop files
 echo "Removing desktop files..."
-rm -f ~/.local/share/applications/io.github.dyslechtchitect.TFCBM.desktop
+rm -f ~/.local/share/applications/io.github.dyslechtchitect.tfcbm.desktop
 
 # 8. Remove D-Bus service files
 echo "Removing D-Bus services..."
-rm -f ~/.local/share/dbus-1/services/io.github.dyslechtchitect.TFCBM.service
+rm -f ~/.local/share/dbus-1/services/io.github.dyslechtchitect.tfcbm.service
 
 # 9. Remove any settings
 echo "Removing settings..."
-gsettings reset-recursively io.github.dyslechtchitect.TFCBM 2>/dev/null || true
+gsettings reset-recursively io.github.dyslechtchitect.tfcbm 2>/dev/null || true
 
 # 10. Clean Flatpak repo if it exists
 echo "Cleaning Flatpak build artifacts..."
@@ -60,6 +60,6 @@ echo ""
 echo "To do a fresh install:"
 echo "  cd $SCRIPT_DIR"
 echo "  git pull"
-echo "  flatpak-builder --force-clean --user --install repo io.github.dyslechtchitect.TFCBM.yml"
-echo "  flatpak run io.github.dyslechtchitect.TFCBM"
+echo "  flatpak-builder --force-clean --user --install repo io.github.dyslechtchitect.tfcbm.yml"
+echo "  flatpak run io.github.dyslechtchitect.tfcbm"
 echo ""

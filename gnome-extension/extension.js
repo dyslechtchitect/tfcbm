@@ -12,7 +12,7 @@ import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { DBusNotifier } from './src/adapters/DBusNotifier.js';
 import { PollingScheduler } from './src/PollingScheduler.js';
 
-const DBUS_NAME = 'io.github.dyslechtchitect.TFCBM';
+const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm';
 const DBUS_PATH = '/org/tfcbm/ClipboardService';
 const DBUS_IFACE = 'org.tfcbm.ClipboardService';
 
@@ -187,7 +187,7 @@ export default class ClipboardMonitorExtension extends Extension {
             const [ok, stdout] = GLib.spawn_command_line_sync('flatpak list --app');
             if (ok) {
                 const output = new TextDecoder().decode(stdout);
-                if (!output.includes('io.github.dyslechtchitect.TFCBM')) {
+                if (!output.includes('io.github.dyslechtchitect.tfcbm')) {
                     // Flatpak was uninstalled, disable this extension
                     log('[TFCBM] Flatpak uninstalled, disabling extension...');
                     GLib.spawn_command_line_async('gnome-extensions disable tfcbm-clipboard-monitor@github.com');

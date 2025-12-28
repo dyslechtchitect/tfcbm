@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-    <id>io.github.dyslechtchitect.TFCBM</id>
+    <id>io.github.dyslechtchitect.tfcbm</id>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0-or-later</project_license>
     <name>TFCBM</name>
@@ -29,7 +29,7 @@
         </p>
     </description>
 
-    <launchable type="desktop-id">io.github.dyslechtchitect.TFCBM.desktop</launchable>
+    <launchable type="desktop-id">io.github.dyslechtchitect.tfcbm.desktop</launchable>
 
     <screenshots>
         <screenshot type="default">

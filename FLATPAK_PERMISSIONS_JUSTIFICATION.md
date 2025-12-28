@@ -19,9 +19,9 @@ TFCBM is a clipboard manager for GNOME that provides:
 **Justification**:
 TFCBM requires session bus access for the following legitimate reasons:
 
-1. **GNOME Shell Extension Communication**: The app communicates with its GNOME Shell extension via DBus to receive clipboard change notifications. The extension sends events to the app using the DBus interface `io.github.dyslechtchitect.TFCBM`.
+1. **GNOME Shell Extension Communication**: The app communicates with its GNOME Shell extension via DBus to receive clipboard change notifications. The extension sends events to the app using the DBus interface `io.github.dyslechtchitect.tfcbm`.
 
-2. **Own DBus Name**: The application needs to own the DBus name `io.github.dyslechtchitect.TFCBM` for the extension to communicate with it.
+2. **Own DBus Name**: The application needs to own the DBus name `io.github.dyslechtchitect.tfcbm` for the extension to communicate with it.
 
 3. **Desktop Notifications**: System notifications for clipboard events.
 
@@ -34,7 +34,7 @@ TFCBM requires session bus access for the following legitimate reasons:
 - `org.gnome.Shell` - GNOME Shell integration
 - `org.freedesktop.portal.Desktop` - Desktop portal for clipboard access
 - `org.freedesktop.Flatpak` - For extension installation (see below)
-- `io.github.dyslechtchitect.TFCBM` - Own service for extension communication
+- `io.github.dyslechtchitect.tfcbm` - Own service for extension communication
 
 **Alternative Considered**: Using only specific `--talk-name` permissions was considered, but the dynamic nature of clipboard monitoring and the need to own a DBus name requires session bus access.
 
@@ -58,7 +58,7 @@ The app includes a script (`tfcbm-install-extension`) that:
 4. Provides clear feedback and next steps
 
 **Code Reference**:
-- `io.github.dyslechtchitect.TFCBM.yml` lines 147-211: Extension installer script
+- `io.github.dyslechtchitect.tfcbm.yml` lines 147-211: Extension installer script
 - The script checks for existing installation and asks for user confirmation
 - Uses only the `gnome-extensions` command for installation (standard GNOME tool)
 
