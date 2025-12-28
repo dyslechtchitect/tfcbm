@@ -1,0 +1,14 @@
+{
+  "only-arches": ["x86_64", "aarch64"],
+  "skip-appstream-check": false,
+  "skip-icons-check": false,
+  "automerge-flathubbot-prs": false,
+  "end-of-life": null,
+  "end-of-life-rebase": null,
+  "disable-external-data-checker": false,
+  "flathub-lint-skip": [
+    "finish-args-arbitrary-dbus-access",
+    "finish-args-flatpak-spawn-access",
+    "finish-args-portal-talk-name"
+  ]
+}
