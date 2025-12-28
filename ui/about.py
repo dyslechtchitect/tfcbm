@@ -35,7 +35,7 @@ class AboutWindow(Gtk.Window):
 
         # Try to load TFCBM logo (try SVG first, then PNG)
         try:
-            svg_path = Path(__file__).parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "org.tfcbm.ClipboardManager.svg"
+            svg_path = Path(__file__).parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "io.github.dyslechtchitect.TFCBM.svg"
 
             icon_path = (
                 svg_path

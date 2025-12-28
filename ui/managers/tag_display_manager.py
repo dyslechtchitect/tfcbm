@@ -79,7 +79,7 @@ class TagDisplayManager:
             empty_box.set_margin_start(12)
             empty_box.set_margin_end(12)
 
-            empty_label = Gtk.Label(label="Start adding tags with the")
+            empty_label = Gtk.Label(label="Psst add tags here ... ")
             empty_label.add_css_class("dim-label")
             empty_box.append(empty_label)
 

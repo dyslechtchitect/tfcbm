@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-    <id>org.tfcbm.ClipboardManager</id>
+    <id>io.github.dyslechtchitect.TFCBM</id>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0-or-later</project_license>
     <name>TFCBM</name>
@@ -29,44 +29,43 @@
         </p>
     </description>
 
-    <launchable type="desktop-id">org.tfcbm.ClipboardManager.desktop</launchable>
+    <launchable type="desktop-id">io.github.dyslechtchitect.TFCBM.desktop</launchable>
 
     <screenshots>
         <screenshot type="default">
             <caption>Main window showing clipboard history</caption>
-            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/general.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/TFCBM/main/screenshots/general.png</image>
         </screenshot>
 
         <screenshot>
             <caption>Organize clipboard items using tags</caption>
-            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/tags.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/TFCBM/main/screenshots/tags.png</image>
         </screenshot>
 
         <screenshot>
             <caption>Search through clipboard history</caption>
-            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/search.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/TFCBM/main/screenshots/search.png</image>
         </screenshot>
 
         <screenshot>
             <caption>Protect sensitive clipboard items using Secrets</caption>
-            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/secret.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/TFCBM/main/screenshots/secret.png</image>
         </screenshot>
 
         <screenshot>
             <caption>Filter clipboard items by content type</caption>
-            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/filter.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/TFCBM/main/screenshots/filters.png</image>
         </screenshot>
 
         <screenshot>
             <caption>Configure keyboard shortcuts in the settings</caption>
-            <image>https://raw.githubusercontent.com/yourusername/tfcbm/main/screenshots/settings.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/TFCBM/main/screenshots/settings.png</image>
         </screenshot>
     </screenshots>
 
 
     <url type="homepage">https://github.com/dyslechtchitect/tfcbm</url>
     <url type="bugtracker">https://github.com/dyslechtchitect/tfcbm/issues</url>
-    <url type="license">https://www.gnu.org/licenses/gpl-3.0.html</url>
 
     <content_rating type="oars-1.1"/>
 
@@ -99,7 +98,7 @@
         <control>pointing</control>
     </recommends>
 
-    <developer id="org.tfcbm">
+    <developer id="io.github.dyslechtchitect">
         <name>TFCBM Developers</name>
     </developer>
 

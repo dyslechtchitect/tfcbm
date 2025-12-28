@@ -58,8 +58,8 @@ class SplashWindow(Gtk.Window):
         try:
             # Try Flatpak path first, then development path
             svg_paths = [
-                Path("/app/share/icons/hicolor/scalable/apps/org.tfcbm.ClipboardManager.svg"),
-                Path(__file__).parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "org.tfcbm.ClipboardManager.svg"
+                Path("/app/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.TFCBM.svg"),
+                Path(__file__).parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "io.github.dyslechtchitect.TFCBM.svg"
             ]
 
             loaded = False

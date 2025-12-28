@@ -114,7 +114,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.page_size = self.settings.max_page_length
 
         # Set window icon - just use the icon name, GTK will find it from the theme
-        self.set_icon_name("org.tfcbm.ClipboardManager")
+        self.set_icon_name("io.github.dyslechtchitect.TFCBM")
 
         # ========== UI Construction via MainWindowBuilder ==========
         builder = MainWindowBuilder(self)

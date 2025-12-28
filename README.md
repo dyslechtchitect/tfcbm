@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  <img src="resouces/org.tfcbm.ClipboardManager.logo.png" alt="TFCBM Logo" width="36" height="36">
+  <img src="resouces/io.github.dyslechtchitect.TFCBM.logo.png" alt="TFCBM Logo" width="36" height="36">
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@
 ### From Flathub (Recommended)
 
 ```bash
-flatpak install flathub org.tfcbm.ClipboardManager
+flatpak install flathub io.github.dyslechtchitect.TFCBM
 ```
 
 ### From Source
@@ -54,12 +54,12 @@ flatpak install flathub org.tfcbm.ClipboardManager
    ```bash
    git clone https://github.com/dyslechtchitect/tfcbm.git
    cd tfcbm
-   flatpak-builder --user --install --force-clean build-dir org.tfcbm.ClipboardManager.yml
+   flatpak-builder --user --install --force-clean build-dir io.github.dyslechtchitect.TFCBM.yml
    ```
 
 4. Run:
    ```bash
-   flatpak run org.tfcbm.ClipboardManager
+   flatpak run io.github.dyslechtchitect.TFCBM
    ```
 
 ## Usage
@@ -144,7 +144,7 @@ node --test
 
 Or via command line:
 ```bash
-flatpak uninstall org.tfcbm.ClipboardManager
+flatpak uninstall io.github.dyslechtchitect.TFCBM
 gnome-extensions uninstall tfcbm-clipboard-monitor@github.com
 ```
 

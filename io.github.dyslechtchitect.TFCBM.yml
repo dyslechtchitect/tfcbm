@@ -1,4 +1,4 @@
-app-id: org.tfcbm.ClipboardManager
+app-id: io.github.dyslechtchitect.TFCBM
 runtime: org.gnome.Platform
 runtime-version: '49'
 sdk: org.gnome.Sdk
@@ -12,7 +12,6 @@ finish-args:
   - --socket=wayland
   # DBus access for clipboard and extension communication
   - --socket=session-bus
-  - --system-talk-name=org.freedesktop.DBus
   # Filesystem access for clipboard files
   - --filesystem=xdg-download:rw
   - --filesystem=xdg-documents:rw
@@ -107,14 +106,14 @@ modules:
       - cp -r resouces/* ${FLATPAK_DEST}/share/tfcbm/
 
       # Install icons
-      - install -Dm644 icons/hicolor/scalable/apps/org.tfcbm.ClipboardManager.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/org.tfcbm.ClipboardManager.svg
+      - install -Dm644 icons/hicolor/scalable/apps/io.github.dyslechtchitect.TFCBM.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.TFCBM.svg
 
       # Install desktop file and metainfo
-      - install -Dm644 org.tfcbm.ClipboardManager.desktop ${FLATPAK_DEST}/share/applications/org.tfcbm.ClipboardManager.desktop
-      - install -Dm644 org.tfcbm.ClipboardManager.metainfo.xml ${FLATPAK_DEST}/share/metainfo/org.tfcbm.ClipboardManager.metainfo.xml
+      - install -Dm644 io.github.dyslechtchitect.TFCBM.desktop ${FLATPAK_DEST}/share/applications/io.github.dyslechtchitect.TFCBM.desktop
+      - install -Dm644 io.github.dyslechtchitect.TFCBM.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.dyslechtchitect.TFCBM.metainfo.xml
 
       # Install D-Bus service file
-      - install -Dm644 org.tfcbm.ClipboardManager.service ${FLATPAK_DEST}/share/dbus-1/services/org.tfcbm.ClipboardManager.service
+      - install -Dm644 io.github.dyslechtchitect.TFCBM.service ${FLATPAK_DEST}/share/dbus-1/services/io.github.dyslechtchitect.TFCBM.service
 
       # Create GNOME Shell extension zip package for installation
       - install -d ${FLATPAK_DEST}/share/tfcbm

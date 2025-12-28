@@ -495,7 +495,7 @@ class SettingsPage:
         """Check if autostart is enabled."""
         autostart_dir = Path.home() / ".config" / "autostart"
         # Check both old and new filenames
-        return (autostart_dir / "org.tfcbm.ClipboardManager.desktop").exists() or \
+        return (autostart_dir / "io.github.dyslechtchitect.TFCBM.desktop").exists() or \
                (autostart_dir / "tfcbm.desktop").exists()
 
     def _on_autostart_toggled(self, switch_row, _param):
@@ -570,11 +570,11 @@ class SettingsPage:
         autostart_dir = Path.home() / ".config" / "autostart"
         autostart_dir.mkdir(parents=True, exist_ok=True)
 
-        autostart_file = autostart_dir / "org.tfcbm.ClipboardManager.desktop"
+        autostart_file = autostart_dir / "io.github.dyslechtchitect.TFCBM.desktop"
 
         # Determine the correct Exec command
         if is_flatpak():
-            exec_cmd = "flatpak run org.tfcbm.ClipboardManager"
+            exec_cmd = "flatpak run io.github.dyslechtchitect.TFCBM"
         else:
             # For non-Flatpak, try to find the executable
             install_dir = Path(__file__).parent.parent.parent
@@ -586,7 +586,7 @@ Type=Application
 Name=TFCBM
 Comment=Clipboard Manager - Manage your clipboard history
 Exec={exec_cmd}
-Icon=org.tfcbm.ClipboardManager
+Icon=io.github.dyslechtchitect.TFCBM
 Terminal=false
 Categories=Utility;GTK;
 StartupNotify=true
@@ -600,7 +600,7 @@ X-GNOME-Autostart-enabled=true
         """Disable autostart by removing the .desktop file."""
         # Check both old and new filenames
         autostart_files = [
-            Path.home() / ".config" / "autostart" / "org.tfcbm.ClipboardManager.desktop",
+            Path.home() / ".config" / "autostart" / "io.github.dyslechtchitect.TFCBM.desktop",
             Path.home() / ".config" / "autostart" / "tfcbm.desktop"
         ]
 

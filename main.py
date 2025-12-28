@@ -129,7 +129,7 @@ class TFCBMServer:
         from pathlib import Path
         autostart_dir = Path.home() / ".config" / "autostart"
         # Check both old and new filenames
-        return (autostart_dir / "org.tfcbm.ClipboardManager.desktop").exists() or \
+        return (autostart_dir / "io.github.dyslechtchitect.TFCBM.desktop").exists() or \
                (autostart_dir / "tfcbm.desktop").exists()
 
     def start(self):
