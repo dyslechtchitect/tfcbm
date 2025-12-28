@@ -492,79 +492,56 @@ class SettingsPage:
         return False  # Don't repeat idle_add
 
     def _is_autostart_enabled(self) -> bool:
-        """Check if autostart is enabled."""
+        """Check if autostart is enabled by reading the XDG autostart desktop file."""
         autostart_dir = Path.home() / ".config" / "autostart"
-        # Check both old and new filenames
-        return (autostart_dir / "io.github.dyslechtchitect.TFCBM.desktop").exists() or \
-               (autostart_dir / "tfcbm.desktop").exists()
+        autostart_file = autostart_dir / "io.github.dyslechtchitect.TFCBM.desktop"
+
+        # Also check legacy filename
+        legacy_file = autostart_dir / "tfcbm.desktop"
+
+        # Check primary file first
+        if autostart_file.exists():
+            return self._is_desktop_entry_enabled(autostart_file)
+        elif legacy_file.exists():
+            return self._is_desktop_entry_enabled(legacy_file)
+
+        return False
+
+    def _is_desktop_entry_enabled(self, desktop_file: Path) -> bool:
+        """Check if a desktop entry is enabled (not hidden or disabled)."""
+        try:
+            content = desktop_file.read_text()
+
+            # Check for Hidden=true (XDG standard)
+            if "Hidden=true" in content:
+                return False
+
+            # Check for X-GNOME-Autostart-enabled=false (GNOME-specific)
+            if "X-GNOME-Autostart-enabled=false" in content:
+                return False
+
+            return True
+        except Exception as e:
+            print(f"Error reading desktop file {desktop_file}: {e}")
+            return False
 
     def _on_autostart_toggled(self, switch_row, _param):
-        """Handle autostart toggle."""
+        """Handle autostart toggle - only affects next login, not current session."""
         is_enabled = switch_row.get_active()
 
         try:
             if is_enabled:
                 self._enable_autostart()
-                # Also enable the extension so tray icon appears immediately
-                self._enable_extension()
-                self.on_notification("TFCBM will now start automatically on login")
+                self.on_notification("TFCBM will start automatically on next login")
             else:
                 self._disable_autostart()
-                # Also disable the extension so tray icon doesn't appear on next login
-                self._disable_extension()
-                self.on_notification("TFCBM autostart and extension disabled")
+                self.on_notification("TFCBM will not start automatically on next login")
         except Exception as e:
             self.on_notification(f"Error toggling autostart: {e}")
             print(f"Error toggling autostart: {e}")
 
-    def _disable_extension(self):
-        """Disable the GNOME extension."""
-        try:
-            import gi
-            gi.require_version('Gio', '2.0')
-            from gi.repository import Gio, GLib
-
-            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            connection.call_sync(
-                'org.gnome.Shell.Extensions',
-                '/org/gnome/Shell/Extensions',
-                'org.gnome.Shell.Extensions',
-                'DisableExtension',
-                GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None
-            )
-            print("GNOME extension disabled")
-        except Exception as e:
-            print(f"Error disabling extension: {e}")
-
-    def _enable_extension(self):
-        """Enable the GNOME extension."""
-        try:
-            import gi
-            gi.require_version('Gio', '2.0')
-            from gi.repository import Gio, GLib
-
-            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            connection.call_sync(
-                'org.gnome.Shell.Extensions',
-                '/org/gnome/Shell/Extensions',
-                'org.gnome.Shell.Extensions',
-                'EnableExtension',
-                GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None
-            )
-            print("GNOME extension enabled")
-        except Exception as e:
-            print(f"Error enabling extension: {e}")
-
     def _enable_autostart(self):
-        """Enable autostart by creating .desktop file in autostart directory."""
+        """Enable autostart by creating/updating .desktop file in ~/.config/autostart."""
         from ui.utils.extension_check import is_flatpak
 
         autostart_dir = Path.home() / ".config" / "autostart"
@@ -576,20 +553,19 @@ class SettingsPage:
         if is_flatpak():
             exec_cmd = "flatpak run io.github.dyslechtchitect.TFCBM"
         else:
-            # For non-Flatpak, try to find the executable
-            install_dir = Path(__file__).parent.parent.parent
-            exec_cmd = str(install_dir / "tfcbm-launcher.sh")
+            # For non-Flatpak, use the installed binary
+            exec_cmd = "tfcbm"
 
-        # Create the autostart desktop entry
+        # Create the autostart desktop entry following XDG and GNOME standards
         desktop_content = f"""[Desktop Entry]
 Type=Application
 Name=TFCBM
-Comment=Clipboard Manager - Manage your clipboard history
+Comment=The F* Clipboard Manager
 Exec={exec_cmd}
 Icon=io.github.dyslechtchitect.TFCBM
 Terminal=false
 Categories=Utility;GTK;
-StartupNotify=true
+StartupNotify=false
 X-GNOME-Autostart-enabled=true
 """
 
@@ -597,14 +573,41 @@ X-GNOME-Autostart-enabled=true
         print(f"Autostart enabled: {autostart_file}")
 
     def _disable_autostart(self):
-        """Disable autostart by removing the .desktop file."""
-        # Check both old and new filenames
-        autostart_files = [
-            Path.home() / ".config" / "autostart" / "io.github.dyslechtchitect.TFCBM.desktop",
-            Path.home() / ".config" / "autostart" / "tfcbm.desktop"
-        ]
+        """Disable autostart by setting Hidden=true in the desktop file."""
+        autostart_dir = Path.home() / ".config" / "autostart"
+        autostart_file = autostart_dir / "io.github.dyslechtchitect.TFCBM.desktop"
+        legacy_file = autostart_dir / "tfcbm.desktop"
 
-        for autostart_file in autostart_files:
-            if autostart_file.exists():
-                autostart_file.unlink()
-                print(f"Autostart disabled: {autostart_file}")
+        # Handle both old and new filenames
+        for desktop_file in [autostart_file, legacy_file]:
+            if desktop_file.exists():
+                try:
+                    content = desktop_file.read_text()
+
+                    # Add Hidden=true if not present (XDG standard method)
+                    if "Hidden=" not in content:
+                        # Add after [Desktop Entry] line
+                        content = content.replace(
+                            "[Desktop Entry]\n",
+                            "[Desktop Entry]\nHidden=true\n"
+                        )
+                    else:
+                        # Update existing Hidden value
+                        content = content.replace("Hidden=false", "Hidden=true")
+
+                    # Also set X-GNOME-Autostart-enabled=false for GNOME compatibility
+                    if "X-GNOME-Autostart-enabled=" in content:
+                        content = content.replace(
+                            "X-GNOME-Autostart-enabled=true",
+                            "X-GNOME-Autostart-enabled=false"
+                        )
+                    else:
+                        content = content.replace(
+                            "[Desktop Entry]\n",
+                            "[Desktop Entry]\nX-GNOME-Autostart-enabled=false\n"
+                        )
+
+                    desktop_file.write_text(content)
+                    print(f"Autostart disabled: {desktop_file}")
+                except Exception as e:
+                    print(f"Error disabling autostart for {desktop_file}: {e}")
