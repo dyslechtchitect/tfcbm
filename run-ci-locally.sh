@@ -4,6 +4,9 @@ set -e
 # TFCBM CI Local Runner
 # Convenience script for running GitHub Actions workflows locally with act
 
+# Ensure ~/.local/bin is in PATH (for nektos/act)
+export PATH="$HOME/.local/bin:$PATH"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -12,11 +15,12 @@ NC='\033[0m' # No Color
 
 # Check if act is installed
 if ! command -v act &> /dev/null; then
-    echo -e "${RED}Error: 'act' is not installed.${NC}"
+    echo -e "${RED}Error: 'act' (nektos/act) is not installed.${NC}"
     echo "Please install it:"
-    echo "  Fedora: sudo dnf install act"
-    echo "  Ubuntu: curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash"
+    echo "  Linux: curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash"
     echo "  Homebrew: brew install act"
+    echo ""
+    echo "Note: Do NOT use 'dnf install act' as it installs the wrong package (Automatic Component Toolkit)"
     exit 1
 fi
 

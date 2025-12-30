@@ -8,9 +8,11 @@ This guide explains how to run the Flatpak CI workflow locally before pushing to
 
 `act` allows you to run GitHub Actions locally using Docker.
 
-**On Fedora/RHEL:**
+**IMPORTANT:** Do NOT use `dnf install act` on Fedora/RHEL as it installs the wrong package (Automatic Component Toolkit). Use one of the methods below instead.
+
+**Recommended installation (Linux):**
 ```bash
-sudo dnf install act
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 ```
 
 **On Ubuntu/Debian:**
@@ -21,11 +23,6 @@ curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 **Using Homebrew (macOS/Linux):**
 ```bash
 brew install act
-```
-
-**Manual installation:**
-```bash
-curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 ```
 
 ### Install Docker

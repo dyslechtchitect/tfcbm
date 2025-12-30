@@ -54,11 +54,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gnome-version: ['45', '46', '47']
+        gnome-version: ['45', '46', '47', '48', '49']
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup Flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Create manifest for GNOME ${{ matrix.gnome-version }}
         run: |
