@@ -98,7 +98,7 @@ jobs:
       - name: Setup Flatpak
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak flatpak-builder xvfb
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub org.flatpak.Builder
 
@@ -108,7 +108,7 @@ jobs:
 
       - name: Build repo for linting
         run: |
-          flatpak run org.flatpak.Builder --user --install-deps-from=flathub --disable-rofiles-fuse --repo=repo --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
+          xvfb-run flatpak run org.flatpak.Builder --user --install-deps-from=flathub --disable-rofiles-fuse --repo=repo --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
 
       - name: Lint repo
         run: |
