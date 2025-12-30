@@ -76,7 +76,7 @@ jobs:
       - name: Build Flatpak
         run: |
           xvfb-run flatpak-builder --user --disable-rofiles-fuse --repo=repo --force-clean --install-deps-from=flathub --arch=x86_64 --default-branch=test --ccache build-dir io.github.dyslechtchitect.tfcbm-gnome${{ matrix.gnome-version }}.yml
-          flatpak build-bundle repo tfcbm-gnome${{ matrix.gnome-version }}.flatpak io.github.dyslechtchitect.tfcbm
+          flatpak build-bundle repo tfcbm-gnome${{ matrix.gnome-version }}.flatpak io.github.dyslechtchitect.tfcbm test
 
       - name: Upload Flatpak bundle
         uses: actions/upload-artifact@v4
