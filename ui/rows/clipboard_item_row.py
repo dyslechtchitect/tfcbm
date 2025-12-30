@@ -203,6 +203,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.header = ItemHeader(
             item=self.item,
             on_name_save=self.ws_service.update_item_name,
+            on_favorite_toggle=self._on_favorite_toggle,
             show_pasted_time=self.show_pasted_time,
             search_query=self.search_query,
         )
@@ -387,6 +388,10 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         """Display tags in the tags overlay - delegate to tag manager."""
         if self.tag_manager:
             self.tag_manager.display_tags(tags)
+
+    def _on_favorite_toggle(self, item_id: int, is_favorite: bool):
+        """Handle favorite toggle action."""
+        self.ws_service.toggle_favorite(item_id, is_favorite)
 
     def _on_card_clicked(self, gesture, n_press, x, y):
         """Handle card clicks - single click copies."""

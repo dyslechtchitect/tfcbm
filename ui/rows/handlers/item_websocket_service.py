@@ -194,6 +194,58 @@ class ItemWebSocketService:
 
         threading.Thread(target=send_toggle, daemon=True).start()
 
+    def toggle_favorite(self, item_id: int, is_favorite: bool) -> None:
+        """Send request to server to toggle favorite status.
+
+        Args:
+            item_id: ID of the item
+            is_favorite: Whether to mark as favorite (True) or unmark (False)
+        """
+        logger.info(f"toggle_favorite called: item_id={item_id}, is_favorite={is_favorite}")
+
+        def send_toggle():
+            try:
+
+                async def toggle_fav():
+                    async with websockets.connect(self.ws_uri) as websocket:
+                        request = {
+                            "action": "toggle_favorite",
+                            "item_id": item_id,
+                            "is_favorite": is_favorite,
+                        }
+                        await websocket.send(json.dumps(request))
+                        response = await websocket.recv()
+                        data = json.loads(response)
+                        logger.info(f"Received response: {data}")
+
+                        if data.get("type") == "favorite_toggled":
+                            if data.get("success"):
+                                # Update local item data
+                                self.item["is_favorite"] = bool(is_favorite)
+                                logger.info(f"Item {item_id} favorite status updated: is_favorite={is_favorite}")
+                            else:
+                                error_msg = data.get("error", "Unknown error")
+                                logger.error(f"Failed to toggle favorite status: {error_msg}")
+                                GLib.idle_add(
+                                    self.window.show_notification,
+                                    f"Failed to update favorite: {error_msg}",
+                                )
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(toggle_fav())
+                finally:
+                    loop.close()
+            except Exception as e:
+                logger.error(f"Error toggling favorite status: {e}")
+                GLib.idle_add(
+                    self.window.show_notification,
+                    f"Error: {str(e)}",
+                )
+
+        threading.Thread(target=send_toggle, daemon=True).start()
+
     def load_item_tags(self) -> None:
         """Load and display tags for this item asynchronously."""
 

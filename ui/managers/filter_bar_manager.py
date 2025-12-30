@@ -190,6 +190,7 @@ class FilterBarManager:
         """Add system content type filter buttons."""
         self.system_filter_chips = []
         system_filters = [
+            ("favorite", "Favorites", "starred-symbolic"),
             ("text", "Text", "text-x-generic-symbolic"),
             ("image", "Images", "image-x-generic-symbolic"),
             ("url", "URLs", "web-browser-symbolic"),

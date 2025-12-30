@@ -156,6 +156,8 @@ class WebSocketService:
             await self._handle_update_item_name(websocket, data)
         elif action == "toggle_secret":
             await self._handle_toggle_secret(websocket, data)
+        elif action == "toggle_favorite":
+            await self._handle_toggle_favorite(websocket, data)
         elif action == "get_item":
             await self._handle_get_item(websocket, data)
         elif action == "get_file_extensions":
@@ -464,6 +466,42 @@ class WebSocketService:
             logger.info(f"Toggled secret for item {item_id}: {success}")
         else:
             response = {"type": "secret_toggled", "success": False, "error": "item_id is required"}
+            await websocket.send(json.dumps(response))
+
+    async def _handle_toggle_favorite(self, websocket, data):
+        """Handle toggle_favorite action"""
+        item_id = data.get("item_id")
+        is_favorite = data.get("is_favorite", False)
+
+        if item_id is not None:
+            logger.info(f"Toggling favorite for item {item_id}: is_favorite={is_favorite}")
+            success = self.db_service.toggle_favorite(item_id, is_favorite)
+
+            if success:
+                response = {
+                    "type": "favorite_toggled",
+                    "item_id": item_id,
+                    "is_favorite": is_favorite,
+                    "success": True
+                }
+                await websocket.send(json.dumps(response))
+                logger.info(f"Sent favorite_toggled response for item {item_id}")
+
+                await self.broadcast({
+                    "type": "item_updated",
+                    "item_id": item_id,
+                    "is_favorite": is_favorite
+                })
+            else:
+                response = {
+                    "type": "favorite_toggled",
+                    "success": False,
+                    "error": "Failed to toggle favorite status"
+                }
+                await websocket.send(json.dumps(response))
+            logger.info(f"Toggled favorite for item {item_id}: {success}")
+        else:
+            response = {"type": "favorite_toggled", "success": False, "error": "item_id is required"}
             await websocket.send(json.dumps(response))
 
     async def _handle_get_item(self, websocket, data):

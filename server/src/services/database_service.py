@@ -169,6 +169,11 @@ class DatabaseService:
         with self.lock:
             return self.db.toggle_secret(item_id, is_secret, name)
 
+    def toggle_favorite(self, item_id: int, is_favorite: bool) -> bool:
+        """Thread-safe toggle favorite status"""
+        with self.lock:
+            return self.db.toggle_favorite(item_id, is_favorite)
+
     def get_file_extensions(self) -> List[str]:
         """Thread-safe get file extensions"""
         with self.lock:

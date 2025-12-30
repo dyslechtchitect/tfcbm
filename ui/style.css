@@ -49,6 +49,11 @@
     min-height: 300px;
 }
 
+/* Favorite button styling */
+.favorite-active {
+    color: #e5a50a; /* Subtle gold/amber color */
+}
+
 .full-item-text {
     white-space: pre-wrap; /* Preserve whitespace and allow wrapping */
     /* text-wrap: wrap; This is not a standard CSS property for GTK */

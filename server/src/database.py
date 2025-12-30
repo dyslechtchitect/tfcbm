@@ -84,10 +84,19 @@ class ClipboardDB:
                 format_type TEXT,
                 formatted_content BLOB,
                 is_secret INTEGER DEFAULT 0,
+                is_favorite INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """
         )
+
+        # Migration: Add is_favorite column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("ALTER TABLE clipboard_items ADD COLUMN is_favorite INTEGER DEFAULT 0")
+            logging.info("Added is_favorite column to clipboard_items table")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
 
         # Create indices for clipboard_items
         cursor.execute(
@@ -208,6 +217,7 @@ class ClipboardDB:
         format_type: str = None,
         formatted_content: bytes = None,
         is_secret: bool = False,
+        is_favorite: bool = False,
     ) -> int:
         """
         Add a clipboard item to the database
@@ -222,6 +232,7 @@ class ClipboardDB:
             format_type: Optional format type (e.g., 'html', 'rtf') for formatted text
             formatted_content: Optional formatted content (HTML, RTF, etc.)
             is_secret: Whether this item is a secret (requires name and password to view)
+            is_favorite: Whether this item is favorited
 
         Returns:
             The ID of the inserted item
@@ -236,8 +247,8 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash, name, format_type, formatted_content, is_secret)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash, name, format_type, formatted_content, is_secret, is_favorite)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 timestamp,
@@ -249,6 +260,7 @@ class ClipboardDB:
                 format_type,
                 formatted_content,
                 1 if is_secret else 0,
+                1 if is_favorite else 0,
             ),
         )
         item_id = cursor.lastrowid
@@ -307,6 +319,8 @@ class ClipboardDB:
         Delete oldest items if total count exceeds max_items.
         This is called after adding a new item to maintain the retention limit.
 
+        IMPORTANT: Favorited items are NEVER auto-deleted.
+
         Args:
             max_items: Maximum number of items to retain
 
@@ -315,8 +329,8 @@ class ClipboardDB:
         """
         cursor = self.conn.cursor()
 
-        # Count total items
-        cursor.execute("SELECT COUNT(*) as total FROM clipboard_items")
+        # Count total non-favorite items
+        cursor.execute("SELECT COUNT(*) as total FROM clipboard_items WHERE is_favorite = 0")
         total = cursor.fetchone()["total"]
 
         if total <= max_items:
@@ -325,12 +339,13 @@ class ClipboardDB:
         # Calculate how many to delete
         to_delete = total - max_items
 
-        # Delete oldest items (by timestamp, then by ID as tiebreaker)
+        # Delete oldest NON-FAVORITE items (by timestamp, then by ID as tiebreaker)
         cursor.execute(
             """
             DELETE FROM clipboard_items
             WHERE id IN (
                 SELECT id FROM clipboard_items
+                WHERE is_favorite = 0
                 ORDER BY timestamp ASC, id ASC
                 LIMIT ?
             )
@@ -343,7 +358,7 @@ class ClipboardDB:
 
         if deleted_count > 0:
             logging.info(
-                f"Retention cleanup: deleted {deleted_count} oldest items (limit: {max_items})"
+                f"Retention cleanup: deleted {deleted_count} oldest non-favorite items (limit: {max_items})"
             )
             # Clean up orphaned recently_pasted records (belt-and-suspenders approach)
             self._cleanup_orphaned_pasted_records()
@@ -354,6 +369,8 @@ class ClipboardDB:
         """
         Delete a specific number of oldest items.
         Used when user reduces the max_items setting.
+
+        IMPORTANT: Favorited items are NEVER auto-deleted.
 
         Args:
             count: Number of oldest items to delete
@@ -370,6 +387,7 @@ class ClipboardDB:
             DELETE FROM clipboard_items
             WHERE id IN (
                 SELECT id FROM clipboard_items
+                WHERE is_favorite = 0
                 ORDER BY timestamp ASC, id ASC
                 LIMIT ?
             )
@@ -381,7 +399,7 @@ class ClipboardDB:
         self.conn.commit()
 
         if deleted_count > 0:
-            logging.info(f"Bulk delete: removed {deleted_count} oldest items")
+            logging.info(f"Bulk delete: removed {deleted_count} oldest non-favorite items")
             # Clean up orphaned recently_pasted records (belt-and-suspenders approach)
             self._cleanup_orphaned_pasted_records()
 
@@ -508,7 +526,7 @@ class ClipboardDB:
             tag_filters = []
 
             for f in filters:
-                if f in ["text", "image", "url", "file"]:
+                if f in ["text", "image", "url", "file", "favorite"]:
                     # Content type filters
                     if f == "text":
                         type_filters.append("type = 'text'")
@@ -520,6 +538,8 @@ class ClipboardDB:
                         type_filters.append("type = 'url'")
                     elif f == "file":
                         type_filters.append("type = 'file'")
+                    elif f == "favorite":
+                        type_filters.append("is_favorite = 1")
                 elif f.startswith("file:"):
                     # File extension filter (format: "file:pdf", "file:docx", etc.)
                     ext = f[5:]  # Remove "file:" prefix
@@ -557,7 +577,7 @@ class ClipboardDB:
             where_clause = "WHERE " + " AND ".join(where_clauses)
 
         query = f"""
-            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_secret
+            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_secret, is_favorite
             FROM clipboard_items
             {where_clause}
             ORDER BY timestamp {sort_order}
@@ -591,6 +611,7 @@ class ClipboardDB:
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
                     "is_secret": bool(row["is_secret"]),
+                    "is_favorite": bool(row["is_favorite"]),
                     "tags": tags,
                 }
             )
@@ -601,7 +622,7 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_secret, hash
+            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_secret, is_favorite, hash
             FROM clipboard_items
             WHERE id = ?
         """,
@@ -620,6 +641,7 @@ class ClipboardDB:
                 "format_type": row["format_type"],
                 "formatted_content": row["formatted_content"],
                 "is_secret": bool(row["is_secret"]),
+                "is_favorite": bool(row["is_favorite"]),
                 "hash": row["hash"],
             }
         return None
@@ -772,6 +794,28 @@ class ClipboardDB:
         self.conn.commit()
         return True
 
+    def toggle_favorite(self, item_id: int, is_favorite: bool) -> bool:
+        """
+        Toggle the favorite status of an item
+
+        Args:
+            item_id: ID of the item to toggle
+            is_favorite: Whether the item should be favorited
+
+        Returns:
+            True if successful, False otherwise
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "UPDATE clipboard_items SET is_favorite = ? WHERE id = ?",
+            (1 if is_favorite else 0, item_id),
+        )
+        self.conn.commit()
+        success = cursor.rowcount > 0
+        if success:
+            logging.info(f"Toggled favorite for item {item_id}: is_favorite={is_favorite}")
+        return success
+
     def clear_all(self):
         """Clear all items from database"""
         cursor = self.conn.cursor()
@@ -870,7 +914,7 @@ class ClipboardDB:
             tag_filters = []
 
             for f in filters:
-                if f in ["text", "image", "url", "file"]:
+                if f in ["text", "image", "url", "file", "favorite"]:
                     # Content type filters
                     if f == "text":
                         type_filters.append("ci.type = 'text'")
@@ -882,13 +926,15 @@ class ClipboardDB:
                         type_filters.append("ci.type = 'url'")
                     elif f == "file":
                         type_filters.append("ci.type = 'file'")
+                    elif f == "favorite":
+                        type_filters.append("ci.is_favorite = 1")
                 elif f.startswith("file:"):
                     # File extension filter (format: "file:pdf", "file:docx", etc.)
                     ext = f[5:]  # Remove "file:" prefix
                     type_filters.append("ci.type LIKE ?")
                     query_params.append(f"%{ext}%")
                 elif f.startswith("."):
-                    # File extension filter (format: ".pdf", ".docx", etc.)
+                    # File extension filter (format: ".pdf", ".docx", etc.")
                     type_filters.append("ci.type LIKE ?")
                     query_params.append(f"%{f}%")
                 else:
@@ -930,7 +976,8 @@ class ClipboardDB:
                 ci.name,
                 ci.format_type,
                 ci.formatted_content,
-                ci.is_secret
+                ci.is_secret,
+                ci.is_favorite
             FROM recently_pasted rp
             INNER JOIN clipboard_items ci ON rp.clipboard_item_id = ci.id
             {where_clause}
@@ -966,6 +1013,7 @@ class ClipboardDB:
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
                     "is_secret": bool(row["is_secret"]),
+                    "is_favorite": bool(row["is_favorite"]),
                     "tags": tags,
                 }
             )
@@ -1030,7 +1078,7 @@ class ClipboardDB:
             tag_filters = []
 
             for f in filters:
-                if f in ["text", "image", "url", "file"]:
+                if f in ["text", "image", "url", "file", "favorite"]:
                     # Content type filters
                     if f == "text":
                         type_filters.append("ci.type = 'text'")
@@ -1042,6 +1090,8 @@ class ClipboardDB:
                         type_filters.append("ci.type = 'url'")
                     elif f == "file":
                         type_filters.append("ci.type = 'file'")
+                    elif f == "favorite":
+                        type_filters.append("ci.is_favorite = 1")
                 elif f.startswith("file:"):
                     # File extension filter (format: "file:pdf", "file:docx", etc.)
                     ext = f[5:]  # Remove "file:" prefix
@@ -1092,6 +1142,7 @@ class ClipboardDB:
                 ci.format_type,
                 ci.formatted_content,
                 ci.is_secret,
+                ci.is_favorite,
                 -rank as relevance
             FROM clipboard_fts
             INNER JOIN clipboard_items ci ON clipboard_fts.rowid = ci.id
@@ -1121,6 +1172,7 @@ class ClipboardDB:
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
                     "is_secret": bool(row["is_secret"]),
+                    "is_favorite": bool(row["is_favorite"]),
                     "relevance": row["relevance"],
                 }
             )
@@ -1486,7 +1538,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_secret
+                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_secret, ci.is_favorite
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1502,7 +1554,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_secret
+                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_secret, ci.is_favorite
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1525,6 +1577,7 @@ class ClipboardDB:
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
                     "is_secret": bool(row["is_secret"]),
+                    "is_favorite": bool(row["is_favorite"]),
                 }
             )
         return items
