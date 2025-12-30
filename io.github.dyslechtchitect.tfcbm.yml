@@ -61,7 +61,7 @@ modules:
   - name: python3-pydantic-core
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-build-isolation --prefix=/app pydantic_core-*.tar.gz
+      - pip3 install --no-deps --prefix=/app pydantic_core-*.tar.gz
     sources:
       - type: file
         url: https://files.pythonhosted.org/packages/fc/01/f3e5ac5e7c25833db5eb555f7b7ab24cd6f8c322d3a3ad2d67a952dc0abc/pydantic_core-2.27.2.tar.gz
@@ -79,7 +79,7 @@ modules:
   - name: python3-pillow
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-build-isolation --prefix=/app pillow-*.tar.gz
+      - pip3 install --no-deps --prefix=/app pillow-*.tar.gz
     sources:
       - type: file
         url: https://files.pythonhosted.org/packages/a5/26/0d95c04c868f6bdb0c447e3ee2de5564411845e36a858cfd63766bc7b563/pillow-11.0.0.tar.gz
@@ -88,7 +88,7 @@ modules:
   - name: python3-websockets
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-build-isolation --prefix=/app websockets-*.tar.gz
+      - pip3 install --no-deps --prefix=/app websockets-*.tar.gz
     sources:
       - type: file
         url: https://files.pythonhosted.org/packages/f4/1b/380b883ce05bb5f45a905b61790319a28958a9ab1e4b6b95ff5464b60ca1/websockets-14.1.tar.gz
