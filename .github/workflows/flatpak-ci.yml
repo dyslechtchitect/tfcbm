@@ -108,7 +108,7 @@ jobs:
 
       - name: Build repo for linting
         run: |
-          flatpak-builder --user --disable-rofiles-fuse --repo=repo --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
+          flatpak run org.flatpak.Builder --user --install-deps-from=flathub --disable-rofiles-fuse --repo=repo --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
 
       - name: Lint repo
         run: |
