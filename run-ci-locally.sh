@@ -37,11 +37,13 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  test                Run Python and Node.js tests"
-    echo "  flatpak [VERSION]   Build Flatpak for specific GNOME version (45-49)"
-    echo "  flatpak-all         Build Flatpak for all GNOME versions (45-49)"
+    echo "  flatpak [VERSION]   Build Flatpak for specific GNOME version (47-49)"
+    echo "  flatpak-all         Build Flatpak for all GNOME versions (47-49)"
     echo "  lint                Run flatpak-builder-lint"
     echo "  all                 Run all jobs (tests, flatpak for GNOME 49, and lint)"
     echo "  help                Show this help message"
+    echo ""
+    echo "Note: GNOME 45-46 are EOL and no longer supported."
     echo ""
     echo "Examples:"
     echo "  $0 test"
@@ -62,8 +64,9 @@ run_tests() {
 run_flatpak() {
     local version=$1
 
-    if [[ ! "$version" =~ ^4[5-9]$ ]]; then
-        echo -e "${RED}Error: Invalid GNOME version. Must be 45-49.${NC}"
+    if [[ ! "$version" =~ ^4[7-9]$ ]]; then
+        echo -e "${RED}Error: Invalid GNOME version. Must be 47-49.${NC}"
+        echo -e "${YELLOW}Note: GNOME 45-46 are EOL and no longer supported.${NC}"
         exit 1
     fi
 
@@ -73,9 +76,9 @@ run_flatpak() {
 
 # Function to run Flatpak build for all versions
 run_flatpak_all() {
-    echo -e "${GREEN}Building Flatpak for all GNOME versions (45-49)...${NC}"
+    echo -e "${GREEN}Building Flatpak for all GNOME versions (47-49)...${NC}"
 
-    for version in 45 46 47 48 49; do
+    for version in 47 48 49; do
         echo -e "${YELLOW}Building for GNOME $version...${NC}"
         run_flatpak "$version"
     done
@@ -112,7 +115,7 @@ case "${1:-help}" in
         ;;
     flatpak)
         if [ -z "$2" ]; then
-            echo -e "${RED}Error: Please specify GNOME version (45-49)${NC}"
+            echo -e "${RED}Error: Please specify GNOME version (47-49)${NC}"
             echo "Example: $0 flatpak 49"
             exit 1
         fi

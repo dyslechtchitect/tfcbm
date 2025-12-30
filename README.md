@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/GNOME-45--49-blue.svg" alt="GNOME 45-49">
+  <img src="https://img.shields.io/badge/GNOME-47--49-blue.svg" alt="GNOME 47-49">
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
   <a href="https://github.com/dyslechtchitect/tfcbm/actions/workflows/flatpak-ci.yml"><img src="https://github.com/dyslechtchitect/tfcbm/actions/workflows/flatpak-ci.yml/badge.svg" alt="CI Status"></a>
 </p>
@@ -104,7 +104,7 @@ TFCBM consists of three components:
 ### Prerequisites
 
 - Python 3.11+
-- GNOME 45-49
+- GNOME 47-49 (GNOME 45-46 are EOL as of April 2025)
 - Flatpak SDK (for packaging)
 
 ### Setup
@@ -137,7 +137,7 @@ npm test
 
 The project uses GitHub Actions for continuous integration:
 - Tests run on every push and PR
-- Flatpak builds tested against GNOME 45-49
+- Flatpak builds tested against GNOME 47-49
 - Artifacts uploaded for each GNOME version
 
 **Run CI locally:**

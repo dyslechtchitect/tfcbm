@@ -16,7 +16,7 @@ Runs on every push to `main`/`develop` and on pull requests.
    - Runs first to fail fast if tests don't pass
 
 2. **flatpak** - Builds Flatpak packages
-   - Matrix builds for GNOME versions: 45, 46, 47, 48, 49
+   - Matrix builds for GNOME versions: 47, 48, 49
    - Uses official Flatpak GitHub Actions
    - Uploads artifacts for each version
    - Only runs if tests pass
@@ -29,8 +29,6 @@ Runs on every push to `main`/`develop` and on pull requests.
 **Artifacts:**
 
 Flatpak bundles are uploaded for each GNOME version and retained for 7 days:
-- `tfcbm-gnome45-flatpak`
-- `tfcbm-gnome46-flatpak`
 - `tfcbm-gnome47-flatpak`
 - `tfcbm-gnome48-flatpak`
 - `tfcbm-gnome49-flatpak`
@@ -62,11 +60,11 @@ For detailed instructions, see [LOCAL_TESTING.md](workflows/LOCAL_TESTING.md).
 ## Supported GNOME Versions
 
 The extension and app are tested against:
-- GNOME 45 (org.gnome.Platform 45)
-- GNOME 46 (org.gnome.Platform 46)
 - GNOME 47 (org.gnome.Platform 47)
 - GNOME 48 (org.gnome.Platform 48)
 - GNOME 49 (org.gnome.Platform 49)
+
+**Note:** GNOME 45 and 46 reached End-of-Life in April 2025 and are no longer supported.
 
 The Flathub submission uses GNOME 49 as the primary runtime version.
 

@@ -67,12 +67,6 @@ act -j lint
 ### Run a specific GNOME version:
 
 ```bash
-# Build for GNOME 45
-act -j flatpak --matrix gnome-version:45
-
-# Build for GNOME 46
-act -j flatpak --matrix gnome-version:46
-
 # Build for GNOME 47
 act -j flatpak --matrix gnome-version:47
 
@@ -82,6 +76,8 @@ act -j flatpak --matrix gnome-version:48
 # Build for GNOME 49
 act -j flatpak --matrix gnome-version:49
 ```
+
+**Note:** GNOME 45 and 46 are EOL (End-of-Life) as of April 2025 and are no longer supported.
 
 ## Using the Helper Script
 
@@ -184,7 +180,7 @@ The workflow has three jobs:
    - Runs pytest for Python tests
    - Runs npm test for Node.js tests
 
-2. **flatpak** - Builds Flatpak for GNOME 45-49
+2. **flatpak** - Builds Flatpak for GNOME 47-49
    - Matrix builds for each GNOME version
    - Creates version-specific manifests
    - Builds and bundles the Flatpak
@@ -207,8 +203,8 @@ The workflow has three jobs:
 ./run-ci-locally.sh flatpak 49
 
 # 3. If that succeeds, optionally test other versions
-./run-ci-locally.sh flatpak 45
-./run-ci-locally.sh flatpak 46
+./run-ci-locally.sh flatpak 47
+./run-ci-locally.sh flatpak 48
 
 # 4. Run linting
 ./run-ci-locally.sh lint
@@ -221,7 +217,7 @@ git push
 
 After running locally, artifacts are created in:
 - Test results: Check console output
-- Flatpak bundles: `tfcbm-gnome{45,46,47,48,49}.flatpak`
+- Flatpak bundles: `tfcbm-gnome{47,48,49}.flatpak`
 - Lint results: Check console output
 
 ## Notes
