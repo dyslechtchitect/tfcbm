@@ -15,8 +15,10 @@ echo -e "${CYAN}Press Ctrl+C to stop${NC}"
 echo ""
 
 # Show both TFCBM Flatpak app logs and GNOME Shell extension logs
+# Using _COMM=gnome-shell to get extension logs, grep for TFCBM
 journalctl --user -f \
   -u "app-flatpak-io.github.dyslechtchitect.tfcbm*" \
-  -t gnome-shell \
+  _COMM=gnome-shell \
   --no-hostname \
-  --output=short
+  --output=short \
+  | grep -i --line-buffered "tfcbm\|clipboard"
