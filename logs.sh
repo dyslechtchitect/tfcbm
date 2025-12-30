@@ -14,11 +14,12 @@ echo -e "${YELLOW}Showing TFCBM app logs and GNOME Shell extension logs...${NC}"
 echo -e "${CYAN}Press Ctrl+C to stop${NC}"
 echo ""
 
-# Show both TFCBM Flatpak app logs and GNOME Shell extension logs
-# Using _COMM=gnome-shell to get extension logs, grep for TFCBM
-journalctl --user -f \
-  -u "app-flatpak-io.github.dyslechtchitect.tfcbm*" \
-  _COMM=gnome-shell \
-  --no-hostname \
-  --output=short \
-  | grep -i --line-buffered "tfcbm\|clipboard"
+# Show both TFCBM Flatpak app logs AND GNOME Shell extension logs
+# We need to merge two separate journalctl streams:
+# 1. TFCBM Flatpak app logs
+# 2. GNOME Shell logs filtered for TFCBM
+(
+  journalctl --user -f -u "app-flatpak-io.github.dyslechtchitect.tfcbm*" --output=short --no-hostname 2>/dev/null &
+  journalctl --user -f _COMM=gnome-shell --output=short --no-hostname 2>/dev/null | grep -i --line-buffered "tfcbm\|clipboard" &
+  wait
+)
