@@ -30,68 +30,77 @@ finish-args:
   - --system-talk-name=org.freedesktop.PolicyKit1
 
 modules:
+  # Python build dependencies
+  - name: python-tomli
+    buildsystem: pip
+    sources:
+      - type: pypi
+        name: tomli
+        version: '2.0.1'
+        sha256: 5ea5a7df4433604736f4fe504b5037d4f434a94747e0f315a63c6be55e468233
+  - name: python-maturin
+    buildsystem: pip
+    sources:
+      - type: pypi
+        name: maturin
+        version: '1.5.1'
+        sha256: 3dd834ece80edb866af18cbd4635e0ecac40139c726428d5f1849ae154b26dca
+
   # Python dependencies
   - name: python3-pyyaml
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --no-build-isolation --prefix=/app pyyaml-*.tar.gz
+    buildsystem: pip
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/54/ed/79a089b6be93607fa5cdaedf301d7dfb23af5f25c398d5ead2525b063e17/pyyaml-6.0.2.tar.gz
+      - type: pypi
+        name: PyYAML
+        version: '6.0.2'
         sha256: d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e
 
   - name: python3-typing-extensions
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app typing_extensions-*.whl
+    buildsystem: pip
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/26/9f/ad63fc0248c5379346306f8668cda6e2e2e9c95e01216d2b8ffd9ff037d0/typing_extensions-4.12.2-py3-none-any.whl
+      - type: pypi
+        name: typing-extensions
+        version: '4.12.2'
         sha256: 04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d
 
   - name: python3-annotated-types
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app annotated_types-*.whl
+    buildsystem: pip
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl
+      - type: pypi
+        name: annotated-types
+        version: '0.7.0'
         sha256: 1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
 
   - name: python3-pydantic-core
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic_core-*.tar.gz
+    buildsystem: pip
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/fc/01/f3e5ac5e7c25833db5eb555f7b7ab24cd6f8c322d3a3ad2d67a952dc0abc/pydantic_core-2.27.2.tar.gz
+      - type: pypi
+        name: pydantic-core
+        version: '2.27.2'
         sha256: eb026e5a4c1fee05726072337ff51d1efb6f59090b7da90d30ea58625b1ffb39
 
   - name: python3-pydantic
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic-*.whl
+    buildsystem: pip
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/58/26/82663c79010b28eddf29dcdd0ea723439535fa917fce5905885c0e9ba562/pydantic-2.10.5-py3-none-any.whl
+      - type: pypi
+        name: pydantic
+        version: '2.10.5'
         sha256: 4dd4e322dbe55472cb7ca7e73f4b63574eecccf2835ffa2af9021ce113c83c53
 
   - name: python3-pillow
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app pillow-*.tar.gz
+    buildsystem: pip
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/a5/26/0d95c04c868f6bdb0c447e3ee2de5564411845e36a858cfd63766bc7b563/pillow-11.0.0.tar.gz
+      - type: pypi
+        name: Pillow
+        version: '11.0.0'
         sha256: 72bacbaf24ac003fea9bff9837d1eedb6088758d41e100c1552930151f677739
 
   - name: python3-websockets
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app websockets-*.tar.gz
+    buildsystem: pip
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/f4/1b/380b883ce05bb5f45a905b61790319a28958a9ab1e4b6b95ff5464b60ca1/websockets-14.1.tar.gz
+      - type: pypi
+        name: websockets
+        version: '14.1'
         sha256: 398b10c77d471c0aab20a845e7a60076b6390bfdaac7a6d2edb0d2c59d75e8d8
 
   # Main application
