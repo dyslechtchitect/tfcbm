@@ -63,7 +63,7 @@ jobs:
       - name: Install flatpak and flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak flatpak-builder xvfb
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Create manifest for GNOME ${{ matrix.gnome-version }}
@@ -74,14 +74,9 @@ jobs:
             io.github.dyslechtchitect.tfcbm-gnome${{ matrix.gnome-version }}.yml
 
       - name: Build Flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: tfcbm-gnome${{ matrix.gnome-version }}.flatpak
-          manifest-path: io.github.dyslechtchitect.tfcbm-gnome${{ matrix.gnome-version }}.yml
-          cache-key: flatpak-builder-gnome${{ matrix.gnome-version }}-${{ github.sha }}
-          arch: x86_64
-          branch: test
-          user-install: true
+        run: |
+          xvfb-run flatpak-builder --user --disable-rofiles-fuse --repo=repo --force-clean --install-deps-from=flathub --arch=x86_64 --default-branch=test --ccache build-dir io.github.dyslechtchitect.tfcbm-gnome${{ matrix.gnome-version }}.yml
+          flatpak build-bundle repo tfcbm-gnome${{ matrix.gnome-version }}.flatpak io.github.dyslechtchitect.tfcbm
 
       - name: Upload Flatpak bundle
         uses: actions/upload-artifact@v4
