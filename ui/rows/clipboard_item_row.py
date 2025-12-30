@@ -344,25 +344,39 @@ class ClipboardItemRow(Gtk.ListBoxRow):
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked."""
         logger.info(f"[KEYBOARD] Row clicked for item {self.item.get('id')}")
-        self.clipboard_ops.perform_copy_to_clipboard(
+
+        # Check if this is a secret item
+        is_secret = self.item.get("is_secret", False)
+
+        # Copy to clipboard (handles authentication for secrets)
+        copy_success = self.clipboard_ops.perform_copy_to_clipboard(
             self.item["type"], self.item["id"], self.item["content"]
         )
 
-        # If activated via keyboard shortcut, hide window and auto-paste
+        # If copy failed (e.g., authentication cancelled), don't hide window or paste
+        if not copy_success:
+            logger.info("[KEYBOARD] Copy failed or cancelled, keeping window visible")
+            if hasattr(self.window, "keyboard_handler"):
+                self.window.keyboard_handler.activated_via_keyboard = False
+            return
+
+        # If activated via keyboard shortcut, hide window if refocus_on_copy is enabled
         if hasattr(self.window, "keyboard_handler"):
             logger.info(f"[KEYBOARD] activated_via_keyboard = {self.window.keyboard_handler.activated_via_keyboard}")
             if self.window.keyboard_handler.activated_via_keyboard:
-                logger.info(
-                    "[KEYBOARD] Auto-hiding window and pasting after click"
-                )
-                self.window.hide()
-                self.window.keyboard_handler.activated_via_keyboard = False
+                # Check if refocus_on_copy setting is enabled
+                refocus_on_copy = self.window.settings.refocus_on_copy
+                logger.info(f"[KEYBOARD] refocus_on_copy setting = {refocus_on_copy}")
 
-                # Wait for focus to return, then simulate paste
-                logger.info("[KEYBOARD] Scheduling paste simulation in 150ms")
-                GLib.timeout_add(150, self.clipboard_ops.simulate_paste)
+                if refocus_on_copy:
+                    logger.info("[KEYBOARD] Hiding window and refocusing previous app")
+                    self.window.hide()
+                    self.window.keyboard_handler.activated_via_keyboard = False
+                else:
+                    logger.info("[KEYBOARD] refocus_on_copy disabled, keeping window visible")
+                    self.window.keyboard_handler.activated_via_keyboard = False
             else:
-                logger.info("[KEYBOARD] Not activated via keyboard, skipping auto-paste")
+                logger.info("[KEYBOARD] Not activated via keyboard, skipping auto-hide")
 
     def _on_tags_action(self):
         """Handle tags button click - delegate to tag manager."""

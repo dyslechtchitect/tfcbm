@@ -24,8 +24,10 @@ finish-args:
   - --talk-name=org.freedesktop.portal.Desktop
   # Network (if WebSocket is used for IPC)
   - --share=network
-  # Allow talking to host for extension installation
+  # Allow talking to host for extension installation and flatpak-spawn
   - --talk-name=org.freedesktop.Flatpak
+  # PolicyKit for password authentication
+  - --system-talk-name=org.freedesktop.PolicyKit1
 
 modules:
   # Python dependencies

@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -51,24 +52,51 @@ class ClipboardOperationsHandler:
 
     def simulate_paste(self):
         """Simulate Ctrl+V paste after window is hidden."""
+        # Check if running in Flatpak
+        is_flatpak = os.path.exists("/.flatpak-info")
+
         # Try xdotool first (X11)
-        if shutil.which("xdotool"):
-            try:
-                subprocess.run(
-                    ["xdotool", "key", "ctrl+v"],
-                    check=False,
+        try:
+            if is_flatpak:
+                # Run xdotool via flatpak-spawn to access host command
+                result = subprocess.run(
+                    ["flatpak-spawn", "--host", "xdotool", "key", "ctrl+v"],
                     timeout=2,
+                    capture_output=True
                 )
+            else:
+                result = subprocess.run(
+                    ["xdotool", "key", "ctrl+v"],
+                    timeout=2,
+                    capture_output=True
+                )
+
+            if result.returncode == 0:
                 logger.info("[KEYBOARD] Simulated Ctrl+V paste with xdotool")
                 return False
-            except Exception as e:
-                logger.error(f"[KEYBOARD] xdotool failed: {e}")
+            else:
+                logger.debug(f"[KEYBOARD] xdotool failed with code {result.returncode}: {result.stderr.decode()}")
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            logger.debug(f"[KEYBOARD] xdotool not available: {e}")
 
         # Try ydotool (Wayland)
-        if shutil.which("ydotool"):
-            try:
-                # ydotool uses different key codes: 29=Ctrl, 47=v
-                subprocess.run(
+        try:
+            if is_flatpak:
+                result = subprocess.run(
+                    [
+                        "flatpak-spawn", "--host",
+                        "ydotool",
+                        "key",
+                        "29:1",
+                        "47:1",
+                        "47:0",
+                        "29:0",
+                    ],
+                    timeout=2,
+                    capture_output=True
+                )
+            else:
+                result = subprocess.run(
                     [
                         "ydotool",
                         "key",
@@ -77,17 +105,21 @@ class ClipboardOperationsHandler:
                         "47:0",
                         "29:0",
                     ],
-                    check=False,
                     timeout=2,
+                    capture_output=True
                 )
+
+            if result.returncode == 0:
                 logger.info("[KEYBOARD] Simulated Ctrl+V paste with ydotool")
                 return False
-            except Exception as e:
-                logger.error(f"[KEYBOARD] ydotool failed: {e}")
+            else:
+                logger.debug(f"[KEYBOARD] ydotool failed with code {result.returncode}: {result.stderr.decode()}")
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            logger.debug(f"[KEYBOARD] ydotool not available: {e}")
 
         # No tool available
         logger.warning(
-            "[KEYBOARD] Neither xdotool nor ydotool found. "
+            "[KEYBOARD] Neither xdotool nor ydotool found on host. "
             "Auto-paste disabled."
         )
         return False
@@ -105,6 +137,9 @@ class ClipboardOperationsHandler:
             item_type: Type of the item (text, url, image, file)
             item_id: ID of the item
             content: Content to copy (optional, fetched if secret)
+
+        Returns:
+            bool: True if copy was successful, False otherwise
         """
         # Check if item is secret and require authentication
         is_secret = self.item.get("is_secret", False)
@@ -115,10 +150,10 @@ class ClipboardOperationsHandler:
                 logger.info("Not authenticated for copy operation, prompting for password")
                 # Prompt for authentication for THIS operation on THIS item
                 # Note: we need the root widget, which we'll get from a callback
-                if not self.password_service.authenticate_for("copy", item_id, None):
+                if not self.password_service.authenticate_for("copy", item_id, self.window):
                     logger.info("Authentication failed or cancelled")
                     self.window.show_notification("Authentication required to copy secret")
-                    return
+                    return False
                 else:
                     logger.info("Authentication successful for copy operation")
             else:
@@ -132,7 +167,7 @@ class ClipboardOperationsHandler:
                 self.window.show_notification("Failed to retrieve secret content")
                 # Consume authentication even on failure
                 self.password_service.consume_authentication("copy", item_id)
-                return
+                return False
             logger.info(f"Retrieved secret content (length: {len(str(content))})")
 
         clipboard = Gdk.Display.get_default().get_clipboard()
@@ -141,7 +176,7 @@ class ClipboardOperationsHandler:
             # Consume authentication even on error
             if is_secret:
                 self.password_service.consume_authentication("copy", item_id)
-            return
+            return False
 
         try:
             if item_type == "text" or item_type == "url":
@@ -168,6 +203,7 @@ class ClipboardOperationsHandler:
                     # Consume authentication after successful copy
                     if is_secret:
                         self.password_service.consume_authentication("copy", item_id)
+                    return True
                 else:
                     self.window.show_notification(
                         "Error copying: content is empty."
@@ -175,17 +211,23 @@ class ClipboardOperationsHandler:
                     # Consume authentication even on error
                     if is_secret:
                         self.password_service.consume_authentication("copy", item_id)
+                    return False
             elif item_type == "file":
                 self.window.show_notification("Loading file...")
                 self._copy_file_to_clipboard(item_id, content, clipboard)
+                return True  # Async operation started successfully
             elif item_type.startswith("image/") or item_type == "screenshot":
                 self.window.show_notification("Loading full image...")
                 self._copy_full_image_to_clipboard(item_id, clipboard)
+                return True  # Async operation started successfully
         except Exception as e:
             self.window.show_notification(f"Error copying: {str(e)}")
             # Consume authentication even on error
             if is_secret:
                 self.password_service.consume_authentication("copy", item_id)
+            return False
+
+        return True  # Default success
 
     def _copy_full_image_to_clipboard(self, item_id, clipboard):
         """Fetch and copy full image to clipboard.

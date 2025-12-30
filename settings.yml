@@ -6,3 +6,6 @@ display:
 retention:
   enabled: true
   max_items: 250
+
+clipboard:
+  refocus_on_copy: true

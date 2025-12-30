@@ -76,10 +76,19 @@ class RetentionSettings(BaseModel):
         return v
 
 
+class ClipboardSettings(BaseModel):
+    """Clipboard behavior settings"""
+    refocus_on_copy: bool = Field(
+        default=True,
+        description="Automatically refocus previous window when copying item via keyboard"
+    )
+
+
 class Settings(BaseModel):
     """Main settings model"""
     display: DisplaySettings = Field(default_factory=DisplaySettings)
     retention: RetentionSettings = Field(default_factory=RetentionSettings)
+    clipboard: ClipboardSettings = Field(default_factory=ClipboardSettings)
 
 
 class SettingsManager:
@@ -155,6 +164,11 @@ class SettingsManager:
     def retention_max_items(self) -> int:
         """Get the retention max items setting"""
         return self.settings.retention.max_items
+
+    @property
+    def refocus_on_copy(self) -> bool:
+        """Get the refocus on copy setting"""
+        return self.settings.clipboard.refocus_on_copy
 
     def update_settings(self, **kwargs):
         """Update settings and save to file"""

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from settings import Settings, DisplaySettings, RetentionSettings
+from settings import Settings, DisplaySettings, RetentionSettings, ClipboardSettings
 
 
 class TestSettingsModelValidation:
@@ -116,3 +116,55 @@ class TestSettingsModelValidation:
 
         with pytest.raises(ValidationError):
             DisplaySettings(item_height=2000)
+
+    def test_clipboard_settings_defaults(self):
+        """Test default values for clipboard settings."""
+        settings = ClipboardSettings()
+
+        assert settings.paste_on_refocus is True
+
+    def test_clipboard_settings_custom_values(self):
+        """Test creating clipboard settings with custom values."""
+        settings = ClipboardSettings(paste_on_refocus=False)
+
+        assert settings.paste_on_refocus is False
+
+    def test_settings_includes_clipboard_settings(self):
+        """Test that main Settings includes clipboard settings."""
+        settings = Settings()
+
+        assert hasattr(settings, 'clipboard')
+        assert isinstance(settings.clipboard, ClipboardSettings)
+        assert settings.clipboard.paste_on_refocus is True
+
+    def test_settings_with_clipboard_settings(self):
+        """Test creating Settings with clipboard configuration."""
+        data = {
+            "display": {
+                "max_page_length": 40,
+                "item_width": 250,
+                "item_height": 220
+            },
+            "retention": {
+                "enabled": False,
+                "max_items": 1000
+            },
+            "clipboard": {
+                "paste_on_refocus": False
+            }
+        }
+
+        settings = Settings(**data)
+
+        assert settings.clipboard.paste_on_refocus is False
+
+    def test_clipboard_settings_serialization(self):
+        """Test clipboard settings serialization to dict (for YAML)."""
+        settings = Settings(
+            clipboard=ClipboardSettings(paste_on_refocus=False)
+        )
+
+        data = settings.model_dump()
+
+        assert "clipboard" in data
+        assert data["clipboard"]["paste_on_refocus"] is False

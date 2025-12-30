@@ -75,6 +75,10 @@ class SettingsPage:
 
         settings_page.add(general_group)
 
+        # Clipboard behavior group
+        clipboard_group = self._build_clipboard_group()
+        settings_page.add(clipboard_group)
+
         # Keyboard shortcut group
         shortcut_group = self._build_shortcut_group()
         settings_page.add(shortcut_group)
@@ -102,6 +106,44 @@ class SettingsPage:
         settings_page.add(storage_group)
 
         return settings_page
+
+    def _build_clipboard_group(self) -> Adw.PreferencesGroup:
+        """Build the clipboard behavior settings section."""
+        group = Adw.PreferencesGroup()
+        group.set_title("Clipboard Behavior")
+        group.set_description("Configure keyboard selection behavior")
+
+        # Refocus on copy switch
+        refocus_row = Adw.SwitchRow()
+        refocus_row.set_title("Refocus on Copy")
+        refocus_row.set_subtitle(
+            "Automatically hide window and refocus previous app when selecting via keyboard"
+        )
+        refocus_row.set_active(self.settings.refocus_on_copy)
+        refocus_row.connect("notify::active", self._on_refocus_on_copy_toggled)
+        group.add(refocus_row)
+
+        return group
+
+    def _on_refocus_on_copy_toggled(self, switch_row, _param):
+        """Handle refocus on copy toggle."""
+        is_enabled = switch_row.get_active()
+
+        try:
+            # Update settings
+            self.settings.update_settings(**{"clipboard.refocus_on_copy": is_enabled})
+
+            if is_enabled:
+                self.on_notification(
+                    "Window will hide and refocus previous app when selecting via keyboard"
+                )
+            else:
+                self.on_notification(
+                    "Window will stay visible when selecting items via keyboard"
+                )
+        except Exception as e:
+            self.on_notification(f"Error updating setting: {e}")
+            print(f"Error updating refocus_on_copy: {e}")
 
     def _build_shortcut_group(self) -> Adw.PreferencesGroup:
         """Build the keyboard shortcut recorder section."""
