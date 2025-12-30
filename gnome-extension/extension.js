@@ -1,3 +1,17 @@
+/*
+ * TFCBM GNOME Shell Extension
+ *
+ * Lifecycle Integration:
+ * - Extension monitors clipboard and provides tray icon when enabled
+ * - Tray icon is ONLY visible when the TFCBM app is running (not just when extension is enabled)
+ * - App automatically enables extension on launch (see ui/application/clipboard_app.py)
+ * - App automatically disables extension on quit (see server/src/dbus_service.py)
+ * - "Start on Login" setting in app controls whether app launches at login (extension follows app lifecycle)
+ *
+ * This creates an integrated experience where users control TFCBM as one system,
+ * and the tray icon clearly indicates when the app is active.
+ */
+
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
@@ -110,12 +124,16 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     _updateIconStyle() {
-        if (!this._icon) return;
+        if (!this._icon || !this._indicator) return;
 
         if (this._dbusOwner) {
+            // App is running - show tray icon with normal style
+            this._indicator.visible = true;
             this._icon.remove_style_class_name('disabled');
         } else {
-            this._icon.add_style_class_name('disabled');
+            // App is not running - hide tray icon completely
+            // This makes it clear that the system is not active
+            this._indicator.visible = false;
         }
     }
 
@@ -139,9 +157,12 @@ export default class ClipboardMonitorExtension extends Extension {
         const nodeInfo = Gio.DBusNodeInfo.new_for_xml(DBusInterface);
         const interfaceInfo = nodeInfo.lookup_interface(DBUS_IFACE);
 
+        // Use DO_NOT_AUTO_START to prevent triggering D-Bus auto-activation
+        // This ensures the extension doesn't force-launch TFCBM on login
+        // D-Bus communication still works when app is manually started or via XDG autostart
         Gio.DBusProxy.new_for_bus(
             Gio.BusType.SESSION,
-            Gio.DBusProxyFlags.NONE,
+            Gio.DBusProxyFlags.DO_NOT_AUTO_START,
             interfaceInfo, // interface info
             DBUS_NAME,
             DBUS_PATH,
@@ -274,6 +295,9 @@ export default class ClipboardMonitorExtension extends Extension {
         }
 
         this._reconnect();
+
+        // Set initial icon visibility (will be hidden if app not running)
+        this._updateIconStyle();
 
         // Check immediately on enable
         this._checkFlatpakInstalled();

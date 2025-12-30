@@ -67,8 +67,8 @@ class SettingsPage:
 
         # Load on startup switch
         startup_row = Adw.SwitchRow()
-        startup_row.set_title("Load on Startup")
-        startup_row.set_subtitle("Automatically start TFCBM when you log in")
+        startup_row.set_title("Start on Login")
+        startup_row.set_subtitle("Automatically start TFCBM app and show tray icon when you log in")
         startup_row.set_active(self._is_autostart_enabled())
         startup_row.connect("notify::active", self._on_autostart_toggled)
         general_group.add(startup_row)
@@ -496,27 +496,28 @@ class SettingsPage:
         autostart_dir = Path.home() / ".config" / "autostart"
         autostart_file = autostart_dir / "io.github.dyslechtchitect.tfcbm.desktop"
 
-        if autostart_file.exists():
-            return self._is_desktop_entry_enabled(autostart_file)
+        if not autostart_file.exists():
+            return False
 
-        return False
+        # Check if the desktop entry is enabled (not hidden or disabled)
+        return self._is_desktop_entry_enabled(autostart_file)
 
     def _is_desktop_entry_enabled(self, desktop_file: Path) -> bool:
         """Check if a desktop entry is enabled (not hidden or disabled)."""
         try:
             content = desktop_file.read_text()
 
-            # Check for Hidden=true (XDG standard)
+            # XDG standard check - Hidden=true means disabled
             if "Hidden=true" in content:
                 return False
 
-            # Check for X-GNOME-Autostart-enabled=false (GNOME-specific)
+            # GNOME-specific check
             if "X-GNOME-Autostart-enabled=false" in content:
                 return False
 
             return True
         except Exception as e:
-            print(f"Error reading desktop file {desktop_file}: {e}")
+            print(f"Error reading desktop file: {e}")
             return False
 
     def _on_autostart_toggled(self, switch_row, _param):
@@ -526,10 +527,10 @@ class SettingsPage:
         try:
             if is_enabled:
                 self._enable_autostart()
-                self.on_notification("TFCBM will start automatically on next login")
+                self.on_notification("TFCBM will start automatically when you log in")
             else:
                 self._disable_autostart()
-                self.on_notification("TFCBM will not start automatically on next login")
+                self.on_notification("TFCBM will not start automatically when you log in")
         except Exception as e:
             self.on_notification(f"Error toggling autostart: {e}")
             print(f"Error toggling autostart: {e}")
@@ -550,6 +551,8 @@ class SettingsPage:
         autostart_file = autostart_dir / f"{app_id}.desktop"
 
         # Determine the correct Exec command
+        # NOTE: Autostart should NOT include --activate flag, so app runs in background
+        # with just the tray icon. Window can be shown via keyboard shortcut or tray icon.
         if is_flatpak():
             exec_cmd = f"flatpak run {app_id}"
         else:
@@ -557,6 +560,8 @@ class SettingsPage:
             exec_cmd = "tfcbm"
 
         # Create the autostart desktop entry following XDG and GNOME standards
+        # Note: We explicitly set X-GNOME-Autostart-enabled=true and ensure
+        # Hidden is NOT present (or explicitly false)
         desktop_content = f"""[Desktop Entry]
 Type=Application
 Name=TFCBM
@@ -573,38 +578,50 @@ X-GNOME-Autostart-enabled=true
         print(f"Autostart enabled: {autostart_file}")
 
     def _disable_autostart(self):
-        """Disable autostart by setting Hidden=true in the desktop file."""
+        """Disable autostart by setting Hidden=true and X-GNOME-Autostart-enabled=false.
+
+        Following XDG Desktop Entry Specification, we don't delete the file but mark it
+        as hidden/disabled. This allows GNOME Settings to re-enable it if needed and
+        maintains proper sync with the system settings UI.
+        """
+        from ui.utils.extension_check import is_flatpak
+
         autostart_dir = Path.home() / ".config" / "autostart"
         autostart_file = autostart_dir / "io.github.dyslechtchitect.tfcbm.desktop"
 
-        if autostart_file.exists():
-            try:
-                content = autostart_file.read_text()
+        if not autostart_file.exists():
+            # Need to create the file first, then mark it as disabled
+            self._enable_autostart()
 
-                # Add Hidden=true if not present (XDG standard method)
-                if "Hidden=" not in content:
-                    # Add after [Desktop Entry] line
-                    content = content.replace(
-                        "[Desktop Entry]\n",
-                        "[Desktop Entry]\nHidden=true\n"
-                    )
-                else:
-                    # Update existing Hidden value
-                    content = content.replace("Hidden=false", "Hidden=true")
+        # Read current content
+        try:
+            content = autostart_file.read_text()
 
-                # Also set X-GNOME-Autostart-enabled=false for GNOME compatibility
-                if "X-GNOME-Autostart-enabled=" in content:
-                    content = content.replace(
-                        "X-GNOME-Autostart-enabled=true",
-                        "X-GNOME-Autostart-enabled=false"
-                    )
-                else:
-                    content = content.replace(
-                        "[Desktop Entry]\n",
-                        "[Desktop Entry]\nX-GNOME-Autostart-enabled=false\n"
-                    )
+            # Check if already disabled
+            if "Hidden=true" in content and "X-GNOME-Autostart-enabled=false" in content:
+                print(f"Autostart already disabled: {autostart_file}")
+                return
 
-                autostart_file.write_text(content)
-                print(f"Autostart disabled: {autostart_file}")
-            except Exception as e:
-                print(f"Error disabling autostart for {autostart_file}: {e}")
+            # Remove any existing Hidden or X-GNOME-Autostart-enabled lines
+            lines = content.split('\n')
+            filtered_lines = [
+                line for line in lines
+                if not line.startswith('Hidden=')
+                and not line.startswith('X-GNOME-Autostart-enabled=')
+            ]
+
+            # Add the disable flags after [Desktop Entry]
+            new_lines = []
+            for line in filtered_lines:
+                new_lines.append(line)
+                if line.strip() == '[Desktop Entry]':
+                    new_lines.append('Hidden=true')
+                    new_lines.append('X-GNOME-Autostart-enabled=false')
+
+            # Write back
+            autostart_file.write_text('\n'.join(new_lines))
+            print(f"Autostart disabled: set Hidden=true in {autostart_file}")
+
+        except Exception as e:
+            print(f"Error disabling autostart: {e}")
+            raise

@@ -17,6 +17,8 @@ finish-args:
   - --filesystem=xdg-documents:rw
   # Access to install GNOME Shell extension
   - --filesystem=~/.local/share/gnome-shell/extensions:create
+  # Access to autostart directory for "Start on Login" feature
+  - --filesystem=xdg-config/autostart:create
   # For clipboard operations
   - --talk-name=org.gnome.Shell
   - --talk-name=org.freedesktop.portal.Desktop

@@ -155,10 +155,16 @@ class ClipboardApp(Adw.Application):
             self.server_pid = options["server-pid"]
             logger.info(f"Monitoring server PID: {self.server_pid}")
 
+        # Only activate (show window) if explicitly requested via --activate flag
+        # Otherwise, just run in background with DBus service + tray icon
         if "activate" in options:
+            logger.info("--activate flag detected, showing window")
             self.activate()
         else:
-            self.activate()
+            logger.info("Starting in background mode (no --activate flag)")
+            # Keep the application running but don't show window
+            # The DBus service and tray icon will handle window activation
+            self.hold()
 
         return 0
 

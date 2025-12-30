@@ -49,12 +49,12 @@ cat LICENSE | head -5
 
 ```bash
 # Build and install
-flatpak-builder --user --install --force-clean build-dir org.tfcbm.ClipboardManager.yml
+flatpak-builder --user --install --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
 
 
 # Run
-flatpak run org.tfcbm.ClipboardManager
-
+`flatpak run io.github.dyslechtchitect.tfcbm.yml
+`
 # Test full workflow:
 # 1. Extension installs and enables
 # 2. Clipboard monitoring works

@@ -180,22 +180,29 @@ class TFCBMDBusService:
             except Exception as e:
                 logger.error(f"Error toggling window: {e}")
         else:
-            # If no window (called from server), try to activate UI via GtkApplication D-Bus interface
-            try:
-                import subprocess
-                result = subprocess.run([
-                    'gdbus', 'call', '--session',
-                    '--dest', 'io.github.dyslechtchitect.tfcbm',
-                    '--object-path', '/org/tfcbm/ClipboardManager',
-                    '--method', 'org.gtk.Application.Activate',
-                    '{}'
-                ], capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    logger.info("Activated UI via org.gtk.Application")
-                else:
-                    logger.warning(f"Failed to activate UI: {result.stderr.decode()}")
-            except Exception as e:
-                logger.error(f"Error forwarding activate to UI: {e}")
+            # No window exists yet - activate the app to create it
+            if hasattr(self.app, 'activate'):
+                # Directly call the app's activate method
+                GLib.idle_add(self.app.activate)
+                logger.info("Activated app to create window")
+            else:
+                # Fallback: try to activate UI via GtkApplication D-Bus interface
+                # (This path is for when D-Bus service runs in separate process)
+                try:
+                    import subprocess
+                    result = subprocess.run([
+                        'gdbus', 'call', '--session',
+                        '--dest', 'io.github.dyslechtchitect.tfcbm',
+                        '--object-path', '/io/github/dyslechtchitect/tfcbm',
+                        '--method', 'org.gtk.Application.Activate',
+                        '{}'
+                    ], capture_output=True, timeout=2)
+                    if result.returncode == 0:
+                        logger.info("Activated UI via org.gtk.Application")
+                    else:
+                        logger.warning(f"Failed to activate UI: {result.stderr.decode()}")
+                except Exception as e:
+                    logger.error(f"Error forwarding activate to UI: {e}")
 
     def _handle_show_settings(self, parameters, invocation):
         """Handle ShowSettings method - show settings page"""
@@ -227,22 +234,29 @@ class TFCBMDBusService:
             except Exception as e:
                 logger.error(f"Error showing settings: {e}")
         else:
-            # If no window (called from server), trigger show-settings action on UI
-            try:
-                import subprocess
-                result = subprocess.run([
-                    'gdbus', 'call', '--session',
-                    '--dest', 'io.github.dyslechtchitect.tfcbm',
-                    '--object-path', '/org/tfcbm/ClipboardManager',
-                    '--method', 'org.freedesktop.Application.ActivateAction',
-                    'show-settings', '[]', '{}'
-                ], capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    logger.info("Triggered show-settings action on UI")
-                else:
-                    logger.warning(f"Failed to trigger show-settings: {result.stderr.decode()}")
-            except Exception as e:
-                logger.error(f"Error forwarding show settings to UI: {e}")
+            # No window exists yet - activate the show-settings action
+            if hasattr(self.app, 'activate_action'):
+                # Directly call the app's action
+                GLib.idle_add(self.app.activate_action, 'show-settings', None)
+                logger.info("Triggered show-settings action directly")
+            else:
+                # Fallback: trigger show-settings action via D-Bus
+                # (This path is for when D-Bus service runs in separate process)
+                try:
+                    import subprocess
+                    result = subprocess.run([
+                        'gdbus', 'call', '--session',
+                        '--dest', 'io.github.dyslechtchitect.tfcbm',
+                        '--object-path', '/io/github/dyslechtchitect/tfcbm',
+                        '--method', 'org.freedesktop.Application.ActivateAction',
+                        'show-settings', '[]', '{}'
+                    ], capture_output=True, timeout=2)
+                    if result.returncode == 0:
+                        logger.info("Triggered show-settings action on UI")
+                    else:
+                        logger.warning(f"Failed to trigger show-settings: {result.stderr.decode()}")
+                except Exception as e:
+                    logger.error(f"Error forwarding show settings to UI: {e}")
 
     def _handle_quit(self, invocation):
         """Handle Quit method - quit the application"""
@@ -284,7 +298,7 @@ class TFCBMDBusService:
                 result = subprocess.run([
                     'gdbus', 'call', '--session',
                     '--dest', 'io.github.dyslechtchitect.tfcbm',
-                    '--object-path', '/org/tfcbm/ClipboardManager',
+                    '--object-path', '/io/github/dyslechtchitect/tfcbm',
                     '--method', 'org.freedesktop.Application.ActivateAction',
                     'quit', '[]', '{}'
                 ], capture_output=True, timeout=2)
