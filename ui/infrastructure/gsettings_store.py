@@ -45,6 +45,26 @@ class GSettingsStore(ISettingsStore):
 
         return env
 
+    def _get_gsettings_command(self, args: list[str]) -> list[str]:
+        """
+        Build gsettings command, using flatpak-spawn if running in Flatpak.
+
+        Args:
+            args: gsettings command arguments
+
+        Returns:
+            Command to execute
+        """
+        from ui.utils.extension_check import is_flatpak
+
+        if is_flatpak():
+            # Run gsettings on host system to access the same dconf database as GNOME Shell
+            return ["flatpak-spawn", "--host", "env",
+                    f"GSETTINGS_SCHEMA_DIR={self.schema_dir}",
+                    "gsettings"] + args
+        else:
+            return ["gsettings"] + args
+
     def get_shortcut(self) -> Optional[KeyboardShortcut]:
         """
         Read the current keyboard shortcut from GSettings.
@@ -53,11 +73,14 @@ class GSettingsStore(ISettingsStore):
             KeyboardShortcut if configured, None otherwise
         """
         try:
+            cmd = self._get_gsettings_command(["get", self.schema_id, self.key])
+            env = None if "flatpak-spawn" in cmd else self._get_env_with_schema_dir()
+
             result = subprocess.run(
-                ["gsettings", "get", self.schema_id, self.key],
+                cmd,
                 capture_output=True,
                 text=True,
-                env=self._get_env_with_schema_dir(),
+                env=env,
                 timeout=5,
             )
 
@@ -84,11 +107,14 @@ class GSettingsStore(ISettingsStore):
         """
         try:
             gsettings_format = f"['{shortcut.to_gsettings_string()}']"
+            cmd = self._get_gsettings_command(["set", self.schema_id, self.key, gsettings_format])
+            env = None if "flatpak-spawn" in cmd else self._get_env_with_schema_dir()
+
             result = subprocess.run(
-                ["gsettings", "set", self.schema_id, self.key, gsettings_format],
+                cmd,
                 capture_output=True,
                 text=True,
-                env=self._get_env_with_schema_dir(),
+                env=env,
                 timeout=5,
             )
 

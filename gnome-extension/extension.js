@@ -221,15 +221,24 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     _registerKeybinding() {
-        Main.wm.addKeybinding(
-            'toggle-tfcbm-ui',
-            this._settings,
-            0, // Gio.SettingsBindFlags.DEFAULT
-            1, // Shell.ActionMode.NORMAL
-            () => {
-                this._toggleUI();
-            }
-        );
+        try {
+            const currentBinding = this._settings.get_strv('toggle-tfcbm-ui');
+            log(`[TFCBM] Registering keyboard shortcut: ${currentBinding}`);
+
+            Main.wm.addKeybinding(
+                'toggle-tfcbm-ui',
+                this._settings,
+                0, // Gio.SettingsBindFlags.DEFAULT
+                1, // Shell.ActionMode.NORMAL
+                () => {
+                    log('[TFCBM] Keyboard shortcut activated');
+                    this._toggleUI();
+                }
+            );
+            log('[TFCBM] Keyboard shortcut registered successfully');
+        } catch (e) {
+            logError(e, '[TFCBM] Failed to register keyboard shortcut');
+        }
     }
 
     _reregisterKeybinding() {
@@ -260,7 +269,14 @@ export default class ClipboardMonitorExtension extends Extension {
 
         // Add keyboard shortcut
         try {
+            log('[TFCBM] Getting extension settings...');
             this._settings = this.getSettings();
+
+            if (!this._settings) {
+                throw new Error('getSettings() returned null');
+            }
+
+            log('[TFCBM] Settings obtained successfully');
             this._registerKeybinding();
 
             // Listen for changes to the shortcut setting

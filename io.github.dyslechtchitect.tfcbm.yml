@@ -22,6 +22,11 @@ finish-args:
   - --filesystem=~/.local/share/gnome-shell/extensions:create
   # Access to autostart directory for "Start on Login" feature
   - --filesystem=xdg-config/autostart:create
+  # Access to host dconf database for extension settings
+  - --filesystem=xdg-run/dconf
+  - --filesystem=~/.config/dconf:ro
+  - --talk-name=ca.desrt.dconf
+  - --env=DCONF_USER_CONFIG_DIR=.config/dconf
   # For clipboard operations
   - --talk-name=org.gnome.Shell
   - --talk-name=org.freedesktop.portal.Desktop
