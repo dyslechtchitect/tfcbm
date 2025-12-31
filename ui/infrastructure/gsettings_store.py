@@ -59,7 +59,8 @@ class GSettingsStore(ISettingsStore):
 
         if is_flatpak():
             # Run gsettings on host system to access the same dconf database as GNOME Shell
-            return ["flatpak-spawn", "--host", "env",
+            # Use --directory to set a working directory that exists on the host
+            return ["flatpak-spawn", "--host", "--directory=/tmp", "env",
                     f"GSETTINGS_SCHEMA_DIR={self.schema_dir}",
                     "gsettings"] + args
         else:
@@ -110,6 +111,7 @@ class GSettingsStore(ISettingsStore):
             cmd = self._get_gsettings_command(["set", self.schema_id, self.key, gsettings_format])
             env = None if "flatpak-spawn" in cmd else self._get_env_with_schema_dir()
 
+            print(f"[DEBUG] Running command: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -117,6 +119,11 @@ class GSettingsStore(ISettingsStore):
                 env=env,
                 timeout=5,
             )
+
+            if result.returncode != 0:
+                print(f"[ERROR] gsettings command failed with code {result.returncode}")
+                print(f"[ERROR] stdout: {result.stdout}")
+                print(f"[ERROR] stderr: {result.stderr}")
 
             return result.returncode == 0
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
