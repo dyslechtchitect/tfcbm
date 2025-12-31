@@ -36,6 +36,12 @@ All issues fixed and cleaned up for production release!
 - **Error Logging:** Clear permission error messages for debugging
 - **Works for:** Both individual files and folders
 
+### 7. Keyboard Shortcut Updates
+- **Dynamic Reloading:** Extension listens for shortcut changes
+- **No restart needed:** New shortcuts apply immediately
+- **Signal Handler:** Watches 'changed::toggle-tfcbm-ui' setting
+- **Auto re-registration:** Removes old keybinding and registers new one
+
 ---
 
 ## 📁 Clean Schema (No Migrations)
@@ -111,6 +117,7 @@ To test that retention works correctly:
 6. `ui/rows/clipboard_item_row.py` - favorite notifications
 7. `server/src/services/clipboard_service.py` - improved error logging for file access
 8. `io.github.dyslechtchitect.tfcbm.yml` - added home directory read access
+9. `gnome-extension/extension.js` - dynamic keyboard shortcut reloading
 
 **Removed:**
 - Migration code
@@ -148,5 +155,21 @@ The database and settings will be created automatically in the correct locations
 - ✅ Files copy from anywhere in home directory
 - ✅ Folders copy correctly
 - ✅ Clear error logging for debugging
+- ✅ Keyboard shortcuts update dynamically
 
 **Ready to ship! 🎉**
+
+## 🔄 Applying Extension Updates (Wayland Users)
+
+**Important:** The keyboard shortcut fix requires reloading the GNOME extension. On Wayland:
+
+1. Save your work and close all applications
+2. Log out of your session
+3. Log back in
+4. The updated extension will be loaded automatically
+
+After logging back in, you can test the fix:
+1. Open TFCBM Settings → Keyboard Shortcuts
+2. Click "Record Shortcut" and press a new combination (e.g., Ctrl+Alt+V)
+3. The new shortcut should work immediately
+4. The old shortcut will no longer activate TFCBM
