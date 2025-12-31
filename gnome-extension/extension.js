@@ -72,6 +72,7 @@ export default class ClipboardMonitorExtension extends Extension {
         this._indicator = null;
         this._scheduler = null;
         this._settings = null;
+        this._settingsChangedId = null;
         this._dbus = null;
         this._dbusOwner = null;
         this._dbusOwnerWatchId = null;
@@ -219,6 +220,32 @@ export default class ClipboardMonitorExtension extends Extension {
         }
     }
 
+    _registerKeybinding() {
+        Main.wm.addKeybinding(
+            'toggle-tfcbm-ui',
+            this._settings,
+            0, // Gio.SettingsBindFlags.DEFAULT
+            1, // Shell.ActionMode.NORMAL
+            () => {
+                this._toggleUI();
+            }
+        );
+    }
+
+    _reregisterKeybinding() {
+        try {
+            // Remove old keybinding
+            Main.wm.removeKeybinding('toggle-tfcbm-ui');
+
+            // Re-register with new shortcut
+            this._registerKeybinding();
+
+            log('[TFCBM] Keyboard shortcut successfully updated');
+        } catch (e) {
+            logError(e, 'TFCBM: Error re-registering keybinding');
+        }
+    }
+
     enable() {
         // Initialize clipboard monitoring
         const clipboardAdapter = new GnomeClipboardAdapter();
@@ -234,15 +261,13 @@ export default class ClipboardMonitorExtension extends Extension {
         // Add keyboard shortcut
         try {
             this._settings = this.getSettings();
-            Main.wm.addKeybinding(
-                'toggle-tfcbm-ui',
-                this._settings,
-                0, // Gio.SettingsBindFlags.DEFAULT
-                1, // Shell.ActionMode.NORMAL
-                () => {
-                    this._toggleUI();
-                }
-            );
+            this._registerKeybinding();
+
+            // Listen for changes to the shortcut setting
+            this._settingsChangedId = this._settings.connect('changed::toggle-tfcbm-ui', () => {
+                log('[TFCBM] Keyboard shortcut changed, re-registering...');
+                this._reregisterKeybinding();
+            });
         } catch (e) {
             logError(e, 'TFCBM: Error adding keybinding');
         }
@@ -317,8 +342,12 @@ export default class ClipboardMonitorExtension extends Extension {
             this._scheduler = null;
         }
 
-        // Remove keybinding
+        // Remove keybinding and disconnect settings listener
         if (this._settings) {
+            if (this._settingsChangedId) {
+                this._settings.disconnect(this._settingsChangedId);
+                this._settingsChangedId = null;
+            }
             Main.wm.removeKeybinding('toggle-tfcbm-ui');
             this._settings = null;
         }
