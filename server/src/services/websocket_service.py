@@ -91,6 +91,7 @@ class WebSocketService:
             "format_type": item.get("format_type"),
             "formatted_content": base64.b64encode(item["formatted_content"]).decode("utf-8") if item.get("formatted_content") else None,
             "is_secret": item.get("is_secret", False),
+            "is_favorite": item.get("is_favorite", False),
         }
 
     async def websocket_handler(self, websocket):
@@ -166,6 +167,8 @@ class WebSocketService:
             await self._handle_get_total_count(websocket)
         elif action == "update_retention_settings":
             await self._handle_update_retention_settings(websocket, data)
+        elif action == "update_clipboard_settings":
+            await self._handle_update_clipboard_settings(websocket, data)
         elif action == "clipboard_event":
             await self._handle_clipboard_event(data)
         else:
@@ -585,6 +588,40 @@ class WebSocketService:
 
         except Exception as e:
             logger.error(f"Error updating retention settings: {e}")
+            response = {
+                "status": "error",
+                "message": str(e)
+            }
+            await websocket.send(json.dumps(response))
+
+    async def _handle_update_clipboard_settings(self, websocket, data):
+        """Handle update_clipboard_settings action"""
+        refocus_on_copy = data.get("refocus_on_copy")
+
+        logger.info(f"Updating clipboard settings: refocus_on_copy={refocus_on_copy}")
+
+        try:
+            # Update settings
+            if refocus_on_copy is not None:
+                self.settings_service.update_settings(
+                    **{"clipboard.refocus_on_copy": refocus_on_copy}
+                )
+
+            response = {
+                "status": "success",
+                "message": "Clipboard settings updated.",
+                "refocus_on_copy": refocus_on_copy
+            }
+            await websocket.send(json.dumps(response))
+
+            # Broadcast update to all clients
+            await self.broadcast({
+                "type": "clipboard_settings_updated",
+                "refocus_on_copy": refocus_on_copy
+            })
+
+        except Exception as e:
+            logger.error(f"Error updating clipboard settings: {e}")
             response = {
                 "status": "error",
                 "message": str(e)

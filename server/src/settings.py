@@ -99,10 +99,17 @@ class SettingsManager:
         Initialize settings manager
 
         Args:
-            config_path: Path to settings.yml file. Defaults to ./settings.yml
+            config_path: Path to settings.yml file. Defaults to ~/.config/tfcbm/settings.yml
         """
         if config_path is None:
-            config_path = Path(__file__).parent / "settings.yml"
+            # Use XDG_CONFIG_HOME for user settings (writable in Flatpak)
+            import os
+            xdg_config_home = os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')
+            config_dir = Path(xdg_config_home) / 'tfcbm'
+            config_path = config_dir / 'settings.yml'
+
+            # Ensure config directory exists
+            config_dir.mkdir(parents=True, exist_ok=True)
 
         self.config_path = config_path
         self.settings = self._load_settings()

@@ -393,6 +393,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         """Handle favorite toggle action."""
         self.ws_service.toggle_favorite(item_id, is_favorite)
 
+        # Notify user about favorite status and retention policy
+        if is_favorite:
+            self.window.show_notification("Item marked as favorite - won't be auto-deleted")
+        else:
+            self.window.show_notification("Item unmarked as favorite")
+
     def _on_card_clicked(self, gesture, n_press, x, y):
         """Handle card clicks - single click copies."""
         if n_press == 1:

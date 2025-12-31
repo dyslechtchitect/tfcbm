@@ -129,11 +129,51 @@ class SettingsPage:
         """Handle refocus on copy toggle."""
         is_enabled = switch_row.get_active()
 
-        try:
-            # Update settings
-            self.settings.update_settings(**{"clipboard.refocus_on_copy": is_enabled})
+        # Update via WebSocket in background thread
+        import threading
 
-            if is_enabled:
+        def update_in_thread():
+            result = self._update_clipboard_settings_sync(is_enabled)
+            GLib.idle_add(self._handle_clipboard_settings_result, result, is_enabled)
+
+        thread = threading.Thread(target=update_in_thread, daemon=True)
+        thread.start()
+
+    def _update_clipboard_settings_sync(self, refocus_on_copy: bool) -> dict:
+        """Update clipboard settings via WebSocket synchronously (runs in background thread)."""
+        import asyncio
+        import json
+        import websockets
+
+        async def update_settings():
+            try:
+                async with websockets.connect('ws://localhost:8765', ping_timeout=5) as websocket:
+                    request = {
+                        "action": "update_clipboard_settings",
+                        "refocus_on_copy": refocus_on_copy
+                    }
+                    await websocket.send(json.dumps(request))
+                    response = await websocket.recv()
+                    return json.loads(response)
+            except Exception as e:
+                print(f"Error updating clipboard settings: {e}")
+                return {"status": "error", "message": str(e)}
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(update_settings())
+        finally:
+            loop.close()
+        return result
+
+    def _handle_clipboard_settings_result(self, result: dict, refocus_on_copy: bool):
+        """Handle clipboard settings update result in GTK main thread."""
+        if result.get("status") == "success":
+            # Update local in-memory settings reference
+            self.settings.settings.clipboard.refocus_on_copy = refocus_on_copy
+
+            if refocus_on_copy:
                 self.on_notification(
                     "Window will hide and refocus previous app when selecting via keyboard"
                 )
@@ -141,9 +181,11 @@ class SettingsPage:
                 self.on_notification(
                     "Window will stay visible when selecting items via keyboard"
                 )
-        except Exception as e:
-            self.on_notification(f"Error updating setting: {e}")
-            print(f"Error updating refocus_on_copy: {e}")
+        else:
+            self.on_notification(f"Error updating setting: {result.get('message', 'Unknown error')}")
+            print(f"Error updating refocus_on_copy: {result.get('message')}")
+
+        return False  # Don't repeat idle_add
 
     def _build_shortcut_group(self) -> Adw.PreferencesGroup:
         """Build the keyboard shortcut recorder section."""
@@ -513,13 +555,10 @@ class SettingsPage:
     def _handle_retention_save_result(self, result: dict, enabled: bool, max_items: int):
         """Handle save result in GTK main thread."""
         if result.get("status") == "success":
-            # Update local settings object
-            self.settings.update_settings(
-                **{
-                    "retention.enabled": enabled,
-                    "retention.max_items": max_items
-                }
-            )
+            # Update local in-memory settings reference
+            # Note: The backend already saved to file via WebSocket handler
+            self.settings.settings.retention.enabled = enabled
+            self.settings.settings.retention.max_items = max_items
 
             deleted = result.get("deleted", 0)
             if deleted > 0:

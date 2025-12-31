@@ -48,8 +48,10 @@ class ClipboardDB:
 
     def __init__(self, db_path: str = None):
         if db_path is None:
-            # Default to ~/.local/share/tfcbm/clipboard.db
-            db_dir = Path.home() / ".local" / "share" / "tfcbm"
+            # Use XDG_DATA_HOME for Flatpak compatibility
+            import os
+            xdg_data_home = os.environ.get('XDG_DATA_HOME', Path.home() / '.local' / 'share')
+            db_dir = Path(xdg_data_home) / "tfcbm"
             db_dir.mkdir(parents=True, exist_ok=True)
             db_path = db_dir / "clipboard.db"
 
@@ -67,7 +69,16 @@ class ClipboardDB:
         )
 
     def _init_db(self):
-        """Initialize database schema with latest structure"""
+        """
+        Initialize database schema - FINAL VERSION (no migrations needed).
+
+        SCHEMA:
+        - clipboard_items: Main table for clipboard history
+        - recently_pasted: Tracks paste events
+        - clipboard_fts: Full-text search index
+        - tags: User-defined tags
+        - item_tags: Many-to-many relationship between items and tags
+        """
         cursor = self.conn.cursor()
 
         # Create clipboard_items table with all columns
@@ -90,15 +101,7 @@ class ClipboardDB:
         """
         )
 
-        # Migration: Add is_favorite column if it doesn't exist (for existing databases)
-        try:
-            cursor.execute("ALTER TABLE clipboard_items ADD COLUMN is_favorite INTEGER DEFAULT 0")
-            logging.info("Added is_favorite column to clipboard_items table")
-        except sqlite3.OperationalError:
-            # Column already exists
-            pass
-
-        # Create indices for clipboard_items
+        # Create indices for clipboard_items (optimized for common queries)
         cursor.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_timestamp
@@ -109,6 +112,12 @@ class ClipboardDB:
             """
             CREATE INDEX IF NOT EXISTS idx_hash
             ON clipboard_items(hash)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_is_favorite
+            ON clipboard_items(is_favorite)
             """
         )
 

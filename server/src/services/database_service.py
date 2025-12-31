@@ -39,9 +39,18 @@ class DatabaseService:
 
             # Apply retention policy if enabled
             if self.settings_service:
-                if self.settings_service.retention_enabled:
+                retention_enabled = self.settings_service.retention_enabled
+                logger.debug(f"[RETENTION] Retention enabled: {retention_enabled}")
+                if retention_enabled:
                     max_items = self.settings_service.retention_max_items
-                    self.db.cleanup_old_items(max_items)
+                    logger.info(f"[RETENTION] Triggering cleanup with max_items={max_items} after adding item {item_id}")
+                    deleted = self.db.cleanup_old_items(max_items)
+                    if deleted > 0:
+                        logger.info(f"[RETENTION] Deleted {deleted} old items")
+                    else:
+                        logger.debug(f"[RETENTION] No items needed to be deleted (within limit)")
+            else:
+                logger.warning("[RETENTION] Settings service not available - skipping retention cleanup")
 
             return item_id
 

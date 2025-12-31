@@ -126,8 +126,18 @@ class ClipboardService:
                 logger.warning(f"File too large: {file_size} bytes (max: {MAX_FILE_SIZE})")
                 return None
 
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
+            try:
+                with open(file_path, 'rb') as f:
+                    file_content = f.read()
+            except PermissionError as e:
+                logger.error(f"Permission denied reading file: {file_path}")
+                logger.error(f"  This may be due to Flatpak sandbox restrictions")
+                logger.error(f"  Error: {e}")
+                return None
+            except OSError as e:
+                logger.error(f"OS error reading file: {file_path}")
+                logger.error(f"  Error: {e}")
+                return None
 
             metadata = {
                 'name': file_name,
