@@ -72,7 +72,7 @@ modules:
       - pip3 install --no-deps --no-build-isolation --prefix=/app pydantic_core-*.tar.gz
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/fc/01/f3e5ac0589ff8e55246cedcc459a467a783a982e655ff952e23758191a57/pydantic_core-2.27.2.tar.gz
+        url: https://files.pythonhosted.org/packages/fc/01/f3e5ac5e7c25833db5eb555f7b7ab24cd6f8c322d3a3ad2d67a952dc0abc/pydantic_core-2.27.2.tar.gz
         sha256: eb026e5a4c1fee05726072337ff51d1efb6f59090b7da90d30ea58625b1ffb39
 
   - name: python3-pydantic
