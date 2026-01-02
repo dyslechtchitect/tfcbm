@@ -92,7 +92,10 @@ class IPCService:
     def _get_socket_path(self) -> str:
         """Get the UNIX socket path in XDG_RUNTIME_DIR."""
         runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
-        return os.path.join(runtime_dir, "tfcbm-ipc.sock")
+        # Use subdirectory for Flatpak compatibility
+        tfcbm_dir = os.path.join(runtime_dir, "tfcbm")
+        os.makedirs(tfcbm_dir, mode=0o700, exist_ok=True)
+        return os.path.join(tfcbm_dir, "ipc.sock")
 
     def prepare_item_for_ui(self, item: dict) -> dict:
         """Convert database item to UI-renderable format"""
@@ -237,6 +240,10 @@ class IPCService:
             await self._handle_update_retention_settings(connection, data)
         elif action == "update_clipboard_settings":
             await self._handle_update_clipboard_settings(connection, data)
+        elif action == "get_ui_mode":
+            await self._handle_get_ui_mode(connection, data)
+        elif action == "set_ui_mode":
+            await self._handle_set_ui_mode(connection, data)
         elif action == "clipboard_event":
             await self._handle_clipboard_event(data)
         else:
@@ -695,6 +702,58 @@ class IPCService:
             response = {
                 "status": "error",
                 "message": str(e)
+            }
+            await connection.send_json(response)
+
+    async def _handle_get_ui_mode(self, connection: IPCConnection, data):
+        """Handle get_ui_mode action"""
+        logger.info("Getting UI mode")
+
+        response = {
+            "type": "ui_mode",
+            "mode": self.settings_service.ui_mode,
+            "alignment": self.settings_service.ui_sidepanel_alignment
+        }
+        await connection.send_json(response)
+        logger.info(f"Sent UI mode: {response['mode']}, alignment: {response['alignment']}")
+
+    async def _handle_set_ui_mode(self, connection: IPCConnection, data):
+        """Handle set_ui_mode action"""
+        mode = data.get("mode")
+        alignment = data.get("alignment", self.settings_service.ui_sidepanel_alignment)
+
+        logger.info(f"Setting UI mode: mode={mode}, alignment={alignment}")
+
+        try:
+            # Update settings
+            update_dict = {"mode": mode}
+            if alignment is not None:
+                update_dict["alignment"] = alignment
+
+            self.settings_service.update_settings(ui=update_dict)
+
+            response = {
+                "type": "ui_mode_updated",
+                "success": True,
+                "mode": mode,
+                "alignment": alignment
+            }
+            await connection.send_json(response)
+            logger.info(f"UI mode updated successfully")
+
+            # Broadcast update to all clients
+            await self.broadcast({
+                "type": "ui_mode_changed",
+                "mode": mode,
+                "alignment": alignment
+            })
+
+        except Exception as e:
+            logger.error(f"Error setting UI mode: {e}")
+            response = {
+                "type": "ui_mode_updated",
+                "success": False,
+                "error": str(e)
             }
             await connection.send_json(response)
 

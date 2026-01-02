@@ -84,11 +84,42 @@ class ClipboardSettings(BaseModel):
     )
 
 
+class UISettings(BaseModel):
+    """UI mode and display settings"""
+    mode: str = Field(
+        default='windowed',
+        description="UI display mode: 'windowed' or 'sidepanel'"
+    )
+    sidepanel_alignment: str = Field(
+        default='right',
+        description="Side panel alignment: 'left' or 'right'"
+    )
+
+    @field_validator('mode')
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        """Ensure mode is valid"""
+        valid_modes = ['windowed', 'sidepanel']
+        if v not in valid_modes:
+            raise ValueError(f"mode must be one of {valid_modes}, got '{v}'")
+        return v
+
+    @field_validator('sidepanel_alignment')
+    @classmethod
+    def validate_alignment(cls, v: str) -> str:
+        """Ensure alignment is valid"""
+        valid_alignments = ['left', 'right', 'none']
+        if v not in valid_alignments:
+            raise ValueError(f"sidepanel_alignment must be one of {valid_alignments}, got '{v}'")
+        return v
+
+
 class Settings(BaseModel):
     """Main settings model"""
     display: DisplaySettings = Field(default_factory=DisplaySettings)
     retention: RetentionSettings = Field(default_factory=RetentionSettings)
     clipboard: ClipboardSettings = Field(default_factory=ClipboardSettings)
+    ui: UISettings = Field(default_factory=UISettings)
 
 
 class SettingsManager:
@@ -177,19 +208,38 @@ class SettingsManager:
         """Get the refocus on copy setting"""
         return self.settings.clipboard.refocus_on_copy
 
+    @property
+    def ui_mode(self) -> str:
+        """Get UI mode setting ('windowed' or 'sidepanel')"""
+        return self.settings.ui.mode
+
+    @property
+    def ui_sidepanel_alignment(self) -> str:
+        """Get UI sidepanel alignment ('left', 'right', or 'none')"""
+        return self.settings.ui.sidepanel_alignment
+
     def update_settings(self, **kwargs):
         """Update settings and save to file"""
-        # Update the settings object
+        # Get current settings as dict
+        current_data = self.settings.model_dump()
+
+        # Update with new values
         for key, value in kwargs.items():
             if '.' in key:
                 # Handle nested settings like 'display.item_width'
                 parts = key.split('.')
-                obj = self.settings
+                obj = current_data
                 for part in parts[:-1]:
-                    obj = getattr(obj, part)
-                setattr(obj, parts[-1], value)
+                    obj = obj[part]
+                obj[parts[-1]] = value
+            elif key in current_data and isinstance(value, dict):
+                # Merge dict values for nested models like ui={'mode': 'sidepanel'}
+                current_data[key].update(value)
             else:
-                setattr(self.settings, key, value)
+                current_data[key] = value
+
+        # Recreate settings from updated dict (validates with Pydantic)
+        self.settings = Settings(**current_data)
 
         # Save to file
         self._save_settings()

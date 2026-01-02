@@ -51,6 +51,16 @@ class SettingsService:
         """Get retention max items setting"""
         return self._manager.retention_max_items
 
+    @property
+    def ui_mode(self) -> str:
+        """Get UI mode setting ('windowed' or 'sidepanel')"""
+        return self._manager.settings.ui.mode
+
+    @property
+    def ui_sidepanel_alignment(self) -> str:
+        """Get UI sidepanel alignment ('left', 'right', or 'none')"""
+        return self._manager.settings.ui.sidepanel_alignment
+
     def update_settings(self, **kwargs):
         """Update settings"""
         self._manager.update_settings(**kwargs)

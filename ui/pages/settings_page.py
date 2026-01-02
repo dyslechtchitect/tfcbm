@@ -75,6 +75,10 @@ class SettingsPage:
 
         settings_page.add(general_group)
 
+        # UI mode group (windowed vs sidepanel)
+        ui_mode_group = self._build_ui_mode_group()
+        settings_page.add(ui_mode_group)
+
         # Clipboard behavior group
         clipboard_group = self._build_clipboard_group()
         settings_page.add(clipboard_group)
@@ -124,6 +128,150 @@ class SettingsPage:
         group.add(refocus_row)
 
         return group
+
+    def _build_ui_mode_group(self) -> Adw.PreferencesGroup:
+        """Build the UI mode settings section."""
+        group = Adw.PreferencesGroup()
+        group.set_title("UI Mode")
+        group.set_description("Choose how TFCBM displays clipboard items")
+
+        # UI Mode combo row (Windowed / Side Panel)
+        mode_row = Adw.ComboRow()
+        mode_row.set_title("Display Mode")
+        mode_row.set_subtitle("Window or GNOME Shell side panel")
+
+        # Create string list for mode options
+        mode_list = Gtk.StringList()
+        mode_list.append("Windowed")
+        mode_list.append("Side Panel")
+        mode_row.set_model(mode_list)
+
+        # Set current mode
+        current_mode = self.settings.ui_mode
+        mode_row.set_selected(0 if current_mode == "windowed" else 1)
+
+        mode_row.connect("notify::selected", self._on_ui_mode_changed)
+        group.add(mode_row)
+
+        # Side panel alignment row (Left / Right)
+        alignment_row = Adw.ComboRow()
+        alignment_row.set_title("Side Panel Position")
+        alignment_row.set_subtitle("Left or right side of screen")
+
+        # Create string list for alignment options
+        alignment_list = Gtk.StringList()
+        alignment_list.append("Left")
+        alignment_list.append("Right")
+        alignment_row.set_model(alignment_list)
+
+        # Set current alignment
+        current_alignment = self.settings.ui_sidepanel_alignment
+        alignment_row.set_selected(0 if current_alignment == "left" else 1)
+
+        # Only enable if side panel mode is active
+        alignment_row.set_sensitive(current_mode == "sidepanel")
+
+        alignment_row.connect("notify::selected", self._on_ui_alignment_changed)
+        group.add(alignment_row)
+
+        # Store references for enable/disable logic
+        self.ui_mode_row = mode_row
+        self.ui_alignment_row = alignment_row
+
+        return group
+
+    def _on_ui_mode_changed(self, combo_row, _param):
+        """Handle UI mode change."""
+        selected_index = combo_row.get_selected()
+        mode = "windowed" if selected_index == 0 else "sidepanel"
+
+        # Enable/disable alignment row based on mode
+        self.ui_alignment_row.set_sensitive(mode == "sidepanel")
+
+        # Get current alignment
+        alignment_index = self.ui_alignment_row.get_selected()
+        alignment = "left" if alignment_index == 0 else "right"
+
+        # Update via IPC in background thread
+        import threading
+
+        def update_in_thread():
+            result = self._update_ui_mode_sync(mode, alignment)
+            GLib.idle_add(self._handle_ui_mode_result, result, mode, alignment)
+
+        thread = threading.Thread(target=update_in_thread, daemon=True)
+        thread.start()
+
+    def _on_ui_alignment_changed(self, combo_row, _param):
+        """Handle UI alignment change."""
+        # Get current mode
+        mode_index = self.ui_mode_row.get_selected()
+        mode = "windowed" if mode_index == 0 else "sidepanel"
+
+        # Get new alignment
+        alignment_index = combo_row.get_selected()
+        alignment = "left" if alignment_index == 0 else "right"
+
+        # Update via IPC in background thread
+        import threading
+
+        def update_in_thread():
+            result = self._update_ui_mode_sync(mode, alignment)
+            GLib.idle_add(self._handle_ui_mode_result, result, mode, alignment)
+
+        thread = threading.Thread(target=update_in_thread, daemon=True)
+        thread.start()
+
+    def _update_ui_mode_sync(self, mode: str, alignment: str) -> dict:
+        """Update UI mode via IPC synchronously (runs in background thread)."""
+        import asyncio
+        import json
+        from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
+
+        async def update_mode():
+            try:
+                async with ipc_connect('ws://localhost:8765', ping_timeout=5) as conn:
+                    request = {
+                        "action": "set_ui_mode",
+                        "mode": mode,
+                        "alignment": alignment
+                    }
+                    await conn.send(json.dumps(request))
+                    response = await conn.recv()
+                    return json.loads(response)
+            except Exception as e:
+                print(f"Error updating UI mode: {e}")
+                return {"success": False, "error": str(e)}
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(update_mode())
+        finally:
+            loop.close()
+        return result
+
+    def _handle_ui_mode_result(self, result: dict, mode: str, alignment: str):
+        """Handle UI mode update result in GTK main thread."""
+        if result.get("success"):
+            # Update local in-memory settings reference
+            self.settings.settings.ui.mode = mode
+            self.settings.settings.ui.sidepanel_alignment = alignment
+
+            if mode == "windowed":
+                self.on_notification(
+                    "UI mode changed to Windowed. TFCBM will show as a window."
+                )
+            else:
+                position = "left" if alignment == "left" else "right"
+                self.on_notification(
+                    f"UI mode changed to Side Panel ({position}). Use the extension to view items."
+                )
+        else:
+            self.on_notification(f"Error updating UI mode: {result.get('error', 'Unknown error')}")
+            print(f"Error updating UI mode: {result.get('error')}")
+
+        return False  # Don't repeat idle_add
 
     def _on_refocus_on_copy_toggled(self, switch_row, _param):
         """Handle refocus on copy toggle."""

@@ -21,3 +21,4 @@ pytest==8.4.2
 #   Fedora: sudo dnf install xdotool
 #   Debian/Ubuntu: sudo apt install xdotool
 #   Alternative (Wayland): sudo dnf install ydotool
+jsonschema>=4.25.0

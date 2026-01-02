@@ -27,6 +27,8 @@ finish-args:
   - --filesystem=~/.config/dconf:ro
   - --talk-name=ca.desrt.dconf
   - --env=DCONF_USER_CONFIG_DIR=.config/dconf
+  # IPC socket directory for side panel mode communication with GNOME extension
+  - --filesystem=xdg-run/tfcbm:create
   # For clipboard operations
   - --talk-name=org.gnome.Shell
   - --talk-name=org.freedesktop.portal.Desktop

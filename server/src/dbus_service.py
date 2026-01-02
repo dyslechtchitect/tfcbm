@@ -24,6 +24,10 @@ DBUS_XML = """
         <method name="OnClipboardChange">
             <arg type="s" name="eventData" direction="in"/>
         </method>
+        <method name="GetUIMode">
+            <arg type="s" name="mode" direction="out"/>
+            <arg type="s" name="alignment" direction="out"/>
+        </method>
     </interface>
 </node>
 """
@@ -127,6 +131,9 @@ class TFCBMDBusService:
 
             elif method_name == "OnClipboardChange":
                 self._handle_clipboard_change(parameters, invocation)
+
+            elif method_name == "GetUIMode":
+                self._handle_get_ui_mode(invocation)
 
             else:
                 invocation.return_error_literal(
@@ -331,3 +338,25 @@ class TFCBMDBusService:
             logger.error(f"Failed to parse clipboard event JSON: {e}")
         except Exception as e:
             logger.error(f"Error processing clipboard event: {e}")
+
+    def _handle_get_ui_mode(self, invocation):
+        """Handle GetUIMode method - return current UI mode and alignment"""
+        logger.info("DBus GetUIMode called")
+
+        try:
+            # Get settings from global settings manager
+            from server.src.settings import get_settings
+            settings = get_settings()
+
+            mode = settings.ui_mode
+            alignment = settings.ui_sidepanel_alignment
+
+            logger.info(f"Returning UI mode: {mode}, alignment: {alignment}")
+
+            # Return tuple of (mode, alignment)
+            invocation.return_value(GLib.Variant('(ss)', (mode, alignment)))
+
+        except Exception as e:
+            logger.error(f"Error getting UI mode: {e}")
+            # Return default values on error
+            invocation.return_value(GLib.Variant('(ss)', ('windowed', 'right')))

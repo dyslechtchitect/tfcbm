@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tfcbm.github.io/schemas/ipc-v1.json",
+  "title": "TFCBM IPC Contract",
+  "version": "1.0.0",
+  "description": "Contract for IPC messages between backend and UI clients",
+
+  "definitions": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp"
+    },
+
+    "item_type": {
+      "enum": ["text", "url", "image/png", "image/jpeg", "image/screenshot", "image/generic", "file"],
+      "description": "Type of clipboard item"
+    },
+
+    "clipboard_item": {
+      "type": "object",
+      "required": ["id", "type", "timestamp"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Unique item ID"
+        },
+        "type": {
+          "$ref": "#/definitions/item_type"
+        },
+        "content": {
+          "type": ["string", "null"],
+          "description": "Text content or null for binary items"
+        },
+        "thumbnail": {
+          "type": ["string", "null"],
+          "description": "Base64 encoded thumbnail for images"
+        },
+        "timestamp": {
+          "$ref": "#/definitions/timestamp"
+        },
+        "is_favorite": {
+          "type": "boolean",
+          "default": false
+        },
+        "is_secret": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  },
+
+  "messages": {
+    "get_history": {
+      "request": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "const": "get_history" },
+          "offset": { "type": "integer", "minimum": 0, "default": 0 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 },
+          "filters": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/item_type" },
+            "default": []
+          }
+        }
+      },
+      "response": {
+        "type": "object",
+        "required": ["type", "items", "total_count", "offset"],
+        "properties": {
+          "type": { "const": "history" },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/clipboard_item" }
+          },
+          "total_count": { "type": "integer", "minimum": 0 },
+          "offset": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+
+    "new_item": {
+      "signal": {
+        "type": "object",
+        "required": ["type", "item"],
+        "properties": {
+          "type": { "const": "new_item" },
+          "item": { "$ref": "#/definitions/clipboard_item" }
+        }
+      }
+    },
+
+    "get_ui_mode": {
+      "request": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "const": "get_ui_mode" }
+        }
+      },
+      "response": {
+        "type": "object",
+        "required": ["type", "mode", "alignment"],
+        "properties": {
+          "type": { "const": "ui_mode" },
+          "mode": { "enum": ["windowed", "sidepanel"] },
+          "alignment": { "enum": ["left", "right", "none"] }
+        }
+      }
+    },
+
+    "set_ui_mode": {
+      "request": {
+        "type": "object",
+        "required": ["action", "mode"],
+        "properties": {
+          "action": { "const": "set_ui_mode" },
+          "mode": { "enum": ["windowed", "sidepanel"] },
+          "alignment": { "enum": ["left", "right"], "default": "right" }
+        }
+      },
+      "response": {
+        "type": "object",
+        "required": ["type", "success"],
+        "properties": {
+          "type": { "const": "ui_mode_updated" },
+          "success": { "type": "boolean" },
+          "mode": { "enum": ["windowed", "sidepanel"] },
+          "alignment": { "enum": ["left", "right", "none"] }
+        }
+      }
+    }
+  }
+}

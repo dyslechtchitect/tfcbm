@@ -1,7 +1,11 @@
 """Main TFCBM application."""
 
+import asyncio
 import logging
+import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 import gi
@@ -15,6 +19,11 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk
 # Add parent directory to path to import server modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from server.src.dbus_service import TFCBMDBusService
+from server.src.services.settings_service import SettingsService
+from server.src.services.database_service import DatabaseService
+from server.src.services.thumbnail_service import ThumbnailService
+from server.src.services.clipboard_service import ClipboardService
+from server.src.services.ipc_service import IPCService
 
 logger = logging.getLogger("TFCBM.UI")
 
@@ -31,6 +40,19 @@ class ClipboardApp(Adw.Application):
         self.dbus_service = None
         self.splash_window = None
         self.main_window = None  # Track main window even when hidden
+
+        # Initialize backend services for IPC
+        self.settings_service = SettingsService()
+        self.database_service = DatabaseService(settings_service=self.settings_service)
+        self.thumbnail_service = ThumbnailService(self.database_service)
+        self.clipboard_service = ClipboardService(self.database_service, self.thumbnail_service)
+        self.ipc_service = IPCService(
+            self.database_service,
+            self.settings_service,
+            self.clipboard_service
+        )
+        self.ipc_thread = None
+        self.ipc_loop = None
 
         self.add_main_option(
             "activate",
@@ -75,6 +97,9 @@ class ClipboardApp(Adw.Application):
         # The UI handles Activate/ShowSettings/Quit commands AND forwards clipboard events to server
         self.dbus_service = TFCBMDBusService(self, clipboard_handler=self._handle_clipboard_event)
         self.dbus_service.start()
+
+        # Start IPC server for side panel mode
+        self._start_ipc_server()
 
         # Register actions for tray icon integration
         activate_action = Gio.SimpleAction.new("show-window", None)
@@ -144,7 +169,117 @@ class ClipboardApp(Adw.Application):
     def _on_quit_action(self, action, parameter):
         """Handle quit action"""
         logger.info("quit action triggered")
+        self._stop_ipc_server()
         self.quit()
+
+    async def _start_ipc_server_async(self):
+        """Start UNIX domain socket IPC server for side panel"""
+        socket_path = self.ipc_service.socket_path
+
+        # Remove existing socket if it exists
+        try:
+            if os.path.exists(socket_path):
+                os.unlink(socket_path)
+                logger.info(f"Removed existing socket at {socket_path}")
+        except (FileNotFoundError, OSError) as e:
+            logger.warning(f"Could not remove existing socket: {e}")
+            # Try to continue anyway - the socket might be stale
+
+        logger.info(f"Starting IPC server on {socket_path}")
+        try:
+            server = await asyncio.start_unix_server(
+                self.ipc_service.client_handler,
+                socket_path
+            )
+
+            # Set socket permissions to allow only user access
+            os.chmod(socket_path, 0o600)
+
+            logger.info("✓ IPC server listening")
+            async with server:
+                await server.serve_forever()
+        except OSError as e:
+            logger.error(f"Failed to start IPC server: {e}")
+            raise
+
+    def _watch_for_new_items(self, loop):
+        """Watch database for new items and broadcast to IPC clients"""
+        logger.info("Started database watcher")
+
+        while True:
+            try:
+                latest_id = self.database_service.get_latest_id()
+
+                if latest_id and latest_id > self.ipc_service.last_known_id:
+                    # New items detected
+                    logger.info(f"📢 Broadcasting new items {self.ipc_service.last_known_id + 1} to {latest_id}")
+                    for item_id in range(self.ipc_service.last_known_id + 1, latest_id + 1):
+                        item = self.database_service.get_item(item_id)
+                        if item:
+                            ui_item = self.ipc_service.prepare_item_for_ui(item)
+
+                            # Broadcast to all clients
+                            message = {"type": "new_item", "item": ui_item}
+
+                            # Schedule broadcast in async loop
+                            asyncio.run_coroutine_threadsafe(
+                                self.ipc_service.broadcast(message),
+                                loop
+                            )
+                            logger.info(f"  → Broadcast item {item_id} ({item['type']}) to {len(self.ipc_service.clients)} clients")
+
+                    self.ipc_service.last_known_id = latest_id
+
+            except Exception as e:
+                logger.error(f"Error in database watcher: {e}")
+
+            time.sleep(0.5)
+
+    def _start_ipc_server(self):
+        """Start IPC server in background thread"""
+        try:
+            logger.info("Starting IPC server thread...")
+
+            def run_ipc_server():
+                try:
+                    logger.info("IPC server thread running...")
+                    self.ipc_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(self.ipc_loop)
+
+                    # Start database watcher
+                    watcher_thread = threading.Thread(
+                        target=self._watch_for_new_items,
+                        args=(self.ipc_loop,),
+                        daemon=True
+                    )
+                    watcher_thread.start()
+                    logger.info("Database watcher started")
+
+                    # Start IPC server
+                    logger.info("Starting IPC server async...")
+                    self.ipc_loop.run_until_complete(self._start_ipc_server_async())
+                except Exception as e:
+                    logger.error(f"Error in IPC server thread: {e}", exc_info=True)
+
+            self.ipc_thread = threading.Thread(target=run_ipc_server, daemon=True)
+            self.ipc_thread.start()
+            logger.info("IPC server thread started")
+        except Exception as e:
+            logger.error(f"Error starting IPC server: {e}", exc_info=True)
+
+    def _stop_ipc_server(self):
+        """Stop IPC server and clean up socket"""
+        try:
+            if self.ipc_loop:
+                self.ipc_loop.call_soon_threadsafe(self.ipc_loop.stop)
+
+            # Clean up IPC socket
+            socket_path = self.ipc_service.socket_path
+            if os.path.exists(socket_path):
+                os.unlink(socket_path)
+                logger.info("IPC socket removed")
+        except Exception as e:
+            logger.error(f"Error stopping IPC server: {e}")
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""
@@ -170,6 +305,12 @@ class ClipboardApp(Adw.Application):
 
     def do_activate(self):
         """Activate the application - toggle window visibility"""
+        # Check if we're in sidepanel mode - if so, don't show window
+        if self.settings_service.ui_mode == 'sidepanel':
+            logger.info("In sidepanel mode - not showing window, running in background")
+            self.hold()
+            return
+
         # Use stored main_window reference (works even when hidden)
         win = self.main_window if self.main_window else self.props.active_window
 
@@ -261,6 +402,12 @@ class ClipboardApp(Adw.Application):
             self.splash_window.close()
             self.splash_window = None
             logger.info("Splash screen closed")
+
+    def do_shutdown(self):
+        """Application shutdown - cleanup IPC server"""
+        logger.info("Application shutting down...")
+        self._stop_ipc_server()
+        Adw.Application.do_shutdown(self)
 
 
 def main():

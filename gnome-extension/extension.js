@@ -25,6 +25,7 @@ import { ClipboardMonitorService } from './src/ClipboardMonitorService.js';
 import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { DBusNotifier } from './src/adapters/DBusNotifier.js';
 import { PollingScheduler } from './src/PollingScheduler.js';
+import { SidePanelManager } from './src/SidePanelManager.js';
 
 const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm';
 const DBUS_PATH = '/org/tfcbm/ClipboardService';
@@ -40,6 +41,10 @@ const DBusInterface = `
             <arg type="u" name="timestamp" direction="in"/>
         </method>
         <method name="Quit"/>
+        <method name="GetUIMode">
+            <arg type="s" name="mode" direction="out"/>
+            <arg type="s" name="alignment" direction="out"/>
+        </method>
     </interface>
 </node>
 `;
@@ -78,6 +83,9 @@ export default class ClipboardMonitorExtension extends Extension {
         this._dbusOwnerWatchId = null;
         this._icon = null;
         this._flatpakCheckTimeout = null;
+        this._uiMode = 'windowed';  // 'windowed' or 'sidepanel'
+        this._uiAlignment = 'right'; // 'left' or 'right'
+        this._sidePanelManager = null;
     }
 
     _launchApp() {
@@ -101,11 +109,78 @@ export default class ClipboardMonitorExtension extends Extension {
         }
     }
 
+    _fetchUIMode() {
+        if (!this._dbus) {
+            log('[TFCBM] Cannot fetch UI mode: DBus not connected');
+            return;
+        }
+
+        try {
+            this._dbus.GetUIModeRemote((result, error) => {
+                if (error) {
+                    logError(error, '[TFCBM] Failed to get UI mode');
+                    return;
+                }
+
+                const [mode, alignment] = result;
+                this._uiMode = mode;
+                this._uiAlignment = alignment;
+                log(`[TFCBM] UI Mode fetched: ${mode}, alignment: ${alignment}`);
+
+                // Initialize side panel if in sidepanel mode
+                if (mode === 'sidepanel') {
+                    this._initializeSidePanel();
+                }
+            });
+        } catch (e) {
+            logError(e, '[TFCBM] Error calling GetUIMode');
+        }
+    }
+
+    async _initializeSidePanel() {
+        if (this._sidePanelManager) {
+            log('[TFCBM] Side panel already initialized');
+            return;
+        }
+
+        try {
+            log('[TFCBM] Initializing side panel...');
+            this._sidePanelManager = new SidePanelManager(this._uiAlignment);
+            const success = await this._sidePanelManager.initialize();
+
+            if (success) {
+                log('[TFCBM] Side panel initialized successfully');
+            } else {
+                logError(new Error('Initialization failed'), '[TFCBM] Side panel');
+                this._sidePanelManager = null;
+            }
+        } catch (e) {
+            logError(e, '[TFCBM] Failed to initialize side panel');
+            this._sidePanelManager = null;
+        }
+    }
+
     _toggleUI() {
         if (this._dbusOwner) {
             try {
-                const timestamp = global.display.get_current_time_roundtrip();
-                this._dbus.ActivateRemote(timestamp);
+                if (this._uiMode === 'sidepanel') {
+                    // Side panel mode - toggle panel
+                    if (this._sidePanelManager) {
+                        this._sidePanelManager.toggle();
+                        log('[TFCBM] Toggled side panel');
+                    } else {
+                        log('[TFCBM] Side panel not initialized, initializing...');
+                        this._initializeSidePanel().then(() => {
+                            if (this._sidePanelManager) {
+                                this._sidePanelManager.show();
+                            }
+                        });
+                    }
+                } else {
+                    // Windowed mode - activate window
+                    const timestamp = global.display.get_current_time_roundtrip();
+                    this._dbus.ActivateRemote(timestamp);
+                }
             } catch (e) {
                 logError(e, 'Failed to activate TFCBM UI');
                 // Check if app was uninstalled before trying to launch
@@ -173,6 +248,11 @@ export default class ClipboardMonitorExtension extends Extension {
                 try {
                     this._dbus = Gio.DBusProxy.new_for_bus_finish(result);
                     this._dbusOwner = this._dbus.g_name_owner;
+
+                    // Fetch UI mode once connected
+                    if (this._dbusOwner) {
+                        this._fetchUIMode();
+                    }
                 } catch (e) {
                     this._dbus = null;
                     this._dbusOwner = null;
@@ -352,6 +432,12 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     disable() {
+        // Destroy side panel if active
+        if (this._sidePanelManager) {
+            this._sidePanelManager.destroy();
+            this._sidePanelManager = null;
+        }
+
         // Stop clipboard monitoring
         if (this._scheduler) {
             this._scheduler.stop();
