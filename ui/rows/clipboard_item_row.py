@@ -1,6 +1,6 @@
 """ClipboardItemRow - Focused on item display and clipboard operations.
 
-Uses extracted components for UI, handles clipboard/WebSocket operations.
+Uses extracted components for UI, handles clipboard IPC operations.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ import traceback
 from pathlib import Path
 
 import gi
-import websockets
+from ui.services.ipc_helpers import websockets_compat as websockets
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -32,7 +32,7 @@ from ui.rows.handlers import (
     ItemDragDropHandler,
     ItemSecretManager,
     ItemTagManager,
-    ItemWebSocketService,
+    ItemIPCService,
 )
 from ui.services.clipboard_service import ClipboardService
 from ui.services.password_service import PasswordService
@@ -52,8 +52,8 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.clipboard_service = ClipboardService()
         self.password_service = PasswordService()
 
-        # Initialize WebSocket service for server communication
-        self.ws_service = ItemWebSocketService(
+        # Initialize IPC service for server communication
+        self.ipc_service = ItemIPCService(
             item=item,
             window=window,
             on_rebuild_content=self._rebuild_content,
@@ -66,7 +66,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.clipboard_ops = ClipboardOperationsHandler(
             item=item,
             window=window,
-            ws_service=self.ws_service,
+            ws_service=self.ipc_service,
             password_service=self.password_service,
             clipboard_service=self.clipboard_service,
         )
@@ -76,7 +76,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             item=item,
             window=window,
             password_service=self.password_service,
-            ws_service=self.ws_service,
+            ws_service=self.ipc_service,
             get_root=self.get_root,
         )
 
@@ -85,7 +85,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             item=item,
             window=window,
             password_service=self.password_service,
-            ws_service=self.ws_service,
+            ws_service=self.ipc_service,
             get_root=self.get_root,
         )
 
@@ -168,7 +168,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             item=item,
             card_frame=card_frame,
             password_service=self.password_service,
-            ws_service=self.ws_service,
+            ws_service=self.ipc_service,
             on_show_auth_required=self._show_auth_required_notification,
             on_show_fetch_error=self._show_fetch_error_notification,
         )
@@ -202,7 +202,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Build header with actions on the right
         self.header = ItemHeader(
             item=self.item,
-            on_name_save=self.ws_service.update_item_name,
+            on_name_save=self.ipc_service.update_item_name,
             on_favorite_toggle=self._on_favorite_toggle,
             show_pasted_time=self.show_pasted_time,
             search_query=self.search_query,
@@ -244,7 +244,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             item=item,
             window=window,
             overlay=self.overlay,
-            ws_service=self.ws_service,
+            ws_service=self.ipc_service,
             on_tags_action=self._on_tags_action,
         )
 
@@ -258,11 +258,11 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.set_child(self.overlay)
 
         # Load tags asynchronously from server
-        self.ws_service.load_item_tags()
+        self.ipc_service.load_item_tags()
 
     def _load_item_tags(self):
         """Reload tags for this item - called by TagDisplayManager after drag-and-drop."""
-        self.ws_service.load_item_tags()
+        self.ipc_service.load_item_tags()
 
     def _on_drag_enter(self, card_frame):
         """Handle drag enter - brighten card without border outline."""
@@ -391,7 +391,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _on_favorite_toggle(self, item_id: int, is_favorite: bool):
         """Handle favorite toggle action."""
-        self.ws_service.toggle_favorite(item_id, is_favorite)
+        self.ipc_service.toggle_favorite(item_id, is_favorite)
 
         # Notify user about favorite status and retention policy
         if is_favorite:

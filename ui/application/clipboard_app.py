@@ -94,13 +94,13 @@ class ClipboardApp(Adw.Application):
     def _handle_clipboard_event(self, event_data):
         """Forward clipboard events from GNOME extension to the server"""
         import asyncio
-        import websockets
+        from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
         import json
 
         async def send_to_server():
             try:
-                async with websockets.connect('ws://localhost:8765') as websocket:
-                    await websocket.send(json.dumps({
+                async with ipc_connect('ws://localhost:8765') as conn:
+                    await conn.send(json.dumps({
                         'action': 'clipboard_event',
                         'data': event_data
                     }))

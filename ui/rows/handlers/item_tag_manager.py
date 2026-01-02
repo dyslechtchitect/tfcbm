@@ -12,7 +12,7 @@ import json
 import logging
 import threading
 
-import websockets
+from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 from gi.repository import GLib, Gtk
 
 from ui.components.items import ItemTags
@@ -37,16 +37,16 @@ class ItemTagManager:
             item: The clipboard item data dictionary
             window: The window instance for accessing all_tags
             overlay: The overlay widget where tags are displayed
-            ws_service: ItemWebSocketService for tag loading
+            ipc_service: ItemIPCService for tag loading
             on_tags_action: Callback for tags button click action
         """
         self.item = item
         self.window = window
         self.overlay = overlay
-        self.ws_service = ws_service
+        self.ipc_service = ws_service
         self.on_tags_action_callback = on_tags_action
         self.tags_widget = None
-        self.ws_uri = "ws://localhost:8765"
+        self.ws_uri = ""
 
     def handle_tags_action(self, anchor_to_tags=False):
         """Handle tags button click - show tags popover.
@@ -241,20 +241,20 @@ class ItemTagManager:
             try:
 
                 async def update_tag():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    async with ipc_connect(self.ws_uri) as conn:
                         action = "add_item_tag" if is_active else "remove_item_tag"
                         request = {
                             "action": action,
                             "item_id": item_id,
                             "tag_id": tag_id,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") in ["item_tag_added", "item_tag_removed"]:
                             # Reload tags for this item
-                            GLib.idle_add(self.ws_service.load_item_tags)
+                            GLib.idle_add(self.ipc_service.load_item_tags)
                             # Notify window to refresh if needed
                             if hasattr(self.window, "_on_item_tags_changed"):
                                 GLib.idle_add(

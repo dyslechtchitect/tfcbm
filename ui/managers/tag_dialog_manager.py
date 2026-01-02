@@ -7,7 +7,7 @@ import threading
 from typing import Callable, List
 
 import gi
-import websockets
+from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -37,7 +37,7 @@ class TagDialogManager:
         on_tag_created: Callable[[], None],
         on_tag_updated: Callable[[], None],
         get_all_tags: Callable[[], List[dict]],
-        websocket_uri: str = "ws://localhost:8765",
+        socket_path: str = "",
     ):
         """Initialize TagDialogManager.
 
@@ -46,13 +46,13 @@ class TagDialogManager:
             on_tag_created: Callback when tag is created
             on_tag_updated: Callback when tag is updated
             get_all_tags: Callback to get all tags list
-            websocket_uri: WebSocket server URI
+            socket_path: IPC socket path
         """
         self.parent_window = parent_window
         self.on_tag_created = on_tag_created
         self.on_tag_updated = on_tag_updated
         self.get_all_tags = get_all_tags
-        self.websocket_uri = websocket_uri
+        self.socket_path = socket_path
 
     def show_create_dialog(self):
         """Show dialog to create a new tag."""
@@ -231,14 +231,14 @@ class TagDialogManager:
             try:
 
                 async def create_tag():
-                    async with websockets.connect(self.websocket_uri) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         request = {
                             "action": "create_tag",
                             "name": name,
                             "color": color,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("success"):
@@ -282,15 +282,15 @@ class TagDialogManager:
             try:
 
                 async def update_tag():
-                    async with websockets.connect(self.websocket_uri) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         request = {
                             "action": "update_tag",
                             "tag_id": tag_id,
                             "name": name,
                             "color": color,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "tag_updated":
@@ -412,13 +412,13 @@ class TagDialogManager:
         def run_delete():
             try:
                 async def delete_tag_async():
-                    async with websockets.connect(self.websocket_uri) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         request = {
                             "action": "delete_tag",
                             "tag_id": tag_id,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "tag_deleted" or data.get("success"):

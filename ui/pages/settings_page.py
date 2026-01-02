@@ -129,7 +129,7 @@ class SettingsPage:
         """Handle refocus on copy toggle."""
         is_enabled = switch_row.get_active()
 
-        # Update via WebSocket in background thread
+        # Update via IPC in background thread
         import threading
 
         def update_in_thread():
@@ -140,20 +140,20 @@ class SettingsPage:
         thread.start()
 
     def _update_clipboard_settings_sync(self, refocus_on_copy: bool) -> dict:
-        """Update clipboard settings via WebSocket synchronously (runs in background thread)."""
+        """Update clipboard settings via IPC synchronously (runs in background thread)."""
         import asyncio
         import json
-        import websockets
+        from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
         async def update_settings():
             try:
-                async with websockets.connect('ws://localhost:8765', ping_timeout=5) as websocket:
+                async with ipc_connect('ws://localhost:8765', ping_timeout=5) as conn:
                     request = {
                         "action": "update_clipboard_settings",
                         "refocus_on_copy": refocus_on_copy
                     }
-                    await websocket.send(json.dumps(request))
-                    response = await websocket.recv()
+                    await conn.send(json.dumps(request))
+                    response = await conn.recv()
                     return json.loads(response)
             except Exception as e:
                 print(f"Error updating clipboard settings: {e}")
@@ -459,13 +459,13 @@ class SettingsPage:
         """Get total item count synchronously (runs in background thread)."""
         import asyncio
         import json
-        import websockets
+        from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
         async def get_count():
             try:
-                async with websockets.connect('ws://localhost:8765', ping_timeout=5) as websocket:
-                    await websocket.send(json.dumps({"action": "get_total_count"}))
-                    response = await websocket.recv()
+                async with ipc_connect('ws://localhost:8765', ping_timeout=5) as conn:
+                    await conn.send(json.dumps({"action": "get_total_count"}))
+                    response = await conn.recv()
                     data = json.loads(response)
                     return data.get("total", 0)
             except Exception as e:
@@ -526,19 +526,19 @@ class SettingsPage:
         """Save retention settings synchronously (runs in background thread)."""
         import asyncio
         import json
-        import websockets
+        from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
         async def save_settings():
             try:
-                async with websockets.connect('ws://localhost:8765', ping_timeout=10) as websocket:
+                async with ipc_connect('ws://localhost:8765', ping_timeout=10) as conn:
                     request = {
                         "action": "update_retention_settings",
                         "enabled": enabled,
                         "max_items": max_items,
                         "delete_count": delete_count
                     }
-                    await websocket.send(json.dumps(request))
-                    response = await websocket.recv()
+                    await conn.send(json.dumps(request))
+                    response = await conn.recv()
                     return json.loads(response)
             except Exception as e:
                 print(f"Error saving retention settings: {e}")
@@ -556,7 +556,7 @@ class SettingsPage:
         """Handle save result in GTK main thread."""
         if result.get("status") == "success":
             # Update local in-memory settings reference
-            # Note: The backend already saved to file via WebSocket handler
+            # Note: The backend already saved to file via IPC handler
             self.settings.settings.retention.enabled = enabled
             self.settings.settings.retention.max_items = max_items
 

@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 
 import gi
-import websockets
+from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -488,15 +488,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
     def _register_ui_pid_with_server(self):
         """Register UI PID with server so server can kill UI on exit"""
         try:
-            import websockets
+            from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
             async def register_pid():
                 try:
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "register_ui_pid", "pid": os.getpid()}
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         logger.info(f"UI PID registration response: {response}")
                 except Exception as e:
                     logger.error(f"Failed to register UI PID with server: {e}")
@@ -599,7 +599,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
     # ========== Tag Methods ==========
 
     def load_tags(self):
-        """Load tags from server via WebSocket"""
+        """Load tags from server via IPC"""
         self.tags_load_start_time = time.time()
         logger.info("Starting tags load...")
 
@@ -607,12 +607,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
             try:
 
                 async def fetch_tags():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "get_tags"}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "tags":

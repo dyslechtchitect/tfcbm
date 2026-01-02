@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 import gi
-import websockets
+from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -56,12 +56,12 @@ class UserTagsManager:
             try:
 
                 async def fetch_tags():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "get_tags"}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "tags":
@@ -98,15 +98,15 @@ class UserTagsManager:
             try:
 
                 async def create_tag_async():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {
                             "action": "create_tag",
                             "name": name,
                             "color": color,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("success"):
@@ -152,11 +152,11 @@ class UserTagsManager:
             try:
 
                 async def delete_tag_async():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "delete_tag", "tag_id": tag_id}
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("success"):
@@ -210,15 +210,15 @@ class UserTagsManager:
             try:
 
                 async def add_tag_async():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {
                             "action": "add_item_tag",
                             "item_id": item_id,
                             "tag_id": int(tag_id),
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("success"):

@@ -7,7 +7,7 @@ import threading
 from typing import Callable, Set
 
 import gi
-import websockets
+from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -252,14 +252,14 @@ class FilterBarManager:
 
         async def fetch_extensions():
             try:
-                uri = "ws://localhost:8765"
-                async with websockets.connect(
+                uri = ""
+                async with ipc_connect(
                     uri, max_size=5 * 1024 * 1024
-                ) as websocket:
+                ) as conn:
                     request = {"action": "get_file_extensions"}
-                    await websocket.send(json.dumps(request))
+                    await conn.send(json.dumps(request))
 
-                    response = await websocket.recv()
+                    response = await conn.recv()
                     data = json.loads(response)
 
                     if data.get("type") == "file_extensions":

@@ -18,7 +18,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-import websockets
+from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib
 
 logger = logging.getLogger("TFCBM.UI")
@@ -40,13 +40,13 @@ class ClipboardOperationsHandler:
         Args:
             item: The clipboard item data dictionary
             window: The window instance for notifications
-            ws_service: ItemWebSocketService for server communication
+            ipc_service: ItemIPCService for server communication
             password_service: PasswordService for authentication
             clipboard_service: ClipboardService for clipboard operations
         """
         self.item = item
         self.window = window
-        self.ws_service = ws_service
+        self.ipc_service = ws_service
         self.password_service = password_service
         self.clipboard_service = clipboard_service
 
@@ -162,7 +162,7 @@ class ClipboardOperationsHandler:
             # For secrets, we need to fetch the actual content from the server
             # (not the "-secret-" placeholder)
             logger.info(f"Fetching real content for secret item {item_id}")
-            content = self.ws_service.fetch_secret_content(item_id)
+            content = self.ipc_service.fetch_secret_content(item_id)
             if not content:
                 self.window.show_notification("Failed to retrieve secret content")
                 # Consume authentication even on failure
@@ -199,7 +199,7 @@ class ClipboardOperationsHandler:
                         self.window.show_notification(
                             f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
                         )
-                    self.ws_service.record_paste(item_id)
+                    self.ipc_service.record_paste(item_id)
                     # Consume authentication after successful copy
                     if is_secret:
                         self.password_service.consume_authentication("copy", item_id)
@@ -241,15 +241,15 @@ class ClipboardOperationsHandler:
             try:
 
                 async def get_full_image():
-                    uri = "ws://localhost:8765"
+                    uri = ""
                     max_size = 5 * 1024 * 1024
-                    async with websockets.connect(
+                    async with ipc_connect(
                         uri, max_size=max_size
-                    ) as websocket:
+                    ) as conn:
                         request = {"action": "get_full_image", "id": item_id}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if (
@@ -286,7 +286,7 @@ class ClipboardOperationsHandler:
                                         f"📷 Full image copied "
                                         f"({pixbuf.get_width()}x{pixbuf.get_height()})"
                                     )
-                                    self.ws_service.record_paste(item_id)
+                                    self.ipc_service.record_paste(item_id)
                                     # Consume authentication after successful copy
                                     if self.item.get("is_secret", False):
                                         self.password_service.consume_authentication("copy", item_id)
@@ -358,7 +358,7 @@ class ClipboardOperationsHandler:
                             self.window.show_notification(
                                 f"📁 Folder copied: {folder_name}"
                             )
-                            self.ws_service.record_paste(item_id)
+                            self.ipc_service.record_paste(item_id)
                             # Consume authentication after successful copy
                             if self.item.get("is_secret", False):
                                 self.password_service.consume_authentication("copy", item_id)
@@ -401,15 +401,15 @@ class ClipboardOperationsHandler:
             try:
 
                 async def get_full_file():
-                    uri = "ws://localhost:8765"
+                    uri = ""
                     max_size = 100 * 1024 * 1024
-                    async with websockets.connect(
+                    async with ipc_connect(
                         uri, max_size=max_size
-                    ) as websocket:
+                    ) as conn:
                         request = {"action": "get_full_image", "id": item_id}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if (
@@ -450,7 +450,7 @@ class ClipboardOperationsHandler:
                                     self.window.show_notification(
                                         f"📄 File copied: {file_name}"
                                     )
-                                    self.ws_service.record_paste(item_id)
+                                    self.ipc_service.record_paste(item_id)
                                     # Consume authentication after successful copy
                                     if self.item.get("is_secret", False):
                                         self.password_service.consume_authentication("copy", item_id)

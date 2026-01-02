@@ -12,7 +12,7 @@ from ui.managers.pagination_manager import PaginationManager
 from ui.managers.search_manager import SearchManager
 from ui.managers.sort_manager import SortManager
 from ui.rows.clipboard_item_row import ClipboardItemRow
-from ui.services.websocket_client import WebSocketClient
+from ui.services.ipc_client import IPCClient
 
 gi.require_version("Gtk", "4.0")
 
@@ -23,7 +23,7 @@ logger = logging.getLogger("TFCBM.ClipboardListManager")
 class ClipboardListManager:
     def __init__(
         self,
-        websocket_client: WebSocketClient,
+        ipc_client: IPCClient,
         copied_pagination_manager: PaginationManager,
         pasted_pagination_manager: PaginationManager,
         sort_manager: SortManager,
@@ -39,7 +39,7 @@ class ClipboardListManager:
         show_notification: Callable[[str], None],
         window_instance: Any,  # Reference to the ClipboardWindow instance
     ):
-        self.websocket_client = websocket_client
+        self.ipc_client = ipc_client
         self.copied_pagination_manager = copied_pagination_manager
         self.pasted_pagination_manager = pasted_pagination_manager
         self.sort_manager = sort_manager
@@ -61,7 +61,7 @@ class ClipboardListManager:
         logger.info("Starting initial history load from ListManager...")
         GLib.idle_add(
             lambda: asyncio.run(
-                self.websocket_client.get_history(
+                self.ipc_client.get_history(
                     offset=0,
                     limit=self.copied_pagination_manager.page_size,
                     sort_order=self.sort_manager.copied_sort.order,
@@ -74,7 +74,7 @@ class ClipboardListManager:
         logger.info("Starting initial pasted history load from ListManager...")
         GLib.idle_add(
             lambda: asyncio.run(
-                self.websocket_client.get_recently_pasted(
+                self.ipc_client.get_recently_pasted(
                     offset=0,
                     limit=self.pasted_pagination_manager.page_size,
                     sort_order=self.sort_manager.pasted_sort.order,
@@ -89,13 +89,13 @@ class ClipboardListManager:
             sort_state = self.sort_manager.copied_sort
             self.copied_listbox
             loader = self.copied_loader
-            websocket_method = self.websocket_client.get_history
+            ipc_method = self.ipc_client.get_history
         else:  # pasted
             pagination_manager = self.pasted_pagination_manager
             sort_state = self.sort_manager.pasted_sort
             self.pasted_listbox
             loader = self.pasted_loader
-            websocket_method = self.websocket_client.get_recently_pasted
+            ipc_method = self.ipc_client.get_recently_pasted
 
         if pagination_manager.can_load_more():
             logger.info(f"[UI] Scrolled to bottom of {list_type} list, loading more...")
@@ -104,7 +104,7 @@ class ClipboardListManager:
 
             GLib.idle_add(
                 lambda: asyncio.run(
-                    websocket_method(
+                    ipc_method(
                         offset=pagination_manager.offset,
                         limit=pagination_manager.page_size,
                         sort_order=sort_state.order,
@@ -123,7 +123,7 @@ class ClipboardListManager:
         list_type: str,
     ):
         # This callback is for handling the initial load (history or pasted)
-        # It's called by _on_websocket_message_handler
+        # It's called by _on_ipc_message_handler
         if list_type == "copied":
             pagination_manager = self.copied_pagination_manager
             listbox = self.copied_listbox
@@ -217,7 +217,7 @@ class ClipboardListManager:
         # Update status label
         status_label.set_label(f"Showing {current_count} of {pagination_manager.total} items")
 
-    def handle_websocket_message(self, data: Dict[str, Any]):
+    def handle_ipc_message(self, data: Dict[str, Any]):
         msg_type = data.get("type")
 
         if msg_type == "history":
@@ -284,15 +284,15 @@ class ClipboardListManager:
             query = self.search_manager.query
             GLib.idle_add(self.window_instance._display_search_results, items, query)
 
-    def handle_websocket_error(self, error_msg):
-        logger.error(f"WebSocket error in list manager: {error_msg}")
-        self.show_notification(f"WebSocket error: {error_msg}")
+    def handle_ipc_error(self, error_msg):
+        logger.error(f"IPC error in list manager: {error_msg}")
+        self.show_notification(f"IPC error: {error_msg}")
 
     def perform_search(self, query: str):
         logger.info(f"[UI] Searching for: '{query}'")
         GLib.idle_add(
             lambda: asyncio.run(
-                self.websocket_client.search(
+                self.ipc_client.search(
                     query=query,
                     limit=self.search_manager.page_size,
                     filters=self.filter_manager.get_active_filters(),

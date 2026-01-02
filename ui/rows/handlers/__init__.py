@@ -5,10 +5,10 @@ from .item_dialog_handler import ItemDialogHandler
 from .item_drag_drop_handler import ItemDragDropHandler
 from .item_secret_manager import ItemSecretManager
 from .item_tag_manager import ItemTagManager
-from .item_websocket_service import ItemWebSocketService
+from .item_ipc_service import ItemIPCService
 
 __all__ = [
-    "ItemWebSocketService",
+    "ItemIPCService",
     "ClipboardOperationsHandler",
     "ItemDragDropHandler",
     "ItemTagManager",
