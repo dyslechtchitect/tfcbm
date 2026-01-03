@@ -14,6 +14,7 @@ export class IPCClient {
     constructor() {
         this._connection = null;
         this._inputStream = null;
+        this._dataInputStream = null;
         this._outputStream = null;
         this._messageHandlers = new Map();
         this._isConnected = false;
@@ -41,6 +42,8 @@ export class IPCClient {
         }
 
         try {
+            log(`[TFCBM IPC] Attempting to connect to: ${this._socketPath}`);
+
             // Create socket address
             const socketAddress = Gio.UnixSocketAddress.new(this._socketPath);
 
@@ -64,6 +67,9 @@ export class IPCClient {
             });
 
             this._inputStream = this._connection.get_input_stream();
+            this._dataInputStream = new Gio.DataInputStream({
+                base_stream: this._inputStream
+            });
             this._outputStream = this._connection.get_output_stream();
             this._isConnected = true;
             this._readCancellable = new Gio.Cancellable();
@@ -143,16 +149,12 @@ export class IPCClient {
      * @param {Function} callback Called with line string
      */
     _readLine(callback) {
-        const dataInputStream = new Gio.DataInputStream({
-            base_stream: this._inputStream
-        });
-
-        dataInputStream.read_line_async(
+        this._dataInputStream.read_line_async(
             GLib.PRIORITY_DEFAULT,
             this._readCancellable,
             (source, result) => {
                 try {
-                    const [line, length] = dataInputStream.read_line_finish_utf8(result);
+                    const [line, length] = this._dataInputStream.read_line_finish_utf8(result);
                     callback(line);
                 } catch (e) {
                     if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
@@ -170,15 +172,13 @@ export class IPCClient {
      * @param {Function} callback Called with Uint8Array
      */
     _readExact(length, callback) {
-        const buffer = new Uint8Array(length);
-
-        this._inputStream.read_bytes_async(
+        this._dataInputStream.read_bytes_async(
             length,
             GLib.PRIORITY_DEFAULT,
             this._readCancellable,
             (source, result) => {
                 try {
-                    const bytes = this._inputStream.read_bytes_finish(result);
+                    const bytes = this._dataInputStream.read_bytes_finish(result);
                     if (bytes.get_size() === 0) {
                         callback(null);
                         return;
@@ -338,6 +338,7 @@ export class IPCClient {
         }
 
         this._inputStream = null;
+        this._dataInputStream = null;
         this._outputStream = null;
         this._isConnected = false;
 

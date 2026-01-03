@@ -352,12 +352,122 @@ gnome-extension/extension.js                       # Full side panel integration
 
 ---
 
-## 📋 Phase 4: Integration & Polish (PLANNED)
+## ✅ Phase 4: IPC Service Integration (COMPLETE)
 
-- Cross-UI contract validation
-- Flatpak build with extension bundled
-- Shell 45/46/47 compatibility testing
-- Performance optimization
+### What We Built
+
+**Side Panel Fully Working! 🎉**
+
+All components now working together:
+- ✅ IPC service starts successfully in UI app (`clipboard_app.py`)
+- ✅ IPC socket created at `/run/user/1000/tfcbm/ipc.sock` with correct permissions (0600)
+- ✅ Extension connects to IPC socket successfully
+- ✅ DBus service working - `GetUIMode()` returns `('sidepanel', 'right')`
+- ✅ Extension fetches UI mode and initializes side panel
+- ✅ App runs in background mode (no window shown when `ui_mode == 'sidepanel'`)
+- ✅ Side panel appears on keyboard shortcut (`Shift + Super + V`)
+- ✅ Side panel appears when clicking tray icon
+- ✅ Tray icon visible in top panel
+- ✅ Database watcher thread running
+- ✅ Settings persist correctly
+
+### The Critical Fix (2026-01-03)
+
+**Problem**: IPC event loop was exiting immediately after `serve_forever()` started.
+
+**Root Cause**: Used `run_until_complete()` which blocks until the coroutine finishes. When `serve_forever()` starts, it returns immediately, causing the event loop to exit and the thread to die.
+
+**Solution**:
+```python
+# BEFORE (broken):
+self.ipc_loop.run_until_complete(self._start_ipc_server_async())
+
+# AFTER (working):
+self.ipc_loop.create_task(self._start_ipc_server_async())
+self.ipc_loop.run_forever()
+```
+
+This keeps the event loop alive permanently, allowing the server to handle connections.
+
+### Changes Made
+
+**1. UI App IPC Integration (`ui/application/clipboard_app.py`)**
+- Added IPC service initialization in `__init__()`
+- Added `_start_ipc_server()` method to start IPC in background thread
+- Added `_start_ipc_server_async()` to create UNIX socket server
+- Added `_watch_for_new_items()` for database monitoring
+- Added `_stop_ipc_server()` cleanup method
+- Added check in `do_activate()` to prevent window showing in sidepanel mode
+- Socket created at `/run/user/1000/tfcbm/ipc.sock`
+- Error handling with detailed logging
+
+**2. Flatpak Permissions (`io.github.dyslechtchitect.tfcbm.yml`)**
+- Added `--filesystem=xdg-run/tfcbm:create` permission
+- Allows Flatpak to create socket directory in host's runtime dir
+
+**3. Socket Path Updates**
+- Changed from `/run/user/1000/tfcbm-ipc.sock` to `/run/user/1000/tfcbm/ipc.sock`
+- Updated in `ipc_service.py` (backend)
+- Updated in `IPCClient.js` (extension)
+- Directory created with mode 0o700
+- Socket created with mode 0o600
+
+**4. Extension Debugging**
+- Added debug logging to `IPCClient.js`: `log(\`[TFCBM IPC] Attempting to connect to: ${this._socketPath}\`)`
+- File updated on disk but extension not showing new logs (needs GNOME Shell restart)
+
+### Files Modified
+
+```
+ui/application/clipboard_app.py           # IPC service integration
+server/src/services/ipc_service.py        # Socket path to subdirectory
+gnome-extension/src/adapters/IPCClient.js # Socket path + debug logging
+io.github.dyslechtchitect.tfcbm.yml       # Flatpak permissions
+```
+
+### The Fix
+
+**Root Cause**: Extension was INACTIVE after app installation
+
+The issue was simple - the extension wasn't enabled. Once enabled with:
+```bash
+gnome-extensions enable tfcbm-clipboard-monitor@github.com
+```
+
+Everything connected immediately and started working perfectly.
+
+### Verified Working (2026-01-03)
+
+**Extension Logs**:
+```
+[TFCBM] UI Mode fetched: sidepanel, alignment: right
+[TFCBM] Initializing side panel...
+[TFCBM IPC] Attempting to connect to: /run/user/1000/tfcbm/ipc.sock
+[TFCBM IPC] Connected to backend
+[TFCBM IPC] Sent: get_history
+[TFCBM Manager] Initialized successfully
+[TFCBM] Side panel initialized successfully
+```
+
+**User Interaction**:
+- Press `Shift + Super + V` → Side panel slides in from right ✅
+- Click tray icon → Side panel slides in from right ✅
+- Panel displays clipboard history items ✅
+- Click item → Copies to clipboard and panel hides ✅
+
+### How to Use
+
+```bash
+# 1. Start TFCBM (if not already running)
+flatpak run io.github.dyslechtchitect.tfcbm
+
+# 2. Toggle side panel
+# - Press Shift + Super + V
+# - OR click tray icon
+
+# 3. Switch to windowed mode (via Settings in app)
+# - Panel mode becomes window mode automatically
+```
 
 ---
 

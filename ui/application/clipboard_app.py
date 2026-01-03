@@ -95,11 +95,18 @@ class ClipboardApp(Adw.Application):
 
         # Register D-Bus service for extension integration
         # The UI handles Activate/ShowSettings/Quit commands AND forwards clipboard events to server
+        logger.info("Starting DBus service...")
         self.dbus_service = TFCBMDBusService(self, clipboard_handler=self._handle_clipboard_event)
         self.dbus_service.start()
+        logger.info("✓ DBus service registered")
 
         # Start IPC server for side panel mode
-        self._start_ipc_server()
+        logger.info("About to start IPC server...")
+        try:
+            self._start_ipc_server()
+            logger.info("✓ IPC server start method completed")
+        except Exception as e:
+            logger.error(f"Failed to start IPC server: {e}", exc_info=True)
 
         # Register actions for tray icon integration
         activate_action = Gio.SimpleAction.new("show-window", None)
@@ -117,29 +124,18 @@ class ClipboardApp(Adw.Application):
         self.add_action(quit_action)
 
     def _handle_clipboard_event(self, event_data):
-        """Forward clipboard events from GNOME extension to the server"""
-        import asyncio
-        from ui.services.ipc_helpers import websockets_compat as websockets, connect as ipc_connect
-        import json
-
-        async def send_to_server():
-            try:
-                async with ipc_connect('ws://localhost:8765') as conn:
-                    await conn.send(json.dumps({
-                        'action': 'clipboard_event',
-                        'data': event_data
-                    }))
-                    logger.info(f"Forwarded {event_data.get('type')} event to server")
-            except Exception as e:
-                logger.error(f"Failed to forward clipboard event to server: {e}")
-
-        # Run async task
+        """Process clipboard events from GNOME extension and save to database"""
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(send_to_server())
+            logger.info(f"Received clipboard event: {event_data.get('type')}")
+
+            # Use existing clipboard service to save the item
+            self.clipboard_service.handle_clipboard_event(event_data)
+
+            # The database watcher will detect the new item and broadcast via IPC
+            # No need to manually broadcast here
+
         except Exception as e:
-            logger.error(f"Error handling clipboard event in UI: {e}")
+            logger.error(f"Error processing clipboard event: {e}", exc_info=True)
 
     def _on_show_window_action(self, action, parameter):
         """Handle show-window action"""
@@ -174,11 +170,21 @@ class ClipboardApp(Adw.Application):
 
     async def _start_ipc_server_async(self):
         """Start UNIX domain socket IPC server for side panel"""
+        logger.info("=== _start_ipc_server_async called ===")
         socket_path = self.ipc_service.socket_path
+        socket_dir = os.path.dirname(socket_path)
+        logger.info(f"Socket path: {socket_path}")
+        logger.info(f"Socket dir: {socket_dir}")
+
+        # Create socket directory if it doesn't exist
+        logger.info("Creating socket directory...")
+        os.makedirs(socket_dir, mode=0o700, exist_ok=True)
+        logger.info("Socket directory created/verified")
 
         # Remove existing socket if it exists
         try:
             if os.path.exists(socket_path):
+                logger.info("Removing existing socket...")
                 os.unlink(socket_path)
                 logger.info(f"Removed existing socket at {socket_path}")
         except (FileNotFoundError, OSError) as e:
@@ -187,19 +193,28 @@ class ClipboardApp(Adw.Application):
 
         logger.info(f"Starting IPC server on {socket_path}")
         try:
+            logger.info("Calling asyncio.start_unix_server...")
             server = await asyncio.start_unix_server(
                 self.ipc_service.client_handler,
                 socket_path
             )
+            logger.info("Server created successfully")
 
             # Set socket permissions to allow only user access
+            logger.info("Setting socket permissions...")
             os.chmod(socket_path, 0o600)
+            logger.info("Socket permissions set to 0600")
 
             logger.info("✓ IPC server listening")
+            logger.info("Entering server.serve_forever()...")
             async with server:
                 await server.serve_forever()
+            logger.info("serve_forever() exited")
         except OSError as e:
-            logger.error(f"Failed to start IPC server: {e}")
+            logger.error(f"Failed to start IPC server (OSError): {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Failed to start IPC server (unexpected): {e}", exc_info=True)
             raise
 
     def _watch_for_new_items(self, loop):
@@ -237,6 +252,7 @@ class ClipboardApp(Adw.Application):
 
     def _start_ipc_server(self):
         """Start IPC server in background thread"""
+        logger.info("=== _start_ipc_server called ===")
         try:
             logger.info("Starting IPC server thread...")
 
@@ -245,8 +261,10 @@ class ClipboardApp(Adw.Application):
                     logger.info("IPC server thread running...")
                     self.ipc_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(self.ipc_loop)
+                    logger.info("Event loop created")
 
                     # Start database watcher
+                    logger.info("Starting database watcher...")
                     watcher_thread = threading.Thread(
                         target=self._watch_for_new_items,
                         args=(self.ipc_loop,),
@@ -255,13 +273,20 @@ class ClipboardApp(Adw.Application):
                     watcher_thread.start()
                     logger.info("Database watcher started")
 
-                    # Start IPC server
-                    logger.info("Starting IPC server async...")
-                    self.ipc_loop.run_until_complete(self._start_ipc_server_async())
+                    # Start IPC server and keep event loop running forever
+                    logger.info("Creating IPC server task...")
+                    # Create the server task
+                    self.ipc_loop.create_task(self._start_ipc_server_async())
+                    logger.info("Running event loop forever...")
+                    # Run the event loop forever (doesn't wait for server to complete)
+                    self.ipc_loop.run_forever()
+                    logger.info("Event loop stopped")
                 except Exception as e:
                     logger.error(f"Error in IPC server thread: {e}", exc_info=True)
 
+            logger.info("Creating IPC thread...")
             self.ipc_thread = threading.Thread(target=run_ipc_server, daemon=True)
+            logger.info("Starting IPC thread...")
             self.ipc_thread.start()
             logger.info("IPC server thread started")
         except Exception as e:
