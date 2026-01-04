@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.gnome.shell.extensions.simple-clipboard" path="/org/gnome/shell/extensions/simple-clipboard/">
+  <schema id="org.gnome.shell.extensions.tfcbm-clipboard-monitor" path="/org/gnome/shell/extensions/tfcbm-clipboard-monitor/">
     <key name="toggle-tfcbm-ui" type="as">
       <default>['&lt;Control&gt;Escape']</default>
       <summary>Toggle TFCBM UI</summary>

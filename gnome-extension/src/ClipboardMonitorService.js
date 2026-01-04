@@ -12,9 +12,6 @@ export class ClipboardMonitorService {
     async checkAndNotify() {
         const mimeTypes = await this.clipboardPort.getMimeTypes();
 
-        // Log mime types for debugging
-        log(`[TFCBM] Available mime types: ${JSON.stringify(mimeTypes)}`);
-
         const sendEvent = async (type, data, formattedContent = null, formatType = null) => {
             const event = new ClipboardEvent(type, data, formattedContent, formatType);
             if (this.isDuplicate(event)) {

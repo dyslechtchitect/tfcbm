@@ -116,22 +116,31 @@ export default class ClipboardMonitorExtension extends Extension {
         }
 
         try {
-            this._dbus.GetUIModeRemote((result, error) => {
-                if (error) {
-                    logError(error, '[TFCBM] Failed to get UI mode');
-                    return;
-                }
+            // Call DBus method with proper async callback
+            this._dbus.call(
+                'GetUIMode',
+                null, // no parameters
+                Gio.DBusCallFlags.NONE,
+                -1, // default timeout
+                null, // cancellable
+                (proxy, result) => {
+                    try {
+                        const reply = proxy.call_finish(result);
+                        const [mode, alignment] = reply.deep_unpack();
 
-                const [mode, alignment] = result;
-                this._uiMode = mode;
-                this._uiAlignment = alignment;
-                log(`[TFCBM] UI Mode fetched: ${mode}, alignment: ${alignment}`);
+                        this._uiMode = mode;
+                        this._uiAlignment = alignment;
+                        log(`[TFCBM] UI Mode fetched: ${mode}, alignment: ${alignment}`);
 
-                // Initialize side panel if in sidepanel mode
-                if (mode === 'sidepanel') {
-                    this._initializeSidePanel();
+                        // Initialize side panel if in sidepanel mode
+                        if (mode === 'sidepanel') {
+                            this._initializeSidePanel();
+                        }
+                    } catch (e) {
+                        logError(e, '[TFCBM] Failed to get UI mode');
+                    }
                 }
-            });
+            );
         } catch (e) {
             logError(e, '[TFCBM] Error calling GetUIMode');
         }
@@ -161,13 +170,18 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     _toggleUI() {
+        log('[TFCBM] _toggleUI called');
+        log(`[TFCBM] DBus owner: ${this._dbusOwner}`);
+        log(`[TFCBM] UI Mode: ${this._uiMode}`);
+
         if (this._dbusOwner) {
             try {
                 if (this._uiMode === 'sidepanel') {
+                    log('[TFCBM] In sidepanel mode');
                     // Side panel mode - toggle panel
                     if (this._sidePanelManager) {
+                        log('[TFCBM] Toggling existing side panel');
                         this._sidePanelManager.toggle();
-                        log('[TFCBM] Toggled side panel');
                     } else {
                         log('[TFCBM] Side panel not initialized, initializing...');
                         this._initializeSidePanel().then(() => {
@@ -177,6 +191,7 @@ export default class ClipboardMonitorExtension extends Extension {
                         });
                     }
                 } else {
+                    log('[TFCBM] In windowed mode, activating window');
                     // Windowed mode - activate window
                     const timestamp = global.display.get_current_time_roundtrip();
                     this._dbus.ActivateRemote(timestamp);
@@ -188,6 +203,7 @@ export default class ClipboardMonitorExtension extends Extension {
                 this._launchApp();
             }
         } else {
+            log('[TFCBM] No DBus owner, launching app');
             // Check if app is installed before trying to launch
             this._checkFlatpakInstalled();
             this._launchApp();

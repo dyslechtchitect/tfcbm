@@ -26,7 +26,7 @@ This document summarizes the preparation work done to make the TFCBM GNOME exten
 ### ✅ 3. Fixed metadata.json
 
 **Changes:**
-- UUID: `simple-clipboard@tfcbm` → `tfcbm-clipboard-monitor@github.com`
+- UUID: `tfcbm-clipboard-monitor@github.com` (proper extension ID)
 - Name: More descriptive "TFCBM Clipboard Monitor"
 - Description: Added mandatory clipboard access declaration
 - Removed: `keybindings` field (moved to GSettings only)
@@ -140,7 +140,7 @@ tfcbm-gnome-extension/
 ├── TFCBM_INTEGRATION_GUIDE.md       # Integration guide for TFCBM app
 ├── PREPARATION_SUMMARY.md           # This file
 ├── schemas/
-│   └── org.gnome.shell.extensions.simple-clipboard.gschema.xml
+│   └── org.gnome.shell.extensions.tfcbm-clipboard-monitor.gschema.xml
 └── src/
     ├── ClipboardMonitorService.js
     ├── PollingScheduler.js

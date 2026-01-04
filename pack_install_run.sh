@@ -13,11 +13,11 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}TFCBM Pack, Install, and Run${NC}"
 echo ""
 
-# Step 1: Build and install
+# Step 1: Build and install Flatpak
 echo -e "${YELLOW}Step 1/2: Building and installing Flatpak...${NC}"
 flatpak-builder --user --install --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
 
-# Step 2: Run
+# Step 2: Run (the app will handle extension installation on first launch)
 echo ""
 echo -e "${YELLOW}Step 2/2: Running TFCBM...${NC}"
 echo -e "${GREEN}Starting application...${NC}"

@@ -17,7 +17,7 @@ class GSettingsStore(ISettingsStore):
         Initialize GSettings store.
 
         Args:
-            schema_id: GSettings schema ID (e.g., "org.gnome.shell.extensions.simple-clipboard")
+            schema_id: GSettings schema ID (e.g., "org.gnome.shell.extensions.tfcbm-clipboard-monitor")
             key: Key name within the schema (e.g., "toggle-tfcbm-ui")
             schema_dir: Optional directory containing compiled schemas
         """

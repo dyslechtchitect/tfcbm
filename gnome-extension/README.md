@@ -63,7 +63,7 @@ The extension will still monitor clipboard changes, but UI controls won't work u
 
 To change the keyboard shortcut using `dconf-editor`:
 ```bash
-dconf write /org/gnome/shell/extensions/simple-clipboard/toggle-tfcbm-ui "['<Super><Shift>C']"
+dconf write /org/gnome/shell/extensions/tfcbm-clipboard-monitor/toggle-tfcbm-ui "['<Super><Shift>C']"
 ```
 
 ## Troubleshooting
@@ -116,7 +116,7 @@ tfcbm-gnome-extension/
 ├── metadata.json             # Extension metadata
 ├── tfcbm.svg                # Extension icon
 ├── schemas/                  # GSettings schemas
-│   └── org.gnome.shell.extensions.simple-clipboard.gschema.xml
+│   └── org.gnome.shell.extensions.tfcbm-clipboard-monitor.gschema.xml
 └── src/                     # Source modules
     ├── ClipboardMonitorService.js
     ├── PollingScheduler.js

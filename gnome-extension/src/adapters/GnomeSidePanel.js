@@ -10,15 +10,20 @@
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { GnomeSettingsPanel } from './GnomeSettingsPanel.js';
 
 export class GnomeSidePanel {
-    constructor(alignment = 'right') {
+    constructor(alignment = 'right', ipcClient) {
         this._alignment = alignment; // 'left' or 'right'
         this._isVisible = false;
         this._panel = null;
         this._itemsContainer = null;
+        this._contentContainer = null;
         this._items = [];
         this._onItemClickCallback = null;
+        this._ipcClient = ipcClient;
+        this._currentTab = 'history'; // 'history' or 'settings'
+        this._settingsPanel = null;
 
         this._buildUI();
     }
@@ -45,21 +50,46 @@ export class GnomeSidePanel {
             max-width: 400px;
         `);
 
-        // Header
+        // Header with tabs
         const header = new St.BoxLayout({
             style_class: 'tfcbm-panel-header',
+            vertical: true,
+            style: 'margin-bottom: 16px;',
+        });
+
+        // Tab bar
+        const tabBar = new St.BoxLayout({
             vertical: false,
+            style: 'spacing: 8px; margin-bottom: 12px;',
         });
 
-        const title = new St.Label({
-            text: 'Clipboard History',
-            style: 'font-size: 18px; font-weight: bold; margin-bottom: 12px;',
+        this._historyTab = new St.Button({
+            label: 'Clipboard',
+            style_class: 'tfcbm-tab-active',
+            style: 'padding: 8px 16px; border-radius: 6px;',
         });
+        this._historyTab.connect('clicked', () => this._switchTab('history'));
 
-        header.add_child(title);
+        this._settingsTab = new St.Button({
+            label: 'Settings',
+            style_class: 'tfcbm-tab',
+            style: 'padding: 8px 16px; border-radius: 6px;',
+        });
+        this._settingsTab.connect('clicked', () => this._switchTab('settings'));
+
+        tabBar.add_child(this._historyTab);
+        tabBar.add_child(this._settingsTab);
+
+        header.add_child(tabBar);
         this._panel.add_child(header);
 
-        // Scrollable items container
+        // Content container (switches between history and settings)
+        this._contentContainer = new St.Bin({
+            style: 'min-height: 0;',
+        });
+        this._panel.add_child(this._contentContainer);
+
+        // Build history view
         const scrollView = new St.ScrollView({
             style_class: 'tfcbm-scroll-view',
             hscrollbar_policy: St.PolicyType.NEVER,
@@ -73,23 +103,30 @@ export class GnomeSidePanel {
         });
 
         scrollView.add_child(this._itemsContainer);
-        this._panel.add_child(scrollView);
+
+        // Set history as default view
+        this._historyView = scrollView;
+        this._contentContainer.set_child(this._historyView);
 
         // Position panel off-screen initially
         this._panel.translation_x = this._alignment === 'right'
             ? 400  // Off-screen to the right
             : -400; // Off-screen to the left
 
-        // Set panel position on screen
+        // Set panel position on screen (below top bar to avoid covering tray)
         const monitor = Main.layoutManager.primaryMonitor;
+        const panelBox = Main.layoutManager.panelBox;
+        const topBarHeight = panelBox.height;
+
         this._panel.set_position(
             this._alignment === 'right'
                 ? monitor.x + monitor.width - 400
                 : monitor.x,
-            monitor.y
+            monitor.y + topBarHeight  // Start below the top bar
         );
 
-        this._panel.set_height(monitor.height);
+        // Set height to fill screen minus top bar
+        this._panel.set_height(monitor.height - topBarHeight);
 
         // Add to UI group (top-level container)
         Main.uiGroup.add_child(this._panel);
@@ -381,9 +418,62 @@ export class GnomeSidePanel {
     }
 
     /**
+     * Switch between pages (clipboard history or settings)
+     * @param {string} pageName 'history' or 'settings'
+     */
+    _switchTab(pageName) {
+        if (this._currentTab === pageName) return;
+
+        log(`[TFCBM Panel] Switching to ${pageName} page`);
+        this._currentTab = pageName;
+
+        // Update button styles
+        if (pageName === 'history') {
+            this._historyTab.style_class = 'tfcbm-tab-active';
+            this._settingsTab.style_class = 'tfcbm-tab';
+
+            // Show history view
+            this._contentContainer.set_child(this._historyView);
+        } else if (pageName === 'settings') {
+            this._historyTab.style_class = 'tfcbm-tab';
+            this._settingsTab.style_class = 'tfcbm-tab-active';
+
+            // Create settings panel if needed
+            if (!this._settingsPanel) {
+                this._settingsPanel = new GnomeSettingsPanel(this._ipcClient);
+
+                // Register handler for settings response
+                this._ipcClient.on('settings', (settings) => {
+                    log(`[TFCBM Panel] Received settings`);
+                    this._settingsPanel.updateSettings(settings);
+                });
+
+                // Register handler for settings updated
+                this._ipcClient.on('settings_updated', (data) => {
+                    log(`[TFCBM Panel] Settings updated: ${data.success}`);
+                    if (data.success && data.settings) {
+                        this._settingsPanel.updateSettings(data.settings);
+                    }
+                });
+
+                // Load settings from backend
+                this._settingsPanel.loadSettings();
+            }
+
+            // Show settings page
+            this._contentContainer.set_child(this._settingsPanel.getActor());
+        }
+    }
+
+    /**
      * Destroy panel and clean up
      */
     destroy() {
+        if (this._settingsPanel) {
+            this._settingsPanel.destroy();
+            this._settingsPanel = null;
+        }
+
         if (this._panel) {
             Main.uiGroup.remove_child(this._panel);
             this._panel.destroy();

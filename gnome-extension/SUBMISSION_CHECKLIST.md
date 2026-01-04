@@ -41,8 +41,8 @@ This checklist validates compliance with [GNOME Shell Extensions Review Guidelin
 
 ## ✅ GSettings Schema
 
-- [x] **Correct base ID**: `org.gnome.shell.extensions.simple-clipboard`
-- [x] **Correct base path**: `/org/gnome/shell/extensions/simple-clipboard/`
+- [x] **Correct base ID**: `org.gnome.shell.extensions.tfcbm-clipboard-monitor`
+- [x] **Correct base path**: `/org/gnome/shell/extensions/tfcbm-clipboard-monitor/`
 - [x] **XML file included**: Schema file present in schemas/ directory
 - [x] **No compiled schema**: gschemas.compiled removed (compiled during installation)
 
@@ -79,7 +79,7 @@ tfcbm-gnome-extension/
 ├── README.md                 ✅ Documentation
 ├── tfcbm.svg                ✅ Extension icon
 ├── schemas/                  ✅ GSettings schemas
-│   └── org.gnome.shell.extensions.simple-clipboard.gschema.xml
+│   └── org.gnome.shell.extensions.tfcbm-clipboard-monitor.gschema.xml
 └── src/                     ✅ Source modules
     ├── ClipboardMonitorService.js
     ├── PollingScheduler.js

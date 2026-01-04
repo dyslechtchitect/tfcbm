@@ -496,3 +496,24 @@ pytest server/test/contract/ -v
 ```
 
 **Ready for Phase 2! 🚀**
+## ✅ Settings Contract & Backend (TDD - Complete)
+
+### What We Built
+- **Contract schema** for get_settings and update_settings messages
+- **15 contract tests** (all passing ✅)
+- **Backend IPC handlers** that return contract-valid responses
+- Full settings coverage: display, retention, clipboard, UI mode
+
+### Test Results
+```bash
+$ python -m pytest server/test/contract/test_settings_contract.py -v
+============================== 15 passed in 0.18s ===============================
+```
+
+### Files Modified
+- `server/src/contracts/ipc_contract_v1.json` - Added get_settings, update_settings
+- `server/test/contract/test_settings_contract.py` - 15 comprehensive tests
+- `server/src/services/ipc_service.py` - Implemented handlers
+
+---
+

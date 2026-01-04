@@ -330,9 +330,23 @@ class ClipboardApp(Adw.Application):
 
     def do_activate(self):
         """Activate the application - toggle window visibility"""
-        # Check if we're in sidepanel mode - if so, don't show window
+        # ALWAYS check extension status first, regardless of UI mode
+        from ui.utils.extension_check import get_extension_status, enable_extension
+
+        ext_status = get_extension_status()
+
+        # If extension not installed OR not enabled, show the install/enable window
+        # This happens BEFORE we check UI mode
+        if not ext_status['installed'] or not ext_status['enabled']:
+            logger.warning(f"Extension not ready - installed: {ext_status['installed']}, enabled: {ext_status['enabled']}")
+            from ui.windows.extension_error_window import ExtensionErrorWindow
+            error_win = ExtensionErrorWindow(self, ext_status)
+            error_win.present()
+            return
+
+        # Extension is installed AND enabled - now check UI mode
         if self.settings_service.ui_mode == 'sidepanel':
-            logger.info("In sidepanel mode - not showing window, running in background")
+            logger.info("Extension ready and in sidepanel mode - running in background")
             self.hold()
             return
 

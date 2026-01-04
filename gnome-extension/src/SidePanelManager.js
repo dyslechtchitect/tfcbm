@@ -44,8 +44,8 @@ export class SidePanelManager {
             // Set up message handlers
             this._setupMessageHandlers();
 
-            // Create panel
-            this._panel = new GnomeSidePanel(this._alignment);
+            // Create panel (pass IPC client for settings page)
+            this._panel = new GnomeSidePanel(this._alignment, this._ipcClient);
 
             // Set up panel callbacks
             this._panel.onItemClick(this._onItemClick.bind(this));

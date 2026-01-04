@@ -320,6 +320,28 @@ export class IPCClient {
     }
 
     /**
+     * Get all settings from backend
+     * @returns {Promise<boolean>} Success status
+     */
+    async getSettings() {
+        return this.send({
+            action: 'get_settings'
+        });
+    }
+
+    /**
+     * Update settings on backend
+     * @param {Object} settings Settings to update (partial update supported)
+     * @returns {Promise<boolean>} Success status
+     */
+    async updateSettings(settings) {
+        return this.send({
+            action: 'update_settings',
+            settings
+        });
+    }
+
+    /**
      * Disconnect from backend
      */
     disconnect() {

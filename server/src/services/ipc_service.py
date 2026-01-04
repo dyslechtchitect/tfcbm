@@ -244,6 +244,10 @@ class IPCService:
             await self._handle_get_ui_mode(connection, data)
         elif action == "set_ui_mode":
             await self._handle_set_ui_mode(connection, data)
+        elif action == "get_settings":
+            await self._handle_get_settings(connection, data)
+        elif action == "update_settings":
+            await self._handle_update_settings(connection, data)
         elif action == "clipboard_event":
             await self._handle_clipboard_event(data)
         else:
@@ -754,6 +758,109 @@ class IPCService:
                 "type": "ui_mode_updated",
                 "success": False,
                 "error": str(e)
+            }
+            await connection.send_json(response)
+
+    async def _handle_get_settings(self, connection: IPCConnection, data):
+        """Handle get_settings action - returns all application settings"""
+        try:
+            settings = self.settings_service._manager.settings
+
+            response = {
+                "type": "settings",
+                "settings": {
+                    "display": {
+                        "max_page_length": settings.display.max_page_length,
+                        "item_width": settings.display.item_width,
+                        "item_height": settings.display.item_height
+                    },
+                    "retention": {
+                        "enabled": settings.retention.enabled,
+                        "max_items": settings.retention.max_items
+                    },
+                    "clipboard": {
+                        "refocus_on_copy": settings.clipboard.refocus_on_copy
+                    },
+                    "ui": {
+                        "mode": settings.ui.mode,
+                        "sidepanel_alignment": settings.ui.sidepanel_alignment
+                    }
+                }
+            }
+            await connection.send_json(response)
+            logger.info("[IPC] Sent settings to client")
+
+        except Exception as e:
+            logger.error(f"Error getting settings: {e}")
+            # Send error response
+            response = {
+                "type": "error",
+                "message": f"Failed to get settings: {str(e)}"
+            }
+            await connection.send_json(response)
+
+    async def _handle_update_settings(self, connection: IPCConnection, data):
+        """Handle update_settings action - updates application settings"""
+        try:
+            settings_update = data.get("settings", {})
+
+            # Update settings using the settings service (expects **kwargs)
+            self.settings_service.update_settings(**settings_update)
+
+            # Get updated settings
+            settings = self.settings_service._manager.settings
+
+            response = {
+                "type": "settings_updated",
+                "success": True,
+                "settings": {
+                    "display": {
+                        "max_page_length": settings.display.max_page_length,
+                        "item_width": settings.display.item_width,
+                        "item_height": settings.display.item_height
+                    },
+                    "retention": {
+                        "enabled": settings.retention.enabled,
+                        "max_items": settings.retention.max_items
+                    },
+                    "clipboard": {
+                        "refocus_on_copy": settings.clipboard.refocus_on_copy
+                    },
+                    "ui": {
+                        "mode": settings.ui.mode,
+                        "sidepanel_alignment": settings.ui.sidepanel_alignment
+                    }
+                }
+            }
+            await connection.send_json(response)
+            logger.info(f"[IPC] Updated settings: {settings_update}")
+
+        except Exception as e:
+            logger.error(f"Error updating settings: {e}")
+            # Get current settings for error response
+            settings = self.settings_service._manager.settings
+
+            response = {
+                "type": "settings_updated",
+                "success": False,
+                "settings": {
+                    "display": {
+                        "max_page_length": settings.display.max_page_length,
+                        "item_width": settings.display.item_width,
+                        "item_height": settings.display.item_height
+                    },
+                    "retention": {
+                        "enabled": settings.retention.enabled,
+                        "max_items": settings.retention.max_items
+                    },
+                    "clipboard": {
+                        "refocus_on_copy": settings.clipboard.refocus_on_copy
+                    },
+                    "ui": {
+                        "mode": settings.ui.mode,
+                        "sidepanel_alignment": settings.ui.sidepanel_alignment
+                    }
+                }
             }
             await connection.send_json(response)
 

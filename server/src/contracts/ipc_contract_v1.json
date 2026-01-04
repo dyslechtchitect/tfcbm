@@ -133,6 +133,150 @@
           "alignment": { "enum": ["left", "right", "none"] }
         }
       }
+    },
+
+    "get_settings": {
+      "request": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "const": "get_settings" }
+        }
+      },
+      "response": {
+        "type": "object",
+        "required": ["type", "settings"],
+        "properties": {
+          "type": { "const": "settings" },
+          "settings": {
+            "type": "object",
+            "required": ["display", "retention", "clipboard", "ui"],
+            "properties": {
+              "display": {
+                "type": "object",
+                "required": ["max_page_length", "item_width", "item_height"],
+                "properties": {
+                  "max_page_length": { "type": "integer", "minimum": 1, "maximum": 100 },
+                  "item_width": { "type": "integer", "minimum": 50, "maximum": 1000 },
+                  "item_height": { "type": "integer", "minimum": 50, "maximum": 1000 }
+                }
+              },
+              "retention": {
+                "type": "object",
+                "required": ["enabled", "max_items"],
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "max_items": { "type": "integer", "minimum": 10, "maximum": 10000 }
+                }
+              },
+              "clipboard": {
+                "type": "object",
+                "required": ["refocus_on_copy"],
+                "properties": {
+                  "refocus_on_copy": { "type": "boolean" }
+                }
+              },
+              "ui": {
+                "type": "object",
+                "required": ["mode", "sidepanel_alignment"],
+                "properties": {
+                  "mode": { "enum": ["windowed", "sidepanel"] },
+                  "sidepanel_alignment": { "enum": ["left", "right"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "update_settings": {
+      "request": {
+        "type": "object",
+        "required": ["action", "settings"],
+        "properties": {
+          "action": { "const": "update_settings" },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "display": {
+                "type": "object",
+                "properties": {
+                  "max_page_length": { "type": "integer", "minimum": 1, "maximum": 100 },
+                  "item_width": { "type": "integer", "minimum": 50, "maximum": 1000 },
+                  "item_height": { "type": "integer", "minimum": 50, "maximum": 1000 }
+                }
+              },
+              "retention": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "max_items": { "type": "integer", "minimum": 10, "maximum": 10000 }
+                }
+              },
+              "clipboard": {
+                "type": "object",
+                "properties": {
+                  "refocus_on_copy": { "type": "boolean" }
+                }
+              },
+              "ui": {
+                "type": "object",
+                "properties": {
+                  "mode": { "enum": ["windowed", "sidepanel"] },
+                  "sidepanel_alignment": { "enum": ["left", "right"] }
+                }
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "type": "object",
+        "required": ["type", "success"],
+        "properties": {
+          "type": { "const": "settings_updated" },
+          "success": { "type": "boolean" },
+          "settings": {
+            "type": "object",
+            "required": ["display", "retention", "clipboard", "ui"],
+            "properties": {
+              "display": {
+                "type": "object",
+                "required": ["max_page_length", "item_width", "item_height"],
+                "properties": {
+                  "max_page_length": { "type": "integer", "minimum": 1, "maximum": 100 },
+                  "item_width": { "type": "integer", "minimum": 50, "maximum": 1000 },
+                  "item_height": { "type": "integer", "minimum": 50, "maximum": 1000 }
+                }
+              },
+              "retention": {
+                "type": "object",
+                "required": ["enabled", "max_items"],
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "max_items": { "type": "integer", "minimum": 10, "maximum": 10000 }
+                }
+              },
+              "clipboard": {
+                "type": "object",
+                "required": ["refocus_on_copy"],
+                "properties": {
+                  "refocus_on_copy": { "type": "boolean" }
+                }
+              },
+              "ui": {
+                "type": "object",
+                "required": ["mode", "sidepanel_alignment"],
+                "properties": {
+                  "mode": { "enum": ["windowed", "sidepanel"] },
+                  "sidepanel_alignment": { "enum": ["left", "right"] }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
