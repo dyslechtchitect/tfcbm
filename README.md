@@ -18,17 +18,95 @@
   <a href="https://github.com/dyslechtchitect/tfcbm/actions/workflows/flatpak-ci.yml"><img src="https://github.com/dyslechtchitect/tfcbm/actions/workflows/flatpak-ci.yml/badge.svg" alt="CI Status"></a>
 </p>
 
+## About
+
+TFCBM is a modern clipboard manager designed to enhance your GNOME desktop experience. It keeps track of everything you copy, making it easy to find and reuse content from your clipboard history. Whether you're a developer, writer, or power user, TFCBM helps you work more efficiently by never losing track of your copied content.
+
+The application seamlessly integrates with your GNOME desktop through a shell extension, providing quick access via a keyboard shortcut or system tray icon. With support for text, images, files, and more, TFCBM handles all your clipboard needs in one place.
+
 ## Features
 
-- **📋 Complete Clipboard History** - Never lose copied content again
-- **🔍 Powerful Search** - Find anything in your clipboard history instantly
-- **🏷️ Tags & Organization** - Organize clips with custom tags and colors
-- **🖼️ Rich Media Support** - Images, files, URLs, and formatted text
-- **🔒 Secret Management** - Mark sensitive items as secrets with password protection
-- **⌨️ Keyboard Navigation** - Fast workflow with keyboard shortcuts
-- **🎨 Modern UI** - Beautiful Adwaita-based interface
-- **🔄 Real-time Sync** - Instant clipboard monitoring via GNOME extension
-- **💾 Persistent Storage** - SQLite database with automatic retention management
+- **Complete Clipboard History** - Never lose copied content again
+- **Powerful Search** - Find anything in your clipboard history instantly
+- **Tags & Organization** - Organize clips with custom tags and colors
+- **Rich Media Support** - Images, files, URLs, and formatted text
+- **Secret Management** - Mark sensitive items as secrets with password protection
+- **Keyboard Navigation** - Fast workflow with keyboard shortcuts
+- **Modern UI** - Beautiful Adwaita-based interface
+- **Real-time Sync** - Instant clipboard monitoring via GNOME extension
+- **Persistent Storage** - SQLite database with automatic retention management
+
+## Architecture
+
+TFCBM is built with a clean, modular architecture that separates concerns and enables reliable clipboard management:
+
+```mermaid
+graph TB
+    subgraph "GNOME Shell"
+        EXT[Extension]
+        CLIP[Clipboard API]
+    end
+
+    subgraph "TFCBM Application"
+        UI[GTK4/Adwaita UI]
+        SERVER[WebSocket Server]
+        DB[(SQLite Database)]
+    end
+
+    CLIP -->|Monitor Changes| EXT
+    EXT <-->|WebSocket IPC| SERVER
+    UI <-->|WebSocket IPC| SERVER
+    SERVER <-->|Store/Retrieve| DB
+
+    style EXT fill:#4a86e8
+    style UI fill:#4a86e8
+    style SERVER fill:#34a853
+    style DB fill:#fbbc04
+```
+
+### Components
+
+**GNOME Shell Extension**
+- Monitors clipboard changes in real-time using GNOME's Clipboard API
+- Provides system tray integration with quick access menu
+- Communicates with the backend server via WebSocket
+
+**Backend Server**
+- WebSocket server handling IPC between UI and extension
+- Manages SQLite database for persistent clipboard storage
+- Handles clipboard operations (search, tag, delete, etc.)
+- Implements retention policies and secret content protection
+
+**UI Application**
+- GTK4/Adwaita interface following GNOME HIG guidelines
+- Displays clipboard history with search and filtering
+- Tag management and organization features
+- Settings and configuration interface
+
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant App
+    participant Extension
+    participant Server
+    participant DB
+
+    User->>App: Copy content
+    Extension->>Extension: Detect clipboard change
+    Extension->>Server: Send new clipboard item
+    Server->>DB: Store item
+    Server->>App: Notify of new item
+    App->>User: Update UI
+
+    User->>App: Search/filter items
+    App->>Server: Request filtered items
+    Server->>DB: Query items
+    DB->>Server: Return results
+    Server->>App: Send filtered items
+    App->>User: Display results
+```
 
 ## Installation
 
