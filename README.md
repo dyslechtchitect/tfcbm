@@ -49,13 +49,13 @@ graph TB
 
     subgraph "TFCBM Application"
         UI[GTK4/Adwaita UI]
-        SERVER[WebSocket Server]
+        SERVER[IPC Server]
         DB[(SQLite Database)]
     end
 
     CLIP -->|Monitor Changes| EXT
-    EXT <-->|WebSocket IPC| SERVER
-    UI <-->|WebSocket IPC| SERVER
+    EXT <-->|Unix Socket IPC| SERVER
+    UI <-->|Unix Socket IPC| SERVER
     SERVER <-->|Store/Retrieve| DB
 
     style EXT fill:#4a86e8
@@ -69,10 +69,10 @@ graph TB
 **GNOME Shell Extension**
 - Monitors clipboard changes in real-time using GNOME's Clipboard API
 - Provides system tray integration with quick access menu
-- Communicates with the backend server via WebSocket
+- Communicates with the backend server via Unix domain sockets
 
 **Backend Server**
-- WebSocket server handling IPC between UI and extension
+- IPC server using Unix domain sockets for fast, reliable communication
 - Manages SQLite database for persistent clipboard storage
 - Handles clipboard operations (search, tag, delete, etc.)
 - Implements retention policies and secret content protection
@@ -168,14 +168,6 @@ The extension provides:
 
 - **TFCBM Settings**: Open settings page
 - **Quit TFCBM App**: Quit application and disable extension
-
-## Architecture
-
-TFCBM consists of three components:
-
-1. **UI Application** - GTK4/Adwaita frontend
-2. **Backend Server** - WebSocket server with SQLite database
-3. **GNOME Extension** - Clipboard monitoring and tray integration
 
 ## Development
 
