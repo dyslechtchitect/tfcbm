@@ -156,13 +156,10 @@ The extension provides:
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Escape` | Toggle TFCBM window (configurable) |
-| `Ctrl+F` | Focus search |
-| `Enter` | Paste selected item and close |
-| `Shift+Enter` | Paste selected item (keep window open) |
-| `Delete` | Delete selected item |
-| `↑/↓` | Navigate clipboard history |
-| `Esc` | Close window |
+| `Ctrl+Escape` | Toggle TFCBM window (configurable in settings) |
+| Type any character | Auto-focus search and start typing |
+| `Enter` or `Space` | Paste selected item |
+| Click tray icon | Toggle TFCBM window |
 
 ### Tray Icon Menu
 
