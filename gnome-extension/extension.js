@@ -229,7 +229,7 @@ export default class ClipboardMonitorExtension extends Extension {
                 'toggle-tfcbm-ui',
                 this._settings,
                 0, // Gio.SettingsBindFlags.DEFAULT
-                1, // Shell.ActionMode.NORMAL
+                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW, // Allow in normal mode and overview
                 () => {
                     log('[TFCBM] Keyboard shortcut activated');
                     this._toggleUI();

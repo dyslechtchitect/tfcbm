@@ -44,7 +44,7 @@ class SettingsPage:
             schema_dir = extension_dir / "schemas"
 
         self.settings_store = GSettingsStore(
-            schema_id="org.gnome.shell.extensions.simple-clipboard",
+            schema_id="org.gnome.shell.extensions.tfcbm-clipboard-monitor",
             key="toggle-tfcbm-ui",
             schema_dir=schema_dir,
         )
