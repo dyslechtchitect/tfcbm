@@ -14,14 +14,14 @@
         </p>
         <p>Features:</p>
         <ul>
-            <li>Track unlimited clipboard history</li>
+            <li>Track clipboard history</li>
             <li>Support for text, images, and files</li>
             <li>Quick search and filtering</li>
             <li>Tag and organize clipboard items</li>
-            <li>Secure storage for sensitive data</li>
+            <li>Secret Items for sensitive data</li>
             <li>Keyboard shortcuts for quick access</li>
             <li>Beautiful GTK4/Libadwaita interface</li>
-            <li>Optional GNOME Shell extension for seamless integration</li>
+            <li>GNOME Shell extension Tray Icon</li>
         </ul>
         <p>
             The optional GNOME Shell extension provides system-wide clipboard monitoring
