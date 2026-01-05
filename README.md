@@ -150,13 +150,13 @@ On first launch, TFCBM will install and enable the GNOME Shell extension for cli
 The extension provides:
 - System tray icon for quick access
 - Real-time clipboard monitoring
-- Global keyboard shortcut (`Super+V`)
+- Global keyboard shortcut (default: `Ctrl+Escape`, configurable in settings)
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Super+V` | Toggle TFCBM window |
+| `Ctrl+Escape` | Toggle TFCBM window (configurable) |
 | `Ctrl+F` | Focus search |
 | `Enter` | Paste selected item and close |
 | `Shift+Enter` | Paste selected item (keep window open) |
