@@ -140,20 +140,6 @@ The project uses GitHub Actions for continuous integration:
 - Flatpak builds tested against GNOME 47-49
 - Artifacts uploaded for each GNOME version
 
-**Run CI locally:**
-```bash
-# Run tests
-./run-ci-locally.sh test
-
-# Build Flatpak for GNOME 49
-./run-ci-locally.sh flatpak 49
-
-# Build for all versions
-./run-ci-locally.sh flatpak-all
-```
-
-See [.github/workflows/LOCAL_TESTING.md](.github/workflows/LOCAL_TESTING.md) for details.
-
 ## Configuration
 
 - Clipboard database: `~/.local/share/tfcbm/clipboard.db`
