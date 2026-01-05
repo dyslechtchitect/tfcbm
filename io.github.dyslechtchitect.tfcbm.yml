@@ -111,39 +111,7 @@ modules:
 
   # Main application
   - name: tfcbm
-    buildsystem: simple
-    build-commands:
-      # Install Python files
-      - install -d ${FLATPAK_DEST}/lib/tfcbm
-      - cp -r ui ${FLATPAK_DEST}/lib/tfcbm/
-      - cp -r server ${FLATPAK_DEST}/lib/tfcbm/
-      - cp main.py ${FLATPAK_DEST}/lib/tfcbm/
-      - cp settings.yml ${FLATPAK_DEST}/lib/tfcbm/
-
-      # Install resources
-      - install -d ${FLATPAK_DEST}/share/tfcbm
-      - cp -r resouces/* ${FLATPAK_DEST}/share/tfcbm/
-
-      # Install icons
-      - install -Dm644 icons/hicolor/scalable/apps/io.github.dyslechtchitect.tfcbm.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.tfcbm.svg
-
-      # Install desktop file and metainfo
-      - install -Dm644 io.github.dyslechtchitect.tfcbm.desktop ${FLATPAK_DEST}/share/applications/io.github.dyslechtchitect.tfcbm.desktop
-      - install -Dm644 io.github.dyslechtchitect.tfcbm.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.dyslechtchitect.tfcbm.metainfo.xml
-
-      # Install D-Bus service file
-      - install -Dm644 io.github.dyslechtchitect.tfcbm.service ${FLATPAK_DEST}/share/dbus-1/services/io.github.dyslechtchitect.tfcbm.service
-
-      # Create GNOME Shell extension zip package for installation
-      - install -d ${FLATPAK_DEST}/share/tfcbm
-      - cd gnome-extension && zip -r ${FLATPAK_DEST}/share/tfcbm/tfcbm-clipboard-monitor@github.com.zip
-          extension.js metadata.json tfcbm.svg src/ schemas/
-          -x "*.md" "*.sh" "test/*" "package.json" && cd ..
-
-      # Install wrapper scripts
-      - install -d ${FLATPAK_DEST}/bin
-      - install -m755 tfcbm-wrapper.sh ${FLATPAK_DEST}/bin/tfcbm
-      - install -m755 tfcbm-install-extension.sh ${FLATPAK_DEST}/bin/tfcbm-install-extension
+    buildsystem: meson
     sources:
       - type: dir
         path: .
