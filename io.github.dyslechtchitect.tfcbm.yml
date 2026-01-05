@@ -1,8 +1,15 @@
-app-id: io.github.dyslechtchitect.tfcbm
+id: io.github.dyslechtchitect.tfcbm
 runtime: org.gnome.Platform
 runtime-version: '49'
 sdk: org.gnome.Sdk
 command: tfcbm
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - '*.la'
+  - '*.a'
 
 finish-args:
   # X11 + XShm access
@@ -141,7 +148,7 @@ modules:
         export PYTHONPATH="/app/lib/tfcbm:${PYTHONPATH}"
         cd /app/lib/tfcbm
 
-        # Start the WebSocket server in background
+        # Start the IPC server in background
         python3 main.py > /tmp/tfcbm_server.log 2>&1 &
         SERVER_PID=$!
 
