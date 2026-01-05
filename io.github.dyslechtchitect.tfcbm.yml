@@ -70,8 +70,8 @@ modules:
       - pip3 install --no-deps --prefix=/app pydantic_core-*.whl
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/a6/74/d12b2cd841d8724dc8ffb13fc5cef86566a53ed358103150209ecd5d1999/pydantic_core-2.27.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-        sha256: bd8086fa684c4775c27f03f062cbb9eaa6e17f064307e86b21b9e0abc9c0f02e
+        url: https://files.pythonhosted.org/packages/fc/74/e4867fc7938dbf8342a5b83f065c4b3f11f67bb905d67aa0e2a40b005bc2/pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        sha256: a4ec5b44e4339a3c9dce876a87d6ac89041aa5f40ff87bee800dec0204f5be33
 
   - name: python3-pydantic
     buildsystem: simple

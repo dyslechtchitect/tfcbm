@@ -166,9 +166,13 @@ class UserTagsManager:
                             # Refresh tag filter display (via window callback)
                             if hasattr(self.window, 'load_tags'):
                                 GLib.idle_add(self.window.load_tags)
-                            # Refresh tags on all visible items
-                            if hasattr(self.window, '_refresh_all_item_tags'):
-                                GLib.idle_add(self.window._refresh_all_item_tags)
+                            # Show success notification
+                            if hasattr(self.window, 'show_notification'):
+                                GLib.idle_add(self.window.show_notification, "Tag deleted")
+                            # Force reload of current tab to refresh item displays
+                            # Schedule with a delay to ensure load_tags completes first
+                            if hasattr(self.window, '_reload_current_tab'):
+                                GLib.timeout_add(500, self.window._reload_current_tab)
                         else:
                             error_msg = data.get("error", "Unknown error")
                             logger.error(f"Failed to delete tag: {error_msg}")

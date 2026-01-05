@@ -91,15 +91,17 @@ class ClipboardWindow(Adw.ApplicationWindow):
         click_gesture.connect("released", self._on_window_clicked)
         self.add_controller(click_gesture)
 
-        # Set window properties
+        # Set window properties - tall and narrow
         display = Gdk.Display.get_default()
         if display:
             monitors = display.get_monitors()
             if monitors and monitors.get_n_items() > 0:
                 primary_monitor = monitors.get_item(0)
                 monitor_geometry = primary_monitor.get_geometry()
-                width = monitor_geometry.width // 3
-                self.set_default_size(width, 800)
+                # Narrow width (just enough for UI components) and full height
+                width = 350
+                height = monitor_geometry.height
+                self.set_default_size(width, height)
             else:
                 self.set_default_size(350, 800)
         else:
@@ -107,9 +109,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         self.set_resizable(True)
 
-        # Initialize WindowPositionManager and position window to the left
+        # Initialize WindowPositionManager and position window to the right
         self.position_manager = WindowPositionManager(self)
-        self.position_manager.position_left()
+        self.position_manager.position_right()
 
         self.page_size = self.settings.max_page_length
 
@@ -269,8 +271,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
             page_size=self.page_size,
         )
 
-        # Position window to the left (again, to ensure it's positioned)
-        self.position_manager.position_left()
+        # Position window to the right (again, to ensure it's positioned)
+        self.position_manager.position_right()
 
         # Set up global keyboard shortcut
 

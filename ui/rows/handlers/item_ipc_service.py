@@ -263,6 +263,12 @@ class ItemIPCService:
 
                         if data.get("type") == "item_tags":
                             tags = data.get("tags", [])
+
+                            # Filter out deleted tags by checking against window.all_tags
+                            if hasattr(self.window, 'all_tags'):
+                                valid_tag_ids = {tag.get('id') for tag in self.window.all_tags}
+                                tags = [tag for tag in tags if tag.get('id') in valid_tag_ids]
+
                             # Store tags in item for filtering
                             self.item["tags"] = tags
                             # Update UI on main thread
