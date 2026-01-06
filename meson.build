@@ -52,7 +52,8 @@ install_data(
 gnome_extension_zip = custom_target('gnome-extension-zip',
   output: 'tfcbm-clipboard-monitor@github.com.zip',
   command: [
-    find_program('build-extension-zip.sh'),
+    python,
+    files('build-extension-zip.py'),
     meson.project_source_root(),
     '@OUTPUT@'
   ],
