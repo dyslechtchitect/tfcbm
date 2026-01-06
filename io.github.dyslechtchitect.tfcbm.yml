@@ -4,6 +4,11 @@ runtime-version: '48'
 sdk: org.gnome.Sdk
 command: tfcbm
 
+sources:
+  - type: git
+    url: https://github.com/<your-user>/tfcbm.git
+    tag: v1.0.0
+
 cleanup:
   - /include
   - /lib/pkgconfig
