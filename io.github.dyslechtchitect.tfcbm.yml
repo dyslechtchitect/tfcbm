@@ -1,6 +1,6 @@
 id: io.github.dyslechtchitect.tfcbm
 runtime: org.gnome.Platform
-runtime-version: '49'
+runtime-version: '48'
 sdk: org.gnome.Sdk
 command: tfcbm
 
@@ -82,7 +82,7 @@ modules:
           pip3 install --no-deps --prefix=/app pydantic_core-*-cp312-*.whl
         fi
     sources:
-      # cp312 wheel for GNOME 47/48 (Python 3.12)
+      # cp312 wheel for GNOME 48 (Python 3.12)
       - type: file
         url: https://files.pythonhosted.org/packages/8d/f0/49129b27c43396581a635d8710dae54a791b17dfc50c70164866bbf865e3/pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
         sha256: 6fb4aadc0b9a0c063206846d603b92030eb6f03069151a625667f982887153e2

@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gnome-version: ['47', '48', '49']
+        gnome-version: ['49']
 
     steps:
       - name: Checkout code
