@@ -58,7 +58,7 @@ gnome_extension_zip = custom_target('gnome-extension-zip',
   ],
   command: [
     'sh', '-c',
-    'cd @SOURCE_ROOT@/gnome-extension && zip -r @OUTDIR@/@OUTPUT@ extension.js metadata.json tfcbm.svg src/ schemas/ -x "*.md" "*.sh" "test/*" "package.json"'
+    'cd @SOURCE_ROOT@/gnome-extension && zip -r @BUILD_ROOT@/@OUTPUT@ extension.js metadata.json tfcbm.svg src/ schemas/ -x "*.md" "*.sh" "test/*" "package.json"'
   ],
   install: true,
   install_dir: pkgdatadir
