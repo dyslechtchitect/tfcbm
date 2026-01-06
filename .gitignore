@@ -419,7 +419,7 @@ build-dir/
 builddir/
 build-test/
 .flatpak-builder/
-repo/
+repo*
 *.flatpak
 tfcbm-gnome-extension.zip
 
