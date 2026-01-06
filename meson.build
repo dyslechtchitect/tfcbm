@@ -52,8 +52,9 @@ install_data(
 gnome_extension_zip = custom_target('gnome-extension-zip',
   output: 'tfcbm-clipboard-monitor@github.com.zip',
   command: [
-    'sh', '-c',
-    'cd "$MESON_SOURCE_ROOT/gnome-extension" && zip -r "$MESON_BUILD_ROOT/@OUTPUT@" extension.js metadata.json tfcbm.svg src/ schemas/ -x "*.md" "*.sh" "test/*" "package.json"'
+    find_program('build-extension-zip.sh'),
+    meson.project_source_root(),
+    '@OUTPUT@'
   ],
   install: true,
   install_dir: pkgdatadir
