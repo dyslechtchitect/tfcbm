@@ -51,14 +51,9 @@ install_data(
 # Create GNOME Shell extension zip package
 gnome_extension_zip = custom_target('gnome-extension-zip',
   output: 'tfcbm-clipboard-monitor@github.com.zip',
-  input: [
-    'gnome-extension/extension.js',
-    'gnome-extension/metadata.json',
-    'gnome-extension/tfcbm.svg',
-  ],
   command: [
     'sh', '-c',
-    'cd @SOURCE_ROOT@/gnome-extension && zip -r @BUILD_ROOT@/@OUTPUT@ extension.js metadata.json tfcbm.svg src/ schemas/ -x "*.md" "*.sh" "test/*" "package.json"'
+    'cd @SOURCE_ROOT@/gnome-extension && zip -r @OUTPUT@ extension.js metadata.json tfcbm.svg src/ schemas/ -x "*.md" "*.sh" "test/*" "package.json"'
   ],
   install: true,
   install_dir: pkgdatadir
