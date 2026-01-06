@@ -29,6 +29,8 @@ class TagDialogManager:
         "#9141ac",  # Purple
         "#986a44",  # Brown
         "#5e5c64",  # Gray
+        "#ff69b4",  # Pink
+        "#7fff00",  # Chartreuse (sick yellow-green)
     ]
 
     def __init__(
