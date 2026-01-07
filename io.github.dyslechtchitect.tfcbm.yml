@@ -4,11 +4,6 @@ runtime-version: '48'
 sdk: org.gnome.Sdk
 command: tfcbm
 
-sources:
-  - type: git
-    url: https://github.com/<your-user>/tfcbm.git
-    tag: v1.0.0
-
 cleanup:
   - /include
   - /lib/pkgconfig
@@ -25,9 +20,7 @@ finish-args:
   # DBus access for clipboard and extension communication
   - --socket=session-bus
   # Filesystem access for clipboard files
-  # Read-only access to home directory for copying files from any location
   - --filesystem=home:ro
-  # Read-write access to XDG directories for user data
   - --filesystem=xdg-download:rw
   - --filesystem=xdg-documents:rw
   # Access to install GNOME Shell extension
@@ -79,22 +72,11 @@ modules:
   - name: python3-pydantic-core
     buildsystem: simple
     build-commands:
-      - |
-        PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}{sys.version_info.minor}")')
-        if [ "$PYTHON_VERSION" = "313" ]; then
-          pip3 install --no-deps --prefix=/app pydantic_core-*-cp313-*.whl
-        else
-          pip3 install --no-deps --prefix=/app pydantic_core-*-cp312-*.whl
-        fi
+      - pip3 install --no-deps --prefix=/app pydantic_core-*-cp312-*.whl
     sources:
-      # cp312 wheel for GNOME 48 (Python 3.12)
       - type: file
         url: https://files.pythonhosted.org/packages/8d/f0/49129b27c43396581a635d8710dae54a791b17dfc50c70164866bbf865e3/pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
         sha256: 6fb4aadc0b9a0c063206846d603b92030eb6f03069151a625667f982887153e2
-      # cp313 wheel for GNOME 49 (Python 3.13)
-      - type: file
-        url: https://files.pythonhosted.org/packages/a6/74/d12b2cd841d8724dc8ffb13fc5cef86566a53ed358103150209ecd5d1999/pydantic_core-2.27.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-        sha256: bd8086fa684c4775c27f03f062cbb9eaa6e17f064307e86b21b9e0abc9c0f02e
 
   - name: python3-pydantic
     buildsystem: simple
@@ -118,5 +100,6 @@ modules:
   - name: tfcbm
     buildsystem: meson
     sources:
-      - type: dir
-        path: .
+      - type: git
+        url: https://github.com/dyslechtchitect/tfcbm.git
+        tag: v1.0.0
