@@ -65,8 +65,9 @@ modules:
       - pip3 install --no-deps --prefix=/app pydantic-*.whl
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/2b/74/1c2a9f8d7b45d2c7d77c48c7f7a6e89e28a68e1d2e9b4b8c9d64d0f9e2d2/pydantic-1.10.14-py3-none-any.whl
-        sha256: 2f1e1fdbd9c8f3fd3a1bb9c5d5e1cda6bfcfae6a7c6f5b1e9c7a2e9a1f6e0a2
+        url: https://files.pythonhosted.org/packages/6b/22/67c0b118cc39e8a8d09c9b63db5a2c7b37c97c61f4c3e13a4d20c7a3b7fd/pydantic-1.10.15-py3-none-any.whl
+        sha256: 0a93b3c5f0d6c8f6d2e74b2f0a2e03c10c2b87b1c4a47d8d0d1f74cbd8c9c4f0
+
 
 
   - name: python3-pillow
