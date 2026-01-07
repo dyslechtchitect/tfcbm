@@ -15,7 +15,6 @@ finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
-  - --socket=session-bus
   - --filesystem=home:ro
   - --filesystem=xdg-download:rw
   - --filesystem=xdg-documents:rw
@@ -25,11 +24,11 @@ finish-args:
   - --filesystem=~/.config/dconf:ro
   - --talk-name=ca.desrt.dconf
   - --env=DCONF_USER_CONFIG_DIR=.config/dconf
+  - --talk-name=io.github.dyslechtchitect.tfcbm
   - --talk-name=org.gnome.Shell
   - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.Flatpak
   - --system-talk-name=org.freedesktop.PolicyKit1
-  - --talk-name=io.github.dyslechtchitect.tfcbm
 
 modules:
   - name: python3-pyyaml
