@@ -13,8 +13,8 @@ cleanup:
 
 finish-args:
   - --share=ipc
-  - --socket=fallback-x11
   - --socket=wayland
+  - --socket=fallback-x11
   - --socket=session-bus
   - --filesystem=home:ro
   - --filesystem=xdg-download:rw
@@ -34,50 +34,29 @@ modules:
   - name: python3-pyyaml
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-build-isolation --prefix=/app pyyaml-*.tar.gz
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/54/ed/79a089b6be93607fa5cdaedf301d7dfb23af5f25c398d5ead2525b063e17/pyyaml-6.0.2.tar.gz
-        sha256: d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e
-
-  - name: python3-typing-extensions
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app typing_extensions-*.whl
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/26/9f/ad63fc0248c5379346306f8668cda6e2e2e9c95e01216d2b8ffd9ff037d0/typing_extensions-4.12.2-py3-none-any.whl
-        sha256: 04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d
-
-  - name: python3-annotated-types
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app annotated_types-*.whl
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl
-        sha256: 1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
-
-  # 🔑 Fixed: build pydantic-core from source (multi-arch safe)
-  - name: python3-pydantic
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic==1.10.15
+      - pip3 install --no-deps --no-index --find-links=. --prefix=/app PyYAML
     sources:
       - type: pypi
-        name: pydantic
-        version: "1.10.15"
-
-
+        name: PyYAML
+        version: "6.0.2"
 
   - name: python3-pillow
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-build-isolation --prefix=/app pillow-*.tar.gz
+      - pip3 install --no-deps --no-index --find-links=. --prefix=/app Pillow
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/a5/26/0d95c04c868f6bdb0c447e3ee2de5564411845e36a858cfd63766bc7b563/pillow-11.0.0.tar.gz
-        sha256: 72bacbaf24ac003fea9bff9837d1eedb6088758d41e100c1552930151f677739
+      - type: pypi
+        name: Pillow
+        version: "11.0.0"
+
+  - name: python3-pydantic
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-deps --no-index --find-links=. --prefix=/app pydantic
+    sources:
+      - type: pypi
+        name: pydantic
+        version: "1.10.15"
 
   - name: tfcbm
     buildsystem: meson
