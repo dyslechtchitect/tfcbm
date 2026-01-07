@@ -59,7 +59,6 @@ For detailed instructions, see [LOCAL_TESTING.md](workflows/LOCAL_TESTING.md).
 ## Supported GNOME Versions
 
 The extension and app are tested against:
-- GNOME 48 (org.gnome.Platform 48)
 - GNOME 49 (org.gnome.Platform 49)
 
 **Note:** GNOME 45 and 46 reached End-of-Life in April 2025 and are no longer supported.
