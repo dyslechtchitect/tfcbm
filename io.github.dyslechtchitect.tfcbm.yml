@@ -59,19 +59,15 @@ modules:
         sha256: 1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
 
   # 🔑 Fixed: build pydantic-core from source (multi-arch safe)
-  - name: python3-pydantic-core
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic-core==2.27.2
-
   - name: python3-pydantic
     buildsystem: simple
     build-commands:
       - pip3 install --no-deps --prefix=/app pydantic-*.whl
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/58/26/82663c79010b28eddf29dcdd0ea723439535fa917fce5905885c0e9ba562/pydantic-2.10.5-py3-none-any.whl
-        sha256: 4dd4e322dbe55472cb7ca7e73f4b63574eecccf2835ffa2af9021ce113c83c53
+        url: https://files.pythonhosted.org/packages/2b/74/1c2a9f8d7b45d2c7d77c48c7f7a6e89e28a68e1d2e9b4b8c9d64d0f9e2d2/pydantic-1.10.14-py3-none-any.whl
+        sha256: 2f1e1fdbd9c8f3fd3a1bb9c5d5e1cda6bfcfae6a7c6f5b1e9c7a2e9a1f6e0a2
+
 
   - name: python3-pillow
     buildsystem: simple
