@@ -62,11 +62,11 @@ modules:
   - name: python3-pydantic
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic-*.whl
+      - pip3 install --no-deps --prefix=/app pydantic==1.10.15
     sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/6b/22/67c0b118cc39e8a8d09c9b63db5a2c7b37c97c61f4c3e13a4d20c7a3b7fd/pydantic-1.10.15-py3-none-any.whl
-        sha256: 0a93b3c5f0d6c8f6d2e74b2f0a2e03c10c2b87b1c4a47d8d0d1f74cbd8c9c4f0
+      - type: pypi
+        name: pydantic
+        version: "1.10.15"
 
 
 
