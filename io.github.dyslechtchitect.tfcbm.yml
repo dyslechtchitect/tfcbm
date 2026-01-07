@@ -29,6 +29,7 @@ finish-args:
   - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.Flatpak
   - --system-talk-name=org.freedesktop.PolicyKit1
+  - --talk-name=io.github.dyslechtchitect.tfcbm
 
 modules:
   - name: python3-pyyaml
