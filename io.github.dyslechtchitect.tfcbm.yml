@@ -34,7 +34,7 @@ modules:
   - name: python3-pyyaml
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-index --find-links=. --prefix=/app PyYAML
+      - pip3 install --no-deps --prefix=/app PyYAML-6.0.2.tar.gz
     sources:
       - type: pypi
         name: PyYAML
@@ -43,7 +43,7 @@ modules:
   - name: python3-pillow
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-index --find-links=. --prefix=/app Pillow
+      - pip3 install --no-deps --prefix=/app Pillow-11.0.0.tar.gz
     sources:
       - type: pypi
         name: Pillow
