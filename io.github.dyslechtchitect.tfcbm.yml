@@ -12,36 +12,25 @@ cleanup:
   - '*.a'
 
 finish-args:
-  # X11 + XShm access
   - --share=ipc
   - --socket=fallback-x11
-  # Wayland access
   - --socket=wayland
-  # DBus access for clipboard and extension communication
   - --socket=session-bus
-  # Filesystem access for clipboard files
   - --filesystem=home:ro
   - --filesystem=xdg-download:rw
   - --filesystem=xdg-documents:rw
-  # Access to install GNOME Shell extension
   - --filesystem=~/.local/share/gnome-shell/extensions:create
-  # Access to autostart directory for "Start on Login" feature
   - --filesystem=xdg-config/autostart:create
-  # Access to host dconf database for extension settings
   - --filesystem=xdg-run/dconf
   - --filesystem=~/.config/dconf:ro
   - --talk-name=ca.desrt.dconf
   - --env=DCONF_USER_CONFIG_DIR=.config/dconf
-  # For clipboard operations
   - --talk-name=org.gnome.Shell
   - --talk-name=org.freedesktop.portal.Desktop
-  # Allow talking to host for extension installation and flatpak-spawn
   - --talk-name=org.freedesktop.Flatpak
-  # PolicyKit for password authentication
   - --system-talk-name=org.freedesktop.PolicyKit1
 
 modules:
-  # Python dependencies
   - name: python3-pyyaml
     buildsystem: simple
     build-commands:
@@ -69,14 +58,11 @@ modules:
         url: https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl
         sha256: 1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53
 
+  # 🔑 Fixed: build pydantic-core from source (multi-arch safe)
   - name: python3-pydantic-core
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic_core-*-cp312-*.whl
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/8d/f0/49129b27c43396581a635d8710dae54a791b17dfc50c70164866bbf865e3/pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-        sha256: 6fb4aadc0b9a0c063206846d603b92030eb6f03069151a625667f982887153e2
+      - pip3 install --no-deps --prefix=/app pydantic-core==2.27.2
 
   - name: python3-pydantic
     buildsystem: simple
@@ -96,7 +82,6 @@ modules:
         url: https://files.pythonhosted.org/packages/a5/26/0d95c04c868f6bdb0c447e3ee2de5564411845e36a858cfd63766bc7b563/pillow-11.0.0.tar.gz
         sha256: 72bacbaf24ac003fea9bff9837d1eedb6088758d41e100c1552930151f677739
 
-  # Main application
   - name: tfcbm
     buildsystem: meson
     sources:
