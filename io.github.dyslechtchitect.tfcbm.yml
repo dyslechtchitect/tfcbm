@@ -34,7 +34,7 @@ modules:
   - name: python3-pyyaml
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app PyYAML-6.0.2.tar.gz
+      - pip3 install --no-deps --prefix=/app PyYAML
     sources:
       - type: pypi
         name: PyYAML
@@ -43,7 +43,7 @@ modules:
   - name: python3-pillow
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app Pillow-11.0.0.tar.gz
+      - pip3 install --no-deps --prefix=/app Pillow
     sources:
       - type: pypi
         name: Pillow
@@ -52,12 +52,11 @@ modules:
   - name: python3-pydantic
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic-1.10.15.tar.gz
+      - pip3 install --no-deps --prefix=/app pydantic
     sources:
       - type: pypi
         name: pydantic
         version: "1.10.15"
-
 
   - name: tfcbm
     buildsystem: meson
