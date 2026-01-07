@@ -52,11 +52,12 @@ modules:
   - name: python3-pydantic
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-index --find-links=. --prefix=/app pydantic
+      - pip3 install --no-deps --prefix=/app pydantic-1.10.15.tar.gz
     sources:
       - type: pypi
         name: pydantic
         version: "1.10.15"
+
 
   - name: tfcbm
     buildsystem: meson
