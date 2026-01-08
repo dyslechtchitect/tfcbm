@@ -12,25 +12,32 @@ cleanup:
   - '*.a'
 
 finish-args:
+  # IPC for internal helpers
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
-  - --filesystem=xdg-run/dconf
-  - --filesystem=~/.config/dconf:ro
-  - --talk-name=ca.desrt.dconf
-  - --env=DCONF_USER_CONFIG_DIR=.config/dconf
-  - --talk-name=org.gnome.Shell
+
+  # Minimal DBus: only portals your app will use
   - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=io.github.dyslechtchitect.tfcbm.helper
   - --talk-name=org.freedesktop.Flatpak
   - --system-talk-name=org.freedesktop.PolicyKit1
-  - --talk-name=io.github.dyslechtchitect.tfcbm
+
+  # Dconf read-only
+  - --filesystem=xdg-run/dconf
+  - --filesystem=~/.config/dconf:ro
+
+  # Autostart & extension support
+  - --filesystem=~/.local/share/gnome-shell/extensions:create
+  - --filesystem=xdg-config/autostart:create
+
+  # Tray icon support
+  - --env=GTK_USE_PORTAL=1
+  - --env=APPINDICATOR=1
 
 modules:
   - name: python-dependencies
     buildsystem: simple
-    build-options:
-      build-args:
-        - --share=network
     build-commands:
       - pip3 install --no-deps --prefix=/app -r flatpak-requirements.txt
     sources:
@@ -42,3 +49,12 @@ modules:
     sources:
       - type: dir
         path: .
+
+  # Optional: portal helper to catch keyboard + clipboard
+  - name: tfcbm-helper
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-deps --prefix=/app helper-dependencies.txt
+    sources:
+      - type: dir
+        path: helper
