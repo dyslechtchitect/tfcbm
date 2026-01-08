@@ -15,52 +15,30 @@ finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
-  - --filesystem=home:ro
-  - --filesystem=xdg-download:rw
-  - --filesystem=xdg-documents:rw
-  - --filesystem=~/.local/share/gnome-shell/extensions:create
-  - --filesystem=xdg-config/autostart:create
   - --filesystem=xdg-run/dconf
   - --filesystem=~/.config/dconf:ro
   - --talk-name=ca.desrt.dconf
   - --env=DCONF_USER_CONFIG_DIR=.config/dconf
-  - --talk-name=io.github.dyslechtchitect.tfcbm
   - --talk-name=org.gnome.Shell
   - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.Flatpak
   - --system-talk-name=org.freedesktop.PolicyKit1
+  - --talk-name=io.github.dyslechtchitect.tfcbm
 
 modules:
-  - name: python3-pyyaml
+  - name: python-dependencies
     buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
     build-commands:
-      - pip3 install --no-deps --prefix=/app pyyaml-6.0.2.tar.gz
+      - pip3 install --no-deps --prefix=/app -r flatpak-requirements.txt
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/54/ed/79a089b6be93607fa5cdaedf301d7dfb23af5f25c398d5ead2525b063e17/pyyaml-6.0.2.tar.gz
-        sha256: d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e
-
-  - name: python3-pillow
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app pillow-11.0.0.tar.gz
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/a5/26/0d95c04c868f6bdb0c447e3ee2de5564411845e36a858cfd63766bc7b563/pillow-11.0.0.tar.gz
-        sha256: 72bacbaf24ac003fea9bff9837d1eedb6088758d41e100c1552930151f677739
-
-  - name: python3-pydantic
-    buildsystem: simple
-    build-commands:
-      - pip3 install --no-deps --prefix=/app pydantic-1.10.15-py3-none-any.whl
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/58/26/82663c79010b28eddf29dcdd0ea723439535fa917fce5905885c0e9ba562/pydantic-1.10.15-py3-none-any.whl
-        sha256: 4dd4e322dbe55472cb7ca7e73f4b63574eecccf2835ffa2af9021ce113c83c53
+        path: flatpak-requirements.txt
 
   - name: tfcbm
     buildsystem: meson
     sources:
-      - type: git
-        url: https://github.com/dyslechtchitect/tfcbm.git
-        tag: v1.0.0
+      - type: dir
+        path: .

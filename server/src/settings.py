@@ -1,94 +1,56 @@
 #!/usr/bin/env python3
 """
 TFCBM Settings Management
-Loads and validates settings from settings.yml using Pydantic
+Loads and validates settings from settings.yml using dataclasses
 """
 
 import yaml
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator
+from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 
-class DisplaySettings(BaseModel):
+@dataclass
+class DisplaySettings:
     """Display-related settings"""
-    max_page_length: int = Field(
-        default=20,
-        ge=1,
-        le=100,
-        description="Maximum number of items to load per page (1-100)"
-    )
-    item_width: int = Field(
-        default=200,
-        ge=50,
-        le=1000,
-        description="Width of clipboard item cards in pixels (50-1000)"
-    )
-    item_height: int = Field(
-        default=200,
-        ge=50,
-        le=1000,
-        description="Height of clipboard item cards in pixels (50-1000)"
-    )
+    max_page_length: int = 20
+    item_width: int = 200
+    item_height: int = 200
 
-    @field_validator('max_page_length')
-    @classmethod
-    def validate_page_length(cls, v: int) -> int:
-        """Ensure page length is reasonable"""
-        if v < 1:
-            raise ValueError("max_page_length must be at least 1")
-        if v > 100:
-            raise ValueError("max_page_length cannot exceed 100")
-        return v
-
-    @field_validator('item_width', 'item_height')
-    @classmethod
-    def validate_item_size(cls, v: int) -> int:
-        """Ensure item size is at least 50x50"""
-        if v < 50:
-            return 50
-        if v > 1000:
-            raise ValueError("item dimensions cannot exceed 1000")
-        return v
+    def __post_init__(self):
+        """Validate settings"""
+        if not 1 <= self.max_page_length <= 100:
+            raise ValueError("max_page_length must be between 1 and 100")
+        if not 50 <= self.item_width <= 1000:
+            raise ValueError("item_width must be between 50 and 1000")
+        if not 50 <= self.item_height <= 1000:
+            raise ValueError("item_height must be between 50 and 1000")
 
 
-class RetentionSettings(BaseModel):
+@dataclass
+class RetentionSettings:
     """Retention policy settings"""
-    enabled: bool = Field(
-        default=True,
-        description="Enable automatic cleanup of old items"
-    )
-    max_items: int = Field(
-        default=250,
-        ge=10,
-        le=10000,
-        description="Maximum number of items to retain (10-10000)"
-    )
+    enabled: bool = True
+    max_items: int = 250
 
-    @field_validator('max_items')
-    @classmethod
-    def validate_max_items(cls, v: int) -> int:
-        """Ensure max_items is reasonable"""
-        if v < 10:
-            raise ValueError("max_items must be at least 10")
-        if v > 10000:
-            raise ValueError("max_items cannot exceed 10000")
-        return v
+    def __post_init__(self):
+        """Validate settings"""
+        if not 10 <= self.max_items <= 10000:
+            raise ValueError("max_items must be between 10 and 10000")
 
 
-class ClipboardSettings(BaseModel):
+@dataclass
+class ClipboardSettings:
     """Clipboard behavior settings"""
-    refocus_on_copy: bool = Field(
-        default=True,
-        description="Automatically refocus previous window when copying item via keyboard"
-    )
+    refocus_on_copy: bool = True
 
 
-class Settings(BaseModel):
+@dataclass
+class Settings:
     """Main settings model"""
-    display: DisplaySettings = Field(default_factory=DisplaySettings)
-    retention: RetentionSettings = Field(default_factory=RetentionSettings)
-    clipboard: ClipboardSettings = Field(default_factory=ClipboardSettings)
+    display: DisplaySettings = field(default_factory=DisplaySettings)
+    retention: RetentionSettings = field(default_factory=RetentionSettings)
+    clipboard: ClipboardSettings = field(default_factory=ClipboardSettings)
 
 
 class SettingsManager:
@@ -129,13 +91,17 @@ class SettingsManager:
                 return Settings()
 
             # Validate and create settings object
-            settings = Settings(**config_data)
+            settings = Settings(
+                display=DisplaySettings(**config_data.get('display', {})),
+                retention=RetentionSettings(**config_data.get('retention', {})),
+                clipboard=ClipboardSettings(**config_data.get('clipboard', {}))
+            )
             print(f"Loaded settings from {self.config_path}")
             print(f"  - Max page length: {settings.display.max_page_length}")
             return settings
 
-        except yaml.YAMLError as e:
-            print(f"Error parsing settings YAML: {e}")
+        except (yaml.YAMLError, ValueError) as e:
+            print(f"Error loading or validating settings: {e}")
             print("Using default settings")
             return Settings()
         except Exception as e:
@@ -197,7 +163,7 @@ class SettingsManager:
     def _save_settings(self):
         """Save current settings to YAML file"""
         import yaml
-        config_data = self.settings.model_dump()
+        config_data = asdict(self.settings)
         with open(self.config_path, 'w') as f:
             yaml.dump(config_data, f, default_flow_style=False)
 

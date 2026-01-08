@@ -1,7 +1,7 @@
 """Tests for settings model validation."""
 
 import pytest
-from pydantic import ValidationError
+from dataclasses import asdict
 
 from settings import Settings, DisplaySettings, RetentionSettings, ClipboardSettings
 
@@ -33,19 +33,13 @@ class TestSettingsModelValidation:
 
     def test_invalid_retention_max_items_too_low(self):
         """Test that max_items below 10 raises error."""
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(ValueError):
             RetentionSettings(max_items=5)
-
-        # Pydantic error message contains "greater than or equal to 10"
-        assert "greater than or equal to 10" in str(exc_info.value)
 
     def test_invalid_retention_max_items_too_high(self):
         """Test that max_items above 10000 raises error."""
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(ValueError):
             RetentionSettings(max_items=20000)
-
-        # Pydantic error message contains "less than or equal to 10000"
-        assert "less than or equal to 10000" in str(exc_info.value)
 
     def test_settings_serialization_to_yaml(self):
         """Test settings serialization to dict (for YAML)."""
@@ -54,7 +48,7 @@ class TestSettingsModelValidation:
             retention=RetentionSettings(max_items=300)
         )
 
-        data = settings.model_dump()
+        data = asdict(settings)
 
         assert data["display"]["max_page_length"] == 30
         assert data["retention"]["max_items"] == 300
@@ -73,7 +67,11 @@ class TestSettingsModelValidation:
             }
         }
 
-        settings = Settings(**data)
+        settings = Settings(
+            display=DisplaySettings(**data.get('display', {})),
+            retention=RetentionSettings(**data.get('retention', {})),
+            clipboard=ClipboardSettings(**data.get('clipboard', {}))
+        )
 
         assert settings.display.max_page_length == 40
         assert settings.display.item_width == 250
@@ -98,23 +96,23 @@ class TestSettingsModelValidation:
     def test_item_size_minimum_enforced(self):
         """Test that item width/height have minimum of 50."""
         # Values below 50 should raise validation error (not clamped)
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueError):
             DisplaySettings(item_width=30, item_height=40)
 
     def test_page_length_validation(self):
         """Test page length validation."""
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueError):
             DisplaySettings(max_page_length=0)
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueError):
             DisplaySettings(max_page_length=200)
 
     def test_item_size_maximum_enforced(self):
         """Test that item dimensions cannot exceed 1000."""
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueError):
             DisplaySettings(item_width=1500)
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueError):
             DisplaySettings(item_height=2000)
 
     def test_clipboard_settings_defaults(self):
@@ -154,7 +152,11 @@ class TestSettingsModelValidation:
             }
         }
 
-        settings = Settings(**data)
+        settings = Settings(
+            display=DisplaySettings(**data.get('display', {})),
+            retention=RetentionSettings(**data.get('retention', {})),
+            clipboard=ClipboardSettings(**data.get('clipboard', {}))
+        )
 
         assert settings.clipboard.refocus_on_copy is False
 
@@ -164,7 +166,7 @@ class TestSettingsModelValidation:
             clipboard=ClipboardSettings(refocus_on_copy=False)
         )
 
-        data = settings.model_dump()
+        data = asdict(settings)
 
         assert "clipboard" in data
         assert data["clipboard"]["refocus_on_copy"] is False

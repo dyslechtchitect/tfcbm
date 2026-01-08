@@ -1,0 +1,14 @@
+id: io.github.dyslechtchitect.tfcbm
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: tfcbm
+modules:
+  - name: python3-pyyaml
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-deps --prefix=/app ./PyYAML-6.0.2.tar.gz
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/e4/1e/6c2771e1417026967a321781e01409717459727b67903a372767231983/PyYAML-6.0.2.tar.gz
+        sha256: d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e
