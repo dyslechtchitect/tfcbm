@@ -175,8 +175,11 @@ def install_extension() -> tuple[bool, str]:
 
             # Use gnome-extensions install command directly with the zip
             env = os.environ.copy()
-            if 'PATH' not in env or '/usr/bin' not in env['PATH']:
-                env['PATH'] = f"/usr/bin:/bin:{env.get('PATH', '')}"
+            common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
+            if 'PATH' not in env:
+                env['PATH'] = common_paths
+            elif common_paths not in env['PATH']:
+                env['PATH'] = f"{common_paths}:{env['PATH']}"
 
             cmd_prefix = _get_command_prefix()
 
@@ -297,8 +300,11 @@ def install_extension() -> tuple[bool, str]:
 
         # Ensure we have the right environment
         env = os.environ.copy()
-        if 'PATH' not in env or '/usr/bin' not in env['PATH']:
-            env['PATH'] = f"/usr/bin:/bin:{env.get('PATH', '')}"
+        common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
+        if 'PATH' not in env:
+            env['PATH'] = common_paths
+        elif common_paths not in env['PATH']:
+            env['PATH'] = f"{common_paths}:{env['PATH']}"
 
         cmd_prefix = _get_command_prefix()
 
@@ -393,8 +399,11 @@ def enable_extension() -> tuple[bool, str]:
     try:
         # Ensure we have the right environment
         env = os.environ.copy()
-        if 'PATH' not in env or '/usr/bin' not in env['PATH']:
-            env['PATH'] = f"/usr/bin:/bin:{env.get('PATH', '')}"
+        common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
+        if 'PATH' not in env:
+            env['PATH'] = common_paths
+        elif common_paths not in env['PATH']:
+            env['PATH'] = f"{common_paths}:{env['PATH']}"
 
         cmd_prefix = _get_command_prefix()
         result = subprocess.run(
