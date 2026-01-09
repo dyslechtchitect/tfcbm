@@ -36,34 +36,13 @@
             <caption>Main window showing clipboard history</caption>
             <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/main/screenshots/general.png</image>
         </screenshot>
-
-        <screenshot>
-            <caption>Organize clipboard items using tags</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/main/screenshots/tags.png</image>
-        </screenshot>
-
         <screenshot>
             <caption>Search through clipboard history</caption>
             <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/main/screenshots/search.png</image>
         </screenshot>
-
-        <screenshot>
-            <caption>Protect sensitive clipboard items using Secrets</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/main/screenshots/secret.png</image>
-        </screenshot>
-
-        <screenshot>
-            <caption>Filter clipboard items by content type</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/main/screenshots/filters.png</image>
-        </screenshot>
-
         <screenshot>
             <caption>Configure keyboard shortcuts in the settings</caption>
             <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/main/screenshots/settings.png</image>
-        </screenshot>
-             <screenshot>
-            <caption>Dark mode support</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/main/screenshots/dark_mode.png</image>
         </screenshot>
     </screenshots>
 
