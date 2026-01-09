@@ -53,23 +53,30 @@ def get_extension_status() -> dict:
     }
 
     try:
-        # Ensure we have the right environment
+        # Ensure we have the right environment with all common paths
         env = os.environ.copy()
-        if 'PATH' not in env or '/usr/bin' not in env['PATH']:
-            env['PATH'] = f"/usr/bin:/bin:{env.get('PATH', '')}"
+        # Add common paths where gnome-extensions might be
+        common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
+        if 'PATH' not in env:
+            env['PATH'] = common_paths
+        elif common_paths not in env['PATH']:
+            env['PATH'] = f"{common_paths}:{env['PATH']}"
 
         # Check if extension is installed
         cmd_prefix = _get_command_prefix()
+        logger.info(f"Checking extensions with command: {' '.join(cmd_prefix + ['gnome-extensions', 'list'])}")
+
         list_result = subprocess.run(
             cmd_prefix + ['gnome-extensions', 'list'],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=10,  # Increased timeout for Ubuntu/Flatpak
             env=env
         )
 
         if list_result.returncode == 0:
             installed_extensions = list_result.stdout.strip().split('\n')
+            logger.info(f"Found {len(installed_extensions)} extensions: {installed_extensions}")
             status['installed'] = EXTENSION_UUID in installed_extensions
 
             if status['installed']:
@@ -78,7 +85,7 @@ def get_extension_status() -> dict:
                     cmd_prefix + ['gnome-extensions', 'info', EXTENSION_UUID],
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=10,
                     env=env
                 )
 
@@ -87,15 +94,29 @@ def get_extension_status() -> dict:
                     output = info_result.stdout
                     status['enabled'] = 'State: ENABLED' in output or 'State: ACTIVE' in output
                     status['ready'] = status['enabled']
+                    logger.info(f"Extension state output: {output[:100]}")
 
             logger.info(f"Extension status: installed={status['installed']}, enabled={status['enabled']}")
         else:
-            logger.error(f"Failed to list extensions: {list_result.stderr}")
+            logger.warning(f"Failed to list extensions (returncode={list_result.returncode})")
+            logger.warning(f"stdout: {list_result.stdout}")
+            logger.warning(f"stderr: {list_result.stderr}")
+            # On error, assume not installed so setup dialog appears
+            status['installed'] = False
 
-    except FileNotFoundError:
-        logger.error("gnome-extensions command not found")
+    except subprocess.TimeoutExpired:
+        logger.error("Timeout checking extensions - assuming not installed")
+        status['installed'] = False
+    except FileNotFoundError as e:
+        logger.error(f"gnome-extensions command not found: {e}")
+        status['installed'] = False
     except Exception as e:
         logger.error(f"Error checking extension: {e}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        # On error, assume not installed so setup dialog appears
+        status['installed'] = False
 
     return status
 
