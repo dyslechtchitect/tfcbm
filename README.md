@@ -141,6 +141,41 @@ flatpak install flathub io.github.dyslechtchitect.tfcbm
    flatpak run io.github.dyslechtchitect.tfcbm
    ```
 
+## Permissions & Privacy
+
+TFCBM requires certain permissions to function properly. Here's what each permission is used for:
+
+### Flatpak Permissions
+
+- **Clipboard Access** (`--socket=wayland`, `--socket=fallback-x11`)
+  - Required to read clipboard content
+  - Used for: Monitoring clipboard changes and storing history
+
+- **GNOME Shell Extensions** (`--filesystem=~/.local/share/gnome-shell/extensions:create`)
+  - Required to install the GNOME Shell extension
+  - Used for: System tray icon and global keyboard shortcuts
+
+- **Autostart** (`--filesystem=xdg-config/autostart:create`)
+  - Optional - only used if you enable "Start on Login"
+  - Used for: Launching TFCBM automatically when you log in
+
+- **DBus Portals** (`--talk-name=org.freedesktop.portal.Desktop`)
+  - Required for file picker and notifications
+  - Used for: Saving/loading files and showing system notifications
+
+### What Data is Accessed
+
+- **Clipboard content** - All text, images, and files you copy are stored locally in a SQLite database at `~/.var/app/io.github.dyslechtchitect.tfcbm/data/tfcbm/clipboard.db`
+- **No network access** - TFCBM never sends your clipboard data anywhere
+- **Local only** - All data stays on your computer
+
+### Optional X11 Dependencies
+
+For X11 sessions, TFCBM includes optional keyboard monitoring libraries (pynput, python-xlib) to enable clipboard capture. These are:
+- **Only active on X11** - Not used on Wayland
+- **Open source** - LGPL-3.0 (pynput), LGPL-2.1+ (python-xlib), BSD-3-Clause (evdev)
+- **Local only** - No network communication
+
 ## Usage
 
 ### First Run
