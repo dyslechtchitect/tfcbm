@@ -60,9 +60,7 @@ class GSettingsStore(ISettingsStore):
         if is_flatpak():
             # Run gsettings on host system to access the same dconf database as GNOME Shell
             # Use --directory to set a working directory that exists on the host
-            return ["flatpak-spawn", "--host", "--directory=/tmp", "env",
-                    f"GSETTINGS_SCHEMA_DIR={self.schema_dir}",
-                    "gsettings"] + args
+            return ["flatpak-spawn", "--host", "--directory=/tmp", "gsettings"] + args
         else:
             return ["gsettings"] + args
 
