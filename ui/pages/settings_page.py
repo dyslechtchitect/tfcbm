@@ -261,38 +261,31 @@ class SettingsPage:
 
     def _show_recording_popup(self) -> None:
         """Show a popup window to capture keyboard shortcut."""
-        self.shortcut_recorder_window = Gtk.Window()
-        self.shortcut_recorder_window.set_title("Recording Shortcut...")
-        self.shortcut_recorder_window.set_default_size(400, 150)
-        self.shortcut_recorder_window.set_modal(True)
+        # Use Adw.MessageDialog for better integration and focus handling
+        dialog = Adw.MessageDialog.new(
+            None,  # parent window
+            "Recording Shortcut...",
+            "Press any key combination. The shortcut will be recorded automatically."
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        box.set_margin_top(30)
-        box.set_margin_bottom(30)
-        box.set_margin_start(30)
-        box.set_margin_end(30)
+        def on_response(dialog, response):
+            if response == "cancel":
+                self._cancel_recording()
+            dialog.close()
 
-        label = Gtk.Label()
-        label.set_markup("<big><b>Press any key combination...</b></big>")
-        box.append(label)
-
-        instruction = Gtk.Label()
-        instruction.set_text("The shortcut will be recorded automatically")
-        instruction.add_css_class("dim-label")
-        box.append(instruction)
-
-        cancel_btn = Gtk.Button(label="Cancel")
-        cancel_btn.connect("clicked", lambda _: self._cancel_recording())
-        cancel_btn.set_halign(Gtk.Align.CENTER)
-        box.append(cancel_btn)
-
-        self.shortcut_recorder_window.set_child(box)
+        dialog.connect("response", on_response)
 
         # Setup keyboard event handler
-        key_controller = Gtk.EventControllerKey()
+        key_controller = Gtk.EventControllerKey.new()
         key_controller.connect("key-pressed", self._on_key_pressed_in_popup)
-        self.shortcut_recorder_window.add_controller(key_controller)
+        dialog.add_controller(key_controller)
 
+        # Store reference to the dialog
+        self.shortcut_recorder_window = dialog
+        self.shortcut_recorder_window.set_modal(True)
         self.shortcut_recorder_window.present()
 
     def _on_key_pressed_in_popup(
@@ -314,6 +307,7 @@ class SettingsPage:
             # Close the popup
             if self.shortcut_recorder_window:
                 self.shortcut_recorder_window.close()
+                self.shortcut_recorder_window = None
             return True
 
         return False
@@ -327,6 +321,8 @@ class SettingsPage:
         self.recording_status.set_text("")
         if self.shortcut_recorder_window:
             self.shortcut_recorder_window.close()
+            self.shortcut_recorder_window = None
+
 
     # ShortcutObserver implementations
     def on_shortcut_recorded(self, shortcut: KeyboardShortcut) -> None:
