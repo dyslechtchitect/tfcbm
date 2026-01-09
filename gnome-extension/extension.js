@@ -256,6 +256,8 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     enable() {
+        log('[TFCBM] Extension enable() called - starting initialization...');
+
         // Initialize clipboard monitoring
         const clipboardAdapter = new GnomeClipboardAdapter();
         const notifier = new DBusNotifier();
@@ -266,6 +268,7 @@ export default class ClipboardMonitorExtension extends Extension {
         }, 250);
 
         this._scheduler.start();
+        log('[TFCBM] Clipboard monitoring started (250ms polling)');
 
         // Add keyboard shortcut
         try {
@@ -349,9 +352,13 @@ export default class ClipboardMonitorExtension extends Extension {
             this._checkFlatpakInstalled();
             return GLib.SOURCE_CONTINUE; // Keep running
         });
+
+        log('[TFCBM] Extension enable() complete - extension is now active');
     }
 
     disable() {
+        log('[TFCBM] Extension disable() called - shutting down...');
+
         // Stop clipboard monitoring
         if (this._scheduler) {
             this._scheduler.stop();
