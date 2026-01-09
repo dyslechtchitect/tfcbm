@@ -50,7 +50,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.show_pasted_time = show_pasted_time
         self.search_query = search_query
         self.clipboard_service = ClipboardService()
-        self.password_service = PasswordService()
+        self.password_service = PasswordService(on_notification=self.window.show_notification)
 
         # Initialize IPC service for server communication
         self.ipc_service = ItemIPCService(

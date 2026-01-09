@@ -5,6 +5,10 @@ import logging
 import os
 from pathlib import Path
 
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib # GLib is already imported by Gio, but good to be explicit
+
 logger = logging.getLogger("TFCBM.UI")
 
 EXTENSION_UUID = "tfcbm-clipboard-monitor@github.com"
@@ -24,18 +28,6 @@ def is_flatpak() -> bool:
     )
 
 
-def _get_command_prefix() -> list[str]:
-    """Get the command prefix needed to run host commands.
-
-    Returns:
-        list: Command prefix (empty for normal, flatpak-spawn for Flatpak)
-    """
-    if is_flatpak():
-        # Use flatpak-spawn with --host and set working directory to home
-        return ['flatpak-spawn', '--host', '--directory=/home']
-    return []
-
-
 def get_extension_status() -> dict:
     """Check the status of the TFCBM GNOME extension.
 
@@ -52,74 +44,93 @@ def get_extension_status() -> dict:
         'ready': False
     }
 
-    try:
-        # Ensure we have the right environment with all common paths
-        env = os.environ.copy()
-        # Add common paths where gnome-extensions might be
-        common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
-        if 'PATH' not in env:
-            env['PATH'] = common_paths
-        elif common_paths not in env['PATH']:
-            env['PATH'] = f"{common_paths}:{env['PATH']}"
+    if is_flatpak():
+        # In Flatpak, check for the host extension's D-Bus service
+        try:
+            # Attempt to create a D-Bus proxy for the host extension
+            # If the service is not available, this will raise a Gio.DBusError
+            proxy = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None, # GDBusInterfaceInfo
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Host extension's D-Bus service name
+                "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor", # Host extension's D-Bus object path
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Interface name
+                None # GCancellable
+            )
+            # If we reach here, the service is running, so the extension is installed and enabled.
+            status['installed'] = True
+            status['enabled'] = True
+            status['ready'] = True
+            logger.info("Host extension D-Bus service 'org.gnome.Shell.Extensions.TfcbmClipboardMonitor' found.")
+        except GLib.Error as e:
+            logger.info(f"Host extension D-Bus service not found or error: {e.message}")
+        except Exception as e:
+            logger.error(f"Unexpected error checking extension D-Bus service: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+        return status
+    else:
+        # Running natively, use subprocess to check with gnome-extensions command
+        try:
+            env = os.environ.copy()
+            common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
+            if 'PATH' not in env:
+                env['PATH'] = common_paths
+            elif common_paths not in env['PATH']:
+                env['PATH'] = f"{common_paths}:{env['PATH']}"
 
-        # Check if extension is installed
-        cmd_prefix = _get_command_prefix()
-        logger.info(f"Checking extensions with command: {' '.join(cmd_prefix + ['gnome-extensions', 'list'])}")
+            logger.info(f"Checking extensions with command: {' '.join(['gnome-extensions', 'list'])}")
 
-        list_result = subprocess.run(
-            cmd_prefix + ['gnome-extensions', 'list'],
-            capture_output=True,
-            text=True,
-            timeout=10,  # Increased timeout for Ubuntu/Flatpak
-            env=env
-        )
+            list_result = subprocess.run(
+                ['gnome-extensions', 'list'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=env
+            )
 
-        if list_result.returncode == 0:
-            installed_extensions = list_result.stdout.strip().split('\n')
-            logger.info(f"Found {len(installed_extensions)} extensions: {installed_extensions}")
-            status['installed'] = EXTENSION_UUID in installed_extensions
+            if list_result.returncode == 0:
+                installed_extensions = list_result.stdout.strip().split('\n')
+                logger.info(f"Found {len(installed_extensions)} extensions: {installed_extensions}")
+                status['installed'] = EXTENSION_UUID in installed_extensions
 
-            if status['installed']:
-                # Check if extension is enabled
-                info_result = subprocess.run(
-                    cmd_prefix + ['gnome-extensions', 'info', EXTENSION_UUID],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    env=env
-                )
+                if status['installed']:
+                    info_result = subprocess.run(
+                        ['gnome-extensions', 'info', EXTENSION_UUID],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        env=env
+                    )
 
-                if info_result.returncode == 0:
-                    # Parse output to check state
-                    output = info_result.stdout
-                    status['enabled'] = 'State: ENABLED' in output or 'State: ACTIVE' in output
-                    status['ready'] = status['enabled']
-                    logger.info(f"Extension state output: {output[:100]}")
+                    if info_result.returncode == 0:
+                        output = info_result.stdout
+                        status['enabled'] = 'State: ENABLED' in output or 'State: ACTIVE' in output
+                        status['ready'] = status['enabled']
+                        logger.info(f"Extension state output: {output[:100]}")
 
-            logger.info(f"Extension status: installed={status['installed']}, enabled={status['enabled']}")
-        else:
-            logger.warning(f"Failed to list extensions (returncode={list_result.returncode})")
-            logger.warning(f"stdout: {list_result.stdout}")
-            logger.warning(f"stderr: {list_result.stderr}")
-            # On error, assume not installed so setup dialog appears
+                logger.info(f"Extension status: installed={status['installed']}, enabled={status['enabled']}")
+            else:
+                logger.warning(f"Failed to list extensions (returncode={list_result.returncode})")
+                logger.warning(f"stdout: {list_result.stdout}")
+                logger.warning(f"stderr: {list_result.stderr}")
+                status['installed'] = False
+
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout checking extensions - assuming not installed")
+            status['installed'] = False
+        except FileNotFoundError as e:
+            logger.error(f"gnome-extensions command not found: {e}")
+            status['installed'] = False
+        except Exception as e:
+            logger.error(f"Error checking extension: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             status['installed'] = False
 
-    except subprocess.TimeoutExpired:
-        logger.error("Timeout checking extensions - assuming not installed")
-        status['installed'] = False
-    except FileNotFoundError as e:
-        logger.error(f"gnome-extensions command not found: {e}")
-        status['installed'] = False
-    except Exception as e:
-        logger.error(f"Error checking extension: {e}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        # On error, assume not installed so setup dialog appears
-        status['installed'] = False
-
-    return status
-
+        return status
 
 def is_extension_installed() -> bool:
     """Check if the TFCBM GNOME extension is installed.
@@ -141,313 +152,17 @@ def is_extension_ready() -> bool:
     return status['ready']
 
 
-def install_extension() -> tuple[bool, str]:
-    """Install the TFCBM GNOME extension from the bundled copy.
-
-    Returns:
-        tuple: (success: bool, message: str)
-    """
-    try:
-        # In Flatpak, use the bundled zip file directly
-        if is_flatpak():
-            extension_zip = Path("/app/share/tfcbm/tfcbm-clipboard-monitor@github.com.zip")
-            logger.info(f"Running in Flatpak, using extension zip: {extension_zip}")
-
-            if not extension_zip.exists():
-                error_msg = f"Extension zip not found at {extension_zip}"
-                logger.error(error_msg)
-                parent_dir = extension_zip.parent
-                if parent_dir.exists():
-                    logger.error(f"Contents of {parent_dir}: {list(parent_dir.iterdir())}")
-                return False, error_msg
-
-            # Copy the zip to a location that the host can access
-            # The host can't access /app/ since that's inside the Flatpak container
-            # Use XDG_CACHE_HOME which is shared between Flatpak and host
-            import shutil
-
-            # Use XDG_CACHE_HOME or fallback to ~/.cache
-            cache_dir = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache'))
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            temp_zip = cache_dir / "tfcbm-clipboard-monitor@github.com.zip"
-            logger.info(f"Copying extension zip to shared location: {temp_zip}")
-            shutil.copy2(extension_zip, temp_zip)
-
-            # Use gnome-extensions install command directly with the zip
-            env = os.environ.copy()
-            common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
-            if 'PATH' not in env:
-                env['PATH'] = common_paths
-            elif common_paths not in env['PATH']:
-                env['PATH'] = f"{common_paths}:{env['PATH']}"
-
-            cmd_prefix = _get_command_prefix()
-
-            # Install the extension from the temporary zip location
-            logger.info(f"Installing extension from temporary zip: {temp_zip}")
-            install_result = subprocess.run(
-                cmd_prefix + ['gnome-extensions', 'install', '--force', str(temp_zip)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env=env
-            )
-
-            if install_result.returncode != 0:
-                error_msg = f"Failed to install extension: {install_result.stderr}"
-                logger.error(error_msg)
-                return False, error_msg
-
-            logger.info("Extension installed successfully from zip")
-
-            # Try to enable the extension
-            enable_result = subprocess.run(
-                cmd_prefix + ['gnome-extensions', 'enable', EXTENSION_UUID],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                env=env
-            )
-
-            if enable_result.returncode == 0:
-                logger.info("Extension enabled successfully")
-
-                # Verify the extension state
-                info_result = subprocess.run(
-                    cmd_prefix + ['gnome-extensions', 'info', EXTENSION_UUID],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    env=env
-                )
-
-                if info_result.returncode == 0:
-                    output = info_result.stdout
-                    if 'State: ACTIVE' in output:
-                        return True, "Extension installed and enabled successfully!"
-                    else:
-                        return True, "Extension installed and enabled! Please log out and log back in to activate it."
-                else:
-                    return True, "Extension installed and enabled! Please log out and log back in to activate it."
-            else:
-                logger.warning(f"Extension installed but failed to enable: {enable_result.stderr}")
-                return True, "Extension installed! Please log out and log back in to activate it."
-
-        # Non-Flatpak: check for installed zip file first, then fall back to directory
-        # Try the installed location first (Meson install puts it here)
-        installed_zip = Path("/usr/local/share/tfcbm/tfcbm-clipboard-monitor@github.com.zip")
-
-        if installed_zip.exists():
-            logger.info(f"Found installed extension zip at: {installed_zip}")
-
-            # Use gnome-extensions install command with the zip
-            env = os.environ.copy()
-            common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
-            if 'PATH' not in env:
-                env['PATH'] = common_paths
-            elif common_paths not in env['PATH']:
-                env['PATH'] = f"{common_paths}:{env['PATH']}"
-
-            cmd_prefix = _get_command_prefix()
-
-            # Install the extension from the zip
-            logger.info(f"Installing extension from: {installed_zip}")
-            install_result = subprocess.run(
-                cmd_prefix + ['gnome-extensions', 'install', '--force', str(installed_zip)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env=env
-            )
-
-            if install_result.returncode != 0:
-                error_msg = f"Failed to install extension: {install_result.stderr}"
-                logger.error(error_msg)
-                return False, error_msg
-
-            logger.info("Extension installed successfully from zip")
-
-            # Try to enable the extension
-            enable_result = subprocess.run(
-                cmd_prefix + ['gnome-extensions', 'enable', EXTENSION_UUID],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                env=env
-            )
-
-            if enable_result.returncode == 0:
-                logger.info("Extension enabled successfully")
-                return True, "Extension installed and enabled! Please log out and log back in to activate it."
-            else:
-                logger.warning(f"Extension installed but failed to enable: {enable_result.stderr}")
-                return True, "Extension installed! Please enable it manually or log out and log back in."
-
-        # Fall back to development directory method
-        project_root = Path(__file__).parent.parent.parent
-        extension_dir = project_root / "gnome-extension"
-        logger.info(f"No installed zip found, trying development directory: {extension_dir}")
-
-        if not extension_dir.exists():
-            error_msg = f"Extension not found. Looked for:\n  - {installed_zip}\n  - {extension_dir}"
-            logger.error(error_msg)
-            return False, error_msg
-
-        # Install manually to avoid interactive prompts in install.sh
-        # Get UUID from metadata.json
-        metadata_file = extension_dir / "metadata.json"
-        if not metadata_file.exists():
-            error_msg = f"metadata.json not found in {extension_dir}"
-            logger.error(error_msg)
-            logger.error(f"Extension dir contents: {list(extension_dir.iterdir()) if extension_dir.exists() else 'dir does not exist'}")
-            return False, error_msg
-
-        import json
-        with open(metadata_file) as f:
-            metadata = json.load(f)
-            uuid = metadata.get("uuid")
-            if not uuid:
-                return False, "UUID not found in metadata.json"
-
-        logger.info(f"Installing extension with UUID: {uuid}")
-
-        # Define installation directory
-        install_dir = Path.home() / ".local/share/gnome-shell/extensions" / uuid
-        logger.info(f"Installing to: {install_dir}")
-
-        # Remove old installation if exists
-        if install_dir.exists():
-            import shutil
-            logger.info(f"Removing old installation at {install_dir}")
-            shutil.rmtree(install_dir)
-
-        # Create installation directory
-        install_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Created installation directory: {install_dir}")
-
-        # Copy extension files
-        import shutil
-        files_to_copy = ["extension.js", "metadata.json", "tfcbm.svg"]
-        for file in files_to_copy:
-            src = extension_dir / file
-            if src.exists():
-                dest = install_dir / file
-                shutil.copy2(src, dest)
-                logger.info(f"Copied {file} to {dest}")
-            else:
-                logger.warning(f"File not found: {src}")
-
-        # Copy directories
-        dirs_to_copy = ["src", "schemas"]
-        for dir_name in dirs_to_copy:
-            src_dir = extension_dir / dir_name
-            if src_dir.exists():
-                dest_dir = install_dir / dir_name
-                shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
-                logger.info(f"Copied directory {dir_name} to {dest_dir}")
-            else:
-                logger.warning(f"Directory not found: {src_dir}")
-
-        # Ensure we have the right environment
-        env = os.environ.copy()
-        common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
-        if 'PATH' not in env:
-            env['PATH'] = common_paths
-        elif common_paths not in env['PATH']:
-            env['PATH'] = f"{common_paths}:{env['PATH']}"
-
-        cmd_prefix = _get_command_prefix()
-
-        # Compile GSettings schema if schemas exist
-        schemas_dir = install_dir / "schemas"
-        if schemas_dir.exists():
-            logger.info(f"Compiling GSettings schemas in {schemas_dir}")
-            result = subprocess.run(
-                cmd_prefix + ["glib-compile-schemas", str(schemas_dir)],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                env=env
-            )
-            if result.returncode != 0:
-                logger.warning(f"Failed to compile schemas: {result.stderr}")
-            else:
-                logger.info("GSettings schemas compiled successfully")
-
-        # Set permissions
-        logger.info(f"Setting permissions on {install_dir}")
-        subprocess.run(cmd_prefix + ["chmod", "-R", "755", str(install_dir)], timeout=5, env=env)
-
-        # Verify installation
-        if not install_dir.exists() or not (install_dir / "metadata.json").exists():
-            error_msg = "Installation verification failed - files not copied correctly"
-            logger.error(error_msg)
-            return False, error_msg
-
-        logger.info("Extension files verified successfully")
-
-        # Try to enable the extension immediately
-        try:
-            enable_result = subprocess.run(
-                cmd_prefix + ['gnome-extensions', 'enable', EXTENSION_UUID],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                env=env
-            )
-            if enable_result.returncode == 0:
-                logger.info("Extension enabled successfully")
-
-                # Verify the extension is actually active
-                info_result = subprocess.run(
-                    cmd_prefix + ['gnome-extensions', 'info', EXTENSION_UUID],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    env=env
-                )
-
-                if info_result.returncode == 0:
-                    output = info_result.stdout
-                    if 'State: ACTIVE' in output:
-                        logger.info("Extension is now active and ready to use!")
-                        return True, "Extension installed and enabled successfully!"
-                    else:
-                        logger.warning(f"Extension enabled but not active yet. State: {output}")
-                        return True, "Extension installed and enabled! Please log out and log back in to activate it."
-                else:
-                    logger.warning("Could not verify extension state")
-                    return True, "Extension installed and enabled! Please log out and log back in to activate it."
-            else:
-                error_msg = f"Failed to enable extension: {enable_result.stderr}"
-                logger.error(error_msg)
-                return False, error_msg
-
-        except Exception as e:
-            error_msg = f"Error enabling extension: {e}"
-            logger.error(error_msg)
-            return False, error_msg
-
-    except FileNotFoundError as e:
-        logger.error(f"FileNotFoundError installing extension: {e}")
-        logger.error(f"Exception details: filename={e.filename}, strerror={e.strerror}")
-        return False, f"File not found: {e.filename} - {e.strerror}"
-    except Exception as e:
-        logger.error(f"Error installing extension: {e}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        return False, str(e)
-
-
 def enable_extension() -> tuple[bool, str]:
     """Enable the TFCBM GNOME extension.
 
     Returns:
         tuple: (success: bool, message: str)
     """
+    if is_flatpak():
+        # In Flatpak, we can't enable the host extension from inside the sandbox
+        return False, "Cannot enable extension from Flatpak. Please enable it manually on the host system using GNOME Extensions app or 'gnome-extensions enable tfcbm-clipboard-monitor@github.com'"
+
     try:
-        # Ensure we have the right environment
         env = os.environ.copy()
         common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
         if 'PATH' not in env:
@@ -455,9 +170,8 @@ def enable_extension() -> tuple[bool, str]:
         elif common_paths not in env['PATH']:
             env['PATH'] = f"{common_paths}:{env['PATH']}"
 
-        cmd_prefix = _get_command_prefix()
         result = subprocess.run(
-            cmd_prefix + ['gnome-extensions', 'enable', EXTENSION_UUID],
+            ['gnome-extensions', 'enable', EXTENSION_UUID],
             capture_output=True,
             text=True,
             timeout=10,
@@ -476,29 +190,34 @@ def enable_extension() -> tuple[bool, str]:
         return False, str(e)
 
 
+
+
+
+
+
+
+
 def get_extension_install_command() -> str:
-    """Get the command to install the extension.
+    """Get user instructions or command to install the extension.
 
     Returns:
-        str: Command to run to install the extension
+        str: User-friendly instruction or command string.
     """
-    # Check if running in Flatpak
     if is_flatpak():
-        # Use the flatpak-install-extension command that's bundled with the flatpak
-        # This is more reliable than trying to guess the flatpak installation path
-        return "flatpak run --command=tfcbm-install-extension io.github.dyslechtchitect.tfcbm"
+        return f"Please install the TFCBM GNOME Shell Extension from extensions.gnome.org or by running 'gnome-extensions install --force tfcbm-clipboard-monitor@github.com.zip' after downloading the zip manually. Also ensure you have 'gnome-extensions' tool installed on your host system."
     else:
-        # Regular install - extension is in project directory
         project_root = Path(__file__).parent.parent.parent
         extension_dir = project_root / "gnome-extension"
-        # Return command that changes directory first, then runs install script
-        return f"cd {extension_dir} && ./install.sh"
+        return f"To install the TFCBM GNOME Shell Extension, navigate to the project's 'gnome-extension' directory and run './install.sh' from your terminal:\ncd {extension_dir} && ./install.sh"
 
 
 def get_extension_enable_command() -> str:
-    """Get the command to enable the extension.
+    """Get user instructions or command to enable the extension.
 
     Returns:
-        str: Command to run to enable the extension
+        str: User-friendly instruction or command string.
     """
-    return f"gnome-extensions enable {EXTENSION_UUID}"
+    if is_flatpak():
+        return f"Please ensure the TFCBM GNOME Shell Extension is enabled. You can do this via GNOME Extensions app or by running 'gnome-extensions enable {EXTENSION_UUID}' on your host system."
+    else:
+        return f"To enable the TFCBM GNOME Shell Extension, run 'gnome-extensions enable {EXTENSION_UUID}' from your terminal."

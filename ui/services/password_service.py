@@ -1,9 +1,13 @@
 """Password authentication service for secrets with one-time operation model."""
 
 import logging
-import subprocess
 import time
-from typing import Optional
+from typing import Optional, Callable
+
+import gi
+gi.require_version("Gio", "2.0")
+gi.require_version("GLib", "2.0")
+from gi.repository import Gio, GLib
 
 logger = logging.getLogger("TFCBM.PasswordService")
 
@@ -11,12 +15,13 @@ logger = logging.getLogger("TFCBM.PasswordService")
 class PasswordService:
     """Service for authenticating user to view secrets with one-time operation model."""
 
-    def __init__(self):
+    def __init__(self, on_notification: Optional[Callable[[str], None]] = None):
         self.authenticated_until = 0  # Timestamp when authentication expires (5 seconds)
         self.auth_duration = 5  # ONE-TIME operation: 5 seconds timeout
         self.pending_operation = None  # Type of operation pending (copy, view, save, etc.)
         self.pending_item_id = None  # Item ID this auth is for
         self._timeout_id = None  # GLib timeout ID for auto-clear
+        self.on_notification = on_notification if on_notification else (lambda msg: logger.info(f"Notification: {msg}"))
 
     def is_authenticated_for(self, operation: str, item_id: int) -> bool:
         """
@@ -45,63 +50,57 @@ class PasswordService:
 
     def authenticate_for(self, operation: str, item_id: int, parent_window=None) -> bool:
         """
-        Authenticate for ONE specific operation on ONE specific item.
+        Authenticate for ONE specific operation on ONE specific item using the Secret portal.
 
         Args:
             operation: Operation type (e.g., "copy", "view", "save")
             item_id: Item ID this auth is for
-            parent_window: Parent window (ignored, kept for API compatibility)
+            parent_window: Parent window (for portal interaction, if required by the portal)
 
         Returns:
             True if authentication successful, False otherwise
         """
-        logger.info(f"[AUTH] Requesting authentication for {operation} on item {item_id}")
+        logger.info(f"[AUTH] Requesting authentication for {operation} on item {item_id} via Secret portal")
 
         # Clear any existing authentication first
         self._clear_pending()
 
-        # Use pkexec for native PolicyKit authentication dialog
-        # When running in Flatpak, use flatpak-spawn to access host pkexec
         try:
-            # Check if we're running in Flatpak
-            import os
-            in_flatpak = os.path.exists('/.flatpak-info')
-            logger.info(f"[AUTH] Running in Flatpak: {in_flatpak}")
-
-            # Get current username
-            if in_flatpak:
-                whoami_cmd = ['flatpak-spawn', '--host', '--directory=/', 'whoami']
-            else:
-                whoami_cmd = ['whoami']
-            logger.info(f"[AUTH] Getting username with: {' '.join(whoami_cmd)}")
-            username_result = subprocess.run(whoami_cmd, capture_output=True, text=True)
-            if username_result.returncode != 0:
-                logger.error(f"[AUTH] Failed to get username. stderr: {username_result.stderr}")
-                return False
-            username = username_result.stdout.strip()
-            logger.info(f"[AUTH] Username: {username}")
-
-            # Build pkexec command
-            if in_flatpak:
-                cmd = ['flatpak-spawn', '--host', '--directory=/', 'pkexec', '--user', username, '/bin/true']
-            else:
-                cmd = ['pkexec', '--user', username, '/bin/true']
-
-            logger.info(f"[AUTH] Running command: {' '.join(cmd)}")
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60
+            # Connect to the Secret portal
+            portal = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None,  # GDBusInterfaceInfo
+                'org.freedesktop.portal.Secret',
+                '/org/freedesktop/portal/desktop',  # Standard path for desktop portals
+                'org.freedesktop.portal.Secret',
+                None,  # Cancellable
             )
 
-            logger.info(f"[AUTH] Command completed with return code: {result.returncode}")
-            if result.stderr:
-                logger.info(f"[AUTH] stderr: {result.stderr}")
-            if result.stdout:
-                logger.info(f"[AUTH] stdout: {result.stdout}")
+            # We'll use a dummy secret for authentication. The portal will prompt the user
+            # to unlock their keyring if necessary. The 'secret_id' here is just a unique string.
+            secret_id = "tfcbm-authentication-dummy-secret"
+            options = GLib.Variant('a{sv}', {
+                'handle': GLib.Variant('s', 'tfcbm-auth-handle') # Optional handle for portal response
+            })
 
-            if result.returncode == 0:
+            # RetrieveSecret will trigger a password prompt via the secret service if needed
+            # The response will contain the secret, but we only care if it succeeded
+            # as a proxy for user authentication.
+            response = portal.call_sync(
+                'RetrieveSecret',
+                GLib.Variant('(s@a{sv})', (secret_id, options)),
+                Gio.DBusCallFlags.NONE,
+                -1,  # Timeout
+                None, # GCancellable
+            )
+
+            # The response is a tuple (handle, secret_raw)
+            # If successful, response is not None and contains data.
+            # The critical part is that the user went through the authentication process.
+            if response is not None and response.n_children() > 0:
+                logger.info(f"[AUTH] Authentication successful via Secret portal")
+
                 # Authentication successful - set up one-time operation
                 self.pending_operation = operation
                 self.pending_item_id = item_id
@@ -109,25 +108,27 @@ class PasswordService:
 
                 # Set up auto-clear after 5 seconds
                 self._schedule_auto_clear()
-
-                logger.info(f"[AUTH] Authentication successful for {operation} on item {item_id}, expires in {self.auth_duration}s")
                 return True
             else:
-                # Authentication failed or cancelled
-                logger.info(f"[AUTH] Authentication failed or cancelled")
+                logger.info(f"[AUTH] Authentication failed or cancelled via Secret portal (no response or empty response)")
                 return False
 
-        except subprocess.TimeoutExpired as e:
-            logger.error(f"[AUTH] Password prompt timed out: {e}")
-            return False
-        except FileNotFoundError as e:
-            logger.error(f"[AUTH] Command not found: {e}")
-            logger.error(f"[AUTH] This likely means pkexec or flatpak-spawn is not available")
+        except GLib.Error as e:
+            logger.error(f"[AUTH] D-Bus error with Secret portal: {e.message}")
+            if "org.freedesktop.portal.Error.NotFound" in e.message:
+                self.on_notification(
+                    "Secret portal not found. Please ensure xdg-desktop-portal-gnome (or similar) is running."
+                )
+            elif "authentication was cancelled" in e.message:
+                 logger.info(f"[AUTH] User cancelled authentication via Secret portal")
+            else:
+                self.on_notification(f"Error authenticating: {e.message}")
             return False
         except Exception as e:
-            logger.error(f"[AUTH] Unexpected error: {type(e).__name__}: {e}")
+            logger.error(f"[AUTH] Unexpected error during Secret portal authentication: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
+            self.on_notification(f"Unexpected error during authentication: {e}")
             return False
 
     def consume_authentication(self, operation: str, item_id: int) -> bool:

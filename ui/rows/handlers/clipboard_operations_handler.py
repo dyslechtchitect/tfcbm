@@ -11,9 +11,7 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import shutil
-import subprocess
 import tempfile
 import threading
 from pathlib import Path
@@ -49,81 +47,6 @@ class ClipboardOperationsHandler:
         self.ipc_service = ws_service
         self.password_service = password_service
         self.clipboard_service = clipboard_service
-
-    def simulate_paste(self):
-        """Simulate Ctrl+V paste after window is hidden."""
-        # Check if running in Flatpak
-        is_flatpak = os.path.exists("/.flatpak-info")
-
-        # Try xdotool first (X11)
-        try:
-            if is_flatpak:
-                # Run xdotool via flatpak-spawn to access host command
-                result = subprocess.run(
-                    ["flatpak-spawn", "--host", "xdotool", "key", "ctrl+v"],
-                    timeout=2,
-                    capture_output=True
-                )
-            else:
-                result = subprocess.run(
-                    ["xdotool", "key", "ctrl+v"],
-                    timeout=2,
-                    capture_output=True
-                )
-
-            if result.returncode == 0:
-                logger.info("[KEYBOARD] Simulated Ctrl+V paste with xdotool")
-                return False
-            else:
-                logger.debug(f"[KEYBOARD] xdotool failed with code {result.returncode}: {result.stderr.decode()}")
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-            logger.debug(f"[KEYBOARD] xdotool not available: {e}")
-
-        # Try ydotool (Wayland)
-        try:
-            if is_flatpak:
-                result = subprocess.run(
-                    [
-                        "flatpak-spawn", "--host",
-                        "ydotool",
-                        "key",
-                        "29:1",
-                        "47:1",
-                        "47:0",
-                        "29:0",
-                    ],
-                    timeout=2,
-                    capture_output=True
-                )
-            else:
-                result = subprocess.run(
-                    [
-                        "ydotool",
-                        "key",
-                        "29:1",
-                        "47:1",
-                        "47:0",
-                        "29:0",
-                    ],
-                    timeout=2,
-                    capture_output=True
-                )
-
-            if result.returncode == 0:
-                logger.info("[KEYBOARD] Simulated Ctrl+V paste with ydotool")
-                return False
-            else:
-                logger.debug(f"[KEYBOARD] ydotool failed with code {result.returncode}: {result.stderr.decode()}")
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-            logger.debug(f"[KEYBOARD] ydotool not available: {e}")
-
-        # No tool available
-        logger.warning(
-            "[KEYBOARD] Neither xdotool nor ydotool found on host. "
-            "Auto-paste disabled."
-        )
-        return False
-
     def handle_copy_action(self):
         """Handle copy button click."""
         self.perform_copy_to_clipboard(

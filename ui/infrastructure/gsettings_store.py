@@ -5,6 +5,11 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+import gi
+gi.require_version("Gio", "2.0")
+gi.require_version("GLib", "2.0")
+from gi.repository import Gio, GLib
+
 from ui.domain.keyboard import KeyboardShortcut
 from ui.interfaces.settings import ISettingsStore
 
@@ -23,105 +28,53 @@ class GSettingsStore(ISettingsStore):
         """
         self.schema_id = schema_id
         self.key = key
-        self.schema_dir = schema_dir
-
-    def _get_env_with_schema_dir(self) -> dict:
-        """
-        Create environment dict with GSETTINGS_SCHEMA_DIR set.
-
-        Returns:
-            Environment dictionary
-        """
-        env = os.environ.copy()
-
-        if self.schema_dir and Path(self.schema_dir).exists():
-            schema_dir_str = str(self.schema_dir)
-            if "GSETTINGS_SCHEMA_DIR" in env:
-                env["GSETTINGS_SCHEMA_DIR"] = (
-                    f"{schema_dir_str}:{env['GSETTINGS_SCHEMA_DIR']}"
-                )
-            else:
-                env["GSETTINGS_SCHEMA_DIR"] = schema_dir_str
-
-        return env
-
-    def _get_gsettings_command(self, args: list[str]) -> list[str]:
-        """
-        Build gsettings command, using flatpak-spawn if running in Flatpak.
-
-        Args:
-            args: gsettings command arguments
-
-        Returns:
-            Command to execute
-        """
-        from ui.utils.extension_check import is_flatpak
-
-        cmd = []
-        env = os.environ.copy()
-
-        if self.schema_dir and Path(self.schema_dir).exists():
-            schema_dir_str = str(self.schema_dir)
-            if "GSETTINGS_SCHEMA_DIR" in env:
-                env["GSETTINGS_SCHEMA_DIR"] = (
-                    f"{schema_dir_str}:{env['GSETTINGS_SCHEMA_DIR']}"
-                )
-            else:
-                env["GSETTINGS_SCHEMA_DIR"] = schema_dir_str
-        else:
-            # If schema_dir doesn't exist, GSETTINGS_SCHEMA_DIR shouldn't be set
-            # as it might point to a non-existent path and cause issues.
-            # In this case, gsettings will rely on system-wide schemas.
-            if "GSETTINGS_SCHEMA_DIR" in env:
-                del env["GSETTINGS_SCHEMA_DIR"]
-
-        if is_flatpak():
-            # Run gsettings on host system to access the same dconf database as GNOME Shell
-            # Use --directory to set a working directory that exists on the host
-            cmd.extend(["flatpak-spawn", "--host", "--directory=/tmp"])
-            # Pass GSETTINGS_SCHEMA_DIR explicitly via --env
-            if "GSETTINGS_SCHEMA_DIR" in env:
-                cmd.append(f"--env=GSETTINGS_SCHEMA_DIR={env['GSETTINGS_SCHEMA_DIR']}")
-                # Remove from env dict so it's not passed twice implicitly by subprocess
-                del env["GSETTINGS_SCHEMA_DIR"]
-            cmd.extend(["gsettings"] + args)
-        else:
-            cmd.extend(["gsettings"] + args)
-
-        return cmd, env
+        # schema_dir is no longer directly used for Flatpak's GSettings access,
+        # but might be kept for native installations or context.
 
     def get_shortcut(self) -> Optional[KeyboardShortcut]:
         """
-        Read the current keyboard shortcut from GSettings.
+        Read the current keyboard shortcut from GSettings via the host extension's D-Bus.
 
         Returns:
             KeyboardShortcut if configured, None otherwise
         """
         try:
-            cmd, env_vars = self._get_gsettings_command(["get", self.schema_id, self.key])
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                env=env_vars,
-                timeout=5,
+            # Assumes the host extension exposes a D-Bus service for its settings
+            # The D-Bus service name and object path need to be confirmed from the extension
+            proxy = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None, # GDBusInterfaceInfo
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Host extension's D-Bus service name
+                "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor", # Host extension's D-Bus object path
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Interface name
+                None # GCancellable
             )
+            # Call a D-Bus method to get the setting
+            # Assumes the host extension has a method like GetSetting(schema_id, key)
+            result = proxy.call_sync(
+                "GetSetting",
+                GLib.Variant("(ss)", (self.schema_id, self.key)),
+                Gio.DBusCallFlags.NONE,
+                -1, # Timeout
+                None # GCancellable
+            )
+            # result is a GLib.Variant, e.g., (s) for a string
+            gsettings_value = result.unpack()[0] # Unpack the string value
 
-            if result.returncode == 0 and result.stdout.strip():
-                return KeyboardShortcut.from_gsettings_array(result.stdout)
+            if gsettings_value:
+                return KeyboardShortcut.from_gsettings_array(gsettings_value)
             return None
-        except (
-            subprocess.TimeoutExpired,
-            subprocess.CalledProcessError,
-            ValueError,
-        ) as e:
-            print(f"Error reading GSettings: {e}")
+        except GLib.Error as e:
+            print(f"Error reading shortcut from host extension via D-Bus: {e.message}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error reading shortcut: {e}")
             return None
 
     def set_shortcut(self, shortcut: KeyboardShortcut) -> bool:
         """
-        Write a keyboard shortcut to GSettings.
+        Write a keyboard shortcut to GSettings via the host extension's D-Bus.
 
         Args:
             shortcut: The shortcut to save
@@ -130,24 +83,30 @@ class GSettingsStore(ISettingsStore):
             True if successful, False otherwise
         """
         try:
-            gsettings_format = f"['{shortcut.to_gsettings_string()}']"
-            cmd, env_vars = self._get_gsettings_command(["set", self.schema_id, self.key, gsettings_format])
-
-            print(f"[DEBUG] Running command: {' '.join(cmd)}")
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                env=env_vars,
-                timeout=5,
+            proxy = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None, # GDBusInterfaceInfo
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Host extension's D-Bus service name
+                "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor", # Host extension's D-Bus object path
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Interface name
+                None # GCancellable
             )
-
-            if result.returncode != 0:
-                print(f"[ERROR] gsettings command failed with code {result.returncode}")
-                print(f"[ERROR] stdout: {result.stdout}")
-                print(f"[ERROR] stderr: {result.stderr}")
-
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-            print(f"Error writing GSettings: {e}")
+            # Call a D-Bus method to set the setting
+            # Assumes the host extension has a method like SetSetting(schema_id, key, value)
+            proxy.call_sync(
+                "SetSetting",
+                GLib.Variant("(sss)", (self.schema_id, self.key, shortcut.to_gsettings_string())),
+                Gio.DBusCallFlags.NONE,
+                -1, # Timeout
+                None # GCancellable
+            )
+            print(f"[DEBUG] Shortcut set via D-Bus: {shortcut.to_gsettings_string()}")
+            return True
+        except GLib.Error as e:
+            print(f"Error writing shortcut to host extension via D-Bus: {e.message}")
             return False
+        except Exception as e:
+            print(f"Unexpected error writing shortcut: {e}")
+            return False
+

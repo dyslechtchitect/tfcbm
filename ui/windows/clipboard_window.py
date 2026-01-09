@@ -76,7 +76,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Initialize password service for secrets
         from ui.services.password_service import PasswordService
-        self.password_service = PasswordService()
+        self.password_service = PasswordService(on_notification=self.show_notification)
 
         # Connect close request handler
         self.connect("close-request", self._on_close_request)

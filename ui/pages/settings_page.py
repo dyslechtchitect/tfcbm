@@ -8,12 +8,13 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, GObject, Gtk
+from gi.repository import Adw, Gdk, GLib, GObject, Gtk, Gio
 
 from ui.domain.keyboard import KeyboardShortcut
 from ui.infrastructure.gtk_keyboard_parser import GtkKeyboardParser
 from ui.infrastructure.gsettings_store import GSettingsStore
 from ui.services.shortcut_service import ShortcutService
+from ui.utils.extension_check import get_extension_status, get_extension_install_command, get_extension_enable_command
 
 
 class SettingsPage:
@@ -26,27 +27,10 @@ class SettingsPage:
         self.on_notification = on_notification
 
         # Shortcut service setup
-        # Look for the extension in the user's extensions directory
-        extension_dir = Path.home() / ".local/share/gnome-shell/extensions/tfcbm-clipboard-monitor@github.com"
-        schema_dir = extension_dir / "schemas"
-
-        # Fall back to bundled extension if not installed
-        if not schema_dir.exists():
-            from ui.utils.extension_check import is_flatpak
-
-            if is_flatpak():
-                # In Flatpak, extension is bundled at /app/share/tfcbm/gnome-extension
-                extension_dir = Path("/app/share/tfcbm/gnome-extension")
-            else:
-                # Regular install - extension is in project directory
-                extension_dir = Path(__file__).parent.parent.parent / "gnome-extension"
-
-            schema_dir = extension_dir / "schemas"
-
         self.settings_store = GSettingsStore(
             schema_id="org.gnome.shell.extensions.tfcbm-clipboard-monitor",
             key="toggle-tfcbm-ui",
-            schema_dir=schema_dir,
+            schema_dir=None, # schema_dir is now handled by the extension via D-Bus, not loaded by the Flatpak app.
         )
         self.shortcut_service = ShortcutService(self.settings_store)
         self.keyboard_parser = GtkKeyboardParser()
@@ -74,6 +58,10 @@ class SettingsPage:
         general_group.add(startup_row)
 
         settings_page.add(general_group)
+
+        # GNOME Extension Status group
+        extension_status_group = self._build_extension_status_group()
+        settings_page.add(extension_status_group)
 
         # Clipboard behavior group
         clipboard_group = self._build_clipboard_group()
@@ -589,136 +577,131 @@ class SettingsPage:
         return False  # Don't repeat idle_add
 
     def _is_autostart_enabled(self) -> bool:
-        """Check if autostart is enabled by reading the XDG autostart desktop file."""
-        autostart_dir = Path.home() / ".config" / "autostart"
-        autostart_file = autostart_dir / "io.github.dyslechtchitect.tfcbm.desktop"
-
-        if not autostart_file.exists():
-            return False
-
-        # Check if the desktop entry is enabled (not hidden or disabled)
-        return self._is_desktop_entry_enabled(autostart_file)
-
-    def _is_desktop_entry_enabled(self, desktop_file: Path) -> bool:
-        """Check if a desktop entry is enabled (not hidden or disabled)."""
+        """Check if autostart is enabled for the application using Gio.DesktopAppInfo."""
+        app_id = self._get_installed_app_id()
         try:
-            content = desktop_file.read_text()
+            # Use DesktopAppInfo.new() instead of AppInfo.create_from_id()
+            app_info = Gio.DesktopAppInfo.new(app_id + ".desktop")
+            if app_info:
+                # Check if the app has autostart enabled
+                # For desktop files, we'd need to check the autostart directory
+                autostart_file = Path.home() / ".config" / "autostart" / f"{app_id}.desktop"
+                return autostart_file.exists()
+        except GLib.Error as e:
+            print(f"Error checking autostart status for {app_id}: {e.message}")
+        return False
 
-            # XDG standard check - Hidden=true means disabled
-            if "Hidden=true" in content:
-                return False
+    def _set_autostart_via_portal(self, enable: bool):
+        """Set autostart status via the xdg-desktop-portal-desktop D-Bus interface."""
+        app_id = self._get_installed_app_id()
+        try:
+            portal = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None,  # GDBusInterfaceInfo
+                'org.freedesktop.portal.Desktop',
+                '/org/freedesktop/portal/desktop',
+                'org.freedesktop.portal.Desktop',
+                None,  # Cancellable
+            )
 
-            # GNOME-specific check
-            if "X-GNOME-Autostart-enabled=false" in content:
-                return False
-
-            return True
+            # Call SetAutostart method
+            portal.SetAutostart(
+                app_id,
+                enable,
+                GLib.Variant('a{sv}', {})  # Empty platform_data dictionary
+            )
+            self.on_notification(
+                f"Autostart {'enabled' if enable else 'disabled'} successfully. "
+                "You may need to log out and back in for changes to take full effect."
+            )
+            print(f"Autostart for {app_id} set to {enable} via portal.")
+        except GLib.Error as e:
+            error_message = f"D-Bus error toggling autostart: {e.message}"
+            self.on_notification(f"Error: {error_message}")
+            print(error_message)
+            raise
         except Exception as e:
-            print(f"Error reading desktop file: {e}")
-            return False
+            error_message = f"Unexpected error toggling autostart: {e}"
+            self.on_notification(f"Error: {error_message}")
+            print(error_message)
+            raise
 
     def _on_autostart_toggled(self, switch_row, _param):
-        """Handle autostart toggle - only affects next login, not current session."""
+        """Handle autostart toggle - uses portal to set status."""
         is_enabled = switch_row.get_active()
-
         try:
-            if is_enabled:
-                self._enable_autostart()
-                self.on_notification("TFCBM will start automatically when you log in")
-            else:
-                self._disable_autostart()
-                self.on_notification("TFCBM will not start automatically when you log in")
-        except Exception as e:
-            self.on_notification(f"Error toggling autostart: {e}")
-            print(f"Error toggling autostart: {e}")
+            self._set_autostart_via_portal(is_enabled)
+        except Exception:
+            # If portal call fails, revert the switch state
+            switch_row.set_active(not is_enabled)
+            # Error message already handled by _set_autostart_via_portal
 
     def _get_installed_app_id(self):
         """Get the app ID."""
         return 'io.github.dyslechtchitect.tfcbm'
 
-    def _enable_autostart(self):
-        """Enable autostart by creating/updating .desktop file in ~/.config/autostart."""
-        from ui.utils.extension_check import is_flatpak
+    def _build_extension_status_group(self) -> Adw.PreferencesGroup:
+        """Build the GNOME Extension status section."""
+        group = Adw.PreferencesGroup()
+        group.set_title("GNOME Shell Extension Status")
+        group.set_description("Required for global shortcut and enhanced clipboard monitoring")
 
-        autostart_dir = Path.home() / ".config" / "autostart"
-        autostart_dir.mkdir(parents=True, exist_ok=True)
+        # Status display row
+        status_row = Adw.ActionRow()
+        status_row.set_title("Extension Status")
+        self.extension_status_label = Gtk.Label(label="Checking status...")
+        self.extension_status_label.set_halign(Gtk.Align.END)
+        status_row.add_suffix(self.extension_status_label)
+        group.add(status_row)
 
-        # Detect which app ID is installed
-        app_id = self._get_installed_app_id()
-        autostart_file = autostart_dir / f"{app_id}.desktop"
+        # Guidance row
+        guidance_row = Adw.ActionRow()
+        guidance_row.set_title("Guidance")
+        self.extension_guidance_label = Gtk.Label(label="")
+        self.extension_guidance_label.set_halign(Gtk.Align.START)
+        self.extension_guidance_label.set_wrap(True)
+        self.extension_guidance_label.set_max_width_chars(50) # Limit width for readability
+        guidance_row.set_child(self.extension_guidance_label)
+        group.add(guidance_row)
 
-        # Determine the correct Exec command
-        # NOTE: Autostart should NOT include --activate flag, so app runs in background
-        # with just the tray icon. Window can be shown via keyboard shortcut or tray icon.
-        if is_flatpak():
-            exec_cmd = f"flatpak run {app_id}"
+        # Check status button
+        check_button_row = Adw.ActionRow()
+        check_button = Gtk.Button(label="Refresh Status")
+        check_button.add_css_class("suggested-action")
+        check_button.set_halign(Gtk.Align.CENTER)
+        check_button.connect("clicked", self._on_refresh_extension_status_clicked)
+        check_button_row.add_suffix(check_button)
+        group.add(check_button_row)
+
+        # Initial status update
+        self._update_extension_status_ui()
+
+        return group
+
+    def _update_extension_status_ui(self):
+        """Update the UI with the current extension status and guidance."""
+        status = get_extension_status()
+        if status['ready']:
+            self.extension_status_label.set_markup("<span foreground='green'><b>Installed and Enabled</b></span>")
+            self.extension_guidance_label.set_text("The extension is running and integrated with TFCBM.")
+        elif status['installed']:
+            self.extension_status_label.set_markup("<span foreground='orange'><b>Installed but Not Enabled</b></span>")
+            self.extension_guidance_label.set_markup(
+                f"The extension is installed but not active. "
+                f"You may need to log out and log back in, or enable it manually. "
+                f"Command: <code>{get_extension_enable_command()}</code>"
+            )
         else:
-            # For non-Flatpak, use the installed binary
-            exec_cmd = "tfcbm"
+            self.extension_status_label.set_markup("<span foreground='red'><b>Not Installed</b></span>")
+            self.extension_guidance_label.set_markup(
+                f"The extension is not installed. TFCBM's global shortcut and enhanced clipboard monitoring will not work. "
+                f"Please install it manually. "
+                f"Instructions: <code>{get_extension_install_command()}</code>"
+            )
 
-        # Create the autostart desktop entry following XDG and GNOME standards
-        # Note: We explicitly set X-GNOME-Autostart-enabled=true and ensure
-        # Hidden is NOT present (or explicitly false)
-        desktop_content = f"""[Desktop Entry]
-Type=Application
-Name=TFCBM
-Comment=The F* Clipboard Manager
-Exec={exec_cmd}
-Icon={app_id}
-Terminal=false
-Categories=Utility;GTK;
-StartupNotify=false
-X-GNOME-Autostart-enabled=true
-"""
-
-        autostart_file.write_text(desktop_content)
-        print(f"Autostart enabled: {autostart_file}")
-
-    def _disable_autostart(self):
-        """Disable autostart by setting Hidden=true and X-GNOME-Autostart-enabled=false.
-
-        Following XDG Desktop Entry Specification, we don't delete the file but mark it
-        as hidden/disabled. This allows GNOME Settings to re-enable it if needed and
-        maintains proper sync with the system settings UI.
-        """
-        from ui.utils.extension_check import is_flatpak
-
-        autostart_dir = Path.home() / ".config" / "autostart"
-        autostart_file = autostart_dir / "io.github.dyslechtchitect.tfcbm.desktop"
-
-        if not autostart_file.exists():
-            # Need to create the file first, then mark it as disabled
-            self._enable_autostart()
-
-        # Read current content
-        try:
-            content = autostart_file.read_text()
-
-            # Check if already disabled
-            if "Hidden=true" in content and "X-GNOME-Autostart-enabled=false" in content:
-                print(f"Autostart already disabled: {autostart_file}")
-                return
-
-            # Remove any existing Hidden or X-GNOME-Autostart-enabled lines
-            lines = content.split('\n')
-            filtered_lines = [
-                line for line in lines
-                if not line.startswith('Hidden=')
-                and not line.startswith('X-GNOME-Autostart-enabled=')
-            ]
-
-            # Add the disable flags after [Desktop Entry]
-            new_lines = []
-            for line in filtered_lines:
-                new_lines.append(line)
-                if line.strip() == '[Desktop Entry]':
-                    new_lines.append('Hidden=true')
-                    new_lines.append('X-GNOME-Autostart-enabled=false')
-
-            # Write back
-            autostart_file.write_text('\n'.join(new_lines))
-            print(f"Autostart disabled: set Hidden=true in {autostart_file}")
-
-        except Exception as e:
-            print(f"Error disabling autostart: {e}")
-            raise
+    def _on_refresh_extension_status_clicked(self, button):
+        """Handle refresh status button click."""
+        self.extension_status_label.set_text("Checking status...")
+        self.extension_guidance_label.set_text("")
+        self._update_extension_status_ui()

@@ -17,26 +17,26 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
 
-  # Minimal DBus: only portals your app will use
-  - --talk-name=org.freedesktop.portal.Desktop
-  - --talk-name=io.github.dyslechtchitect.tfcbm.helper
-  - --talk-name=org.freedesktop.Flatpak
-  - --system-talk-name=org.freedesktop.PolicyKit1
+  # Essential XDG Portals for desktop integration
+  - --talk-name=org.freedesktop.portal.Desktop       # For general desktop portals (notifications, autostart, etc.)
+  - --talk-name=org.freedesktop.portal.Settings      # For GSettings manipulation via portal
+  - --talk-name=org.freedesktop.secrets              # For secure password/secret storage
 
-  # Dconf read-only
-  - --filesystem=xdg-run/dconf
-  - --filesystem=~/.config/dconf:ro
+  # Application-specific internal D-Bus communication
+  - --talk-name=io.github.dyslechtchitect.tfcbm.helper # For internal app helpers
+  - --own-name=org.tfcbm.ClipboardService              # For main app's D-Bus service (allowing other components/host extension to talk to it)
 
-  # Autostart & extension support
-  - --filesystem=~/.local/share/gnome-shell/extensions:create
-  - --filesystem=xdg-config/autostart:create
+  # Dconf for settings (read-write for app's scope, read-only for system dconf)
+  - --filesystem=xdg-run/dconf                       # For the app's dconf settings (read/write within sandbox)
+  - --filesystem=~/.config/dconf:ro                  # For reading system dconf profiles/defaults (read-only)
 
-  # Tray icon support
+  # Filesystem access for app data/config (use xdg-data/config not raw home)
+  - --filesystem=xdg-data:rw                         # For application data (e.g., history database)
+  - --filesystem=xdg-config:rw                       # For application configuration
+
+  # Environment variables for UI
   - --env=GTK_USE_PORTAL=1
   - --env=APPINDICATOR=1
-
-  # DBus access for extension communication
-  - --own-name=org.tfcbm.ClipboardService
 
 modules:
   # Python dependencies - only websockets needed (PyGObject and GdkPixbuf provided by runtime)
@@ -49,25 +49,7 @@ modules:
         url: https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl
         sha256: f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f
 
-  # Optional: X11 clipboard monitoring dependencies (pynput + python-xlib + evdev)
-  # Licenses: LGPL-3.0 (pynput), LGPL-2.1+ (python-xlib), BSD-3-Clause (evdev), MIT (six)
-  - name: python3-x11-clipboard-helpers
-    buildsystem: simple
-    build-commands:
-      - pip3 install --exists-action=i --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} --no-build-isolation six python-xlib evdev pynput
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl
-        sha256: 4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
-      - type: file
-        url: https://files.pythonhosted.org/packages/c2/16/950463d36e8b64067c4d535038c5512de8200015e793d7d0a3f400187cbf/python_xlib-0.31-py2.py3-none-any.whl
-        sha256: 1ec6ce0de73d9e6592ead666779a5732b384e5b8fb1f1886bd0a81cafa477759
-      - type: file
-        url: https://files.pythonhosted.org/packages/63/fe/a17c106a1f4061ce83f04d14bcedcfb2c38c7793ea56bfb906a6fadae8cb/evdev-1.9.2.tar.gz
-        sha256: 5d3278892ce1f92a74d6bf888cc8525d9f68af85dbe336c95d1c87fb8f423069
-      - type: file
-        url: https://files.pythonhosted.org/packages/02/27/4de87850ff87c8dcecaaf8d27f28cec89ef17eeb6938f250449cb2635e06/pynput-1.7.6-py2.py3-none-any.whl
-        sha256: 19861b2a0c430d646489852f89500e0c9332e295f2c020e7c2775e7046aa2e2f
+
 
   - name: tfcbm
     buildsystem: meson
