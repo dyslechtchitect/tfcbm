@@ -259,32 +259,18 @@ class TFCBMDBusService:
                     logger.error(f"Error forwarding show settings to UI: {e}")
 
     def _handle_quit(self, invocation):
-        """Handle Quit method - quit the application"""
+        """Handle Quit method - quit the application
+
+        Note: The extension stays enabled. The tray icon will automatically hide
+        when the app quits and unregisters its D-Bus name (see extension.js:_updateIconStyle).
+        This allows the extension to remain ready for when the app is launched again.
+        """
         logger.info("DBus Quit called")
 
         invocation.return_value(None)
 
-        # Disable the GNOME extension when quitting
-        try:
-            logger.info("Disabling GNOME extension...")
-            # Use DBus to disable extension (works from Flatpak sandbox)
-            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            result = connection.call_sync(
-                'org.gnome.Shell.Extensions',
-                '/org/gnome/Shell/Extensions',
-                'org.gnome.Shell.Extensions',
-                'DisableExtension',
-                GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None
-            )
-            logger.info("GNOME extension disabled via DBus")
-        except Exception as e:
-            logger.warning(f"Failed to disable GNOME extension via DBus: {e}")
-
-        # Try to quit the app if it has a quit method
+        # Quit the app - this will unregister the D-Bus name, which will
+        # automatically hide the tray icon (extension remains enabled)
         if hasattr(self.app, 'quit'):
             GLib.idle_add(self.app.quit)
             logger.info("Application quit requested via DBus")

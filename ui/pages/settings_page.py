@@ -39,7 +39,8 @@ class SettingsPage:
         self.shortcut_display = None
         self.record_btn = None
         self.recording_status = None
-        self.shortcut_recorder_window = None
+        self.key_controller = None  # Store keyboard event controller
+        self.parent_window = None  # Store reference to parent window
 
     def build(self) -> Adw.PreferencesPage:
         settings_page = Adw.PreferencesPage()
@@ -237,60 +238,51 @@ class SettingsPage:
             self.record_btn.add_css_class("destructive-action")
             self.recording_status.set_markup("<i>Press any key combination...</i>")
 
-            # Create and show a popup window to capture the key
-            self._show_recording_popup()
+            # Attach keyboard controller to main window to capture shortcut
+            self._attach_keyboard_controller()
         else:
             self.record_btn.set_label("Record")
             self.record_btn.remove_css_class("destructive-action")
             self.record_btn.add_css_class("suggested-action")
             self.recording_status.set_text("")
-            if self.shortcut_recorder_window:
-                self.shortcut_recorder_window.close()
 
-    def _show_recording_popup(self) -> None:
-        """Show a popup window to capture keyboard shortcut."""
-        # Create a simple modal window for better keyboard event capture
-        window = Gtk.Window()
-        window.set_title("Recording Shortcut...")
-        window.set_modal(True)
-        window.set_default_size(400, 150)
+            # Remove keyboard controller when not recording
+            self._detach_keyboard_controller()
 
-        # Create content box
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_top(24)
-        box.set_margin_bottom(24)
-        box.set_margin_start(24)
-        box.set_margin_end(24)
+    def _attach_keyboard_controller(self) -> None:
+        """Attach keyboard event controller to window for shortcut recording."""
+        # Get the parent window
+        if not self.parent_window:
+            widget = self.record_btn
+            while widget:
+                widget = widget.get_parent()
+                if isinstance(widget, Gtk.Window):
+                    self.parent_window = widget
+                    break
 
-        # Add label
-        label = Gtk.Label()
-        label.set_markup("<big><b>Recording Shortcut...</b></big>\n\nPress any key combination.\nThe shortcut will be recorded automatically.")
-        label.set_justify(Gtk.Justification.CENTER)
-        box.append(label)
+        if not self.parent_window:
+            print("[ERROR] Could not find parent window for keyboard controller")
+            return
 
-        # Add cancel button
-        cancel_btn = Gtk.Button(label="Cancel")
-        cancel_btn.set_halign(Gtk.Align.CENTER)
-        cancel_btn.connect("clicked", lambda _: self._cancel_recording_and_close_window())
-        box.append(cancel_btn)
+        # Create and attach keyboard controller
+        self.key_controller = Gtk.EventControllerKey.new()
+        self.key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        self.key_controller.connect("key-pressed", self._on_key_pressed_for_recording)
+        self.parent_window.add_controller(self.key_controller)
+        print("[DEBUG] Attached keyboard controller to window")
 
-        window.set_child(box)
+    def _detach_keyboard_controller(self) -> None:
+        """Remove keyboard event controller from window."""
+        if self.key_controller and self.parent_window:
+            self.parent_window.remove_controller(self.key_controller)
+            self.key_controller = None
+            print("[DEBUG] Detached keyboard controller from window")
 
-        # Setup keyboard event handler with capture phase for better event handling
-        key_controller = Gtk.EventControllerKey.new()
-        key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        key_controller.connect("key-pressed", self._on_key_pressed_in_popup)
-        window.add_controller(key_controller)
-
-        # Store reference to the window
-        self.shortcut_recorder_window = window
-        self.shortcut_recorder_window.present()
-
-    def _on_key_pressed_in_popup(
+    def _on_key_pressed_for_recording(
         self, controller: Gtk.EventControllerKey, keyval: int, keycode: int, state: int
     ) -> bool:
-        """Handle key press in recording popup."""
-        print(f"[DEBUG] Key pressed in popup: keyval={keyval}, keycode={keycode}, state={state}, is_recording={self.shortcut_service.is_recording}")
+        """Handle key press during shortcut recording (no popup)."""
+        print(f"[DEBUG] Key pressed: keyval={keyval}, keycode={keycode}, state={state}, is_recording={self.shortcut_service.is_recording}")
 
         if not self.shortcut_service.is_recording:
             return False
@@ -307,29 +299,12 @@ class SettingsPage:
             # Apply it to the extension
             print(f"[DEBUG] Applying shortcut: {shortcut.to_display_string()}")
             self.shortcut_service.apply_shortcut(shortcut)
-            # Close the popup
-            if self.shortcut_recorder_window:
-                print("[DEBUG] Closing popup window")
-                self.shortcut_recorder_window.close()
-                self.shortcut_recorder_window = None
+            # Detach controller immediately after recording
+            self._detach_keyboard_controller()
             return True
 
         return False
 
-    def _cancel_recording(self) -> None:
-        """Cancel the recording process."""
-        self.shortcut_service.stop_recording()
-        self.record_btn.set_label("Record")
-        self.record_btn.remove_css_class("destructive-action")
-        self.record_btn.add_css_class("suggested-action")
-        self.recording_status.set_text("")
-        if self.shortcut_recorder_window:
-            self.shortcut_recorder_window.close()
-            self.shortcut_recorder_window = None
-
-    def _cancel_recording_and_close_window(self) -> None:
-        """Cancel recording and close the popup window."""
-        self._cancel_recording()
 
 
     # ShortcutObserver implementations

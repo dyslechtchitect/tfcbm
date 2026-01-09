@@ -12,31 +12,25 @@ cleanup:
   - '*.a'
 
 finish-args:
-  # IPC for internal helpers
+  # Display and IPC
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
 
-  # Essential XDG Portals for desktop integration
-  - --talk-name=org.freedesktop.portal.Desktop       # For general desktop portals (notifications, autostart, etc.)
-  - --talk-name=org.freedesktop.portal.Settings      # For GSettings manipulation via portal
+  # XDG Portals for desktop integration
+  - --talk-name=org.freedesktop.portal.Desktop       # For notifications, autostart, etc.
   - --talk-name=org.freedesktop.secrets              # For secure password/secret storage
 
-  # Application-specific internal D-Bus communication
-  - --talk-name=io.github.dyslechtchitect.tfcbm.helper # For internal app helpers
-  - --own-name=org.tfcbm.ClipboardService              # For main app's D-Bus service (allowing other components/host extension to talk to it)
+  # D-Bus for GNOME extension communication
+  - --own-name=org.tfcbm.ClipboardService            # Main app's D-Bus service for extension communication
+  # Note: GSettings access is via the host extension's D-Bus interface, not direct dconf
 
-  # Dconf for settings (read-write for app's scope, read-only for system dconf)
-  - --filesystem=xdg-run/dconf                       # For the app's dconf settings (read/write within sandbox)
-  - --filesystem=~/.config/dconf:ro                  # For reading system dconf profiles/defaults (read-only)
+  # Filesystem access for app data and config
+  - --filesystem=xdg-data:rw                         # For clipboard history database
+  - --filesystem=xdg-config:rw                       # For application settings (settings.json)
 
-  # Filesystem access for app data/config (use xdg-data/config not raw home)
-  - --filesystem=xdg-data:rw                         # For application data (e.g., history database)
-  - --filesystem=xdg-config:rw                       # For application configuration
-
-  # Environment variables for UI
+  # Environment for portals
   - --env=GTK_USE_PORTAL=1
-  - --env=APPINDICATOR=1
 
 modules:
   # Python dependencies - only websockets needed (PyGObject and GdkPixbuf provided by runtime)
