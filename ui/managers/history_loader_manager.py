@@ -68,6 +68,11 @@ class HistoryLoaderManager:
         self.get_active_filters = get_active_filters
         self.get_search_query = get_search_query
         self.page_size = page_size
+        # Use provided socket_path or default to XDG_RUNTIME_DIR
+        if not socket_path:
+            import os
+            runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+            socket_path = os.path.join(runtime_dir, "tfcbm-ipc.sock")
         self.socket_path = socket_path
 
         # Pagination state
