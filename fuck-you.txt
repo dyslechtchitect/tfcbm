@@ -1,0 +1,5 @@
+1. tray icon quit don't close tray icon
+2. can't record new shortcut keys - they aren't saved - Error writing shortcut to host extension via D-Bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: org.freedesktop.DBus.Error.ServiceUnknown
+
+3.  while recording shortcut if current shortcut is clicked it shoudn't unfocus the app just be recorded, jesus... 
+

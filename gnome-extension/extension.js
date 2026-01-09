@@ -111,6 +111,7 @@ export default class ClipboardMonitorExtension extends Extension {
         this._dbusOwnerWatchId = null;
         this._icon = null;
         this._exportedDBusId = null; // Registration ID for our exported D-Bus object
+        this._busNameOwnerId = null; // Bus name ownership ID
     }
 
     _launchApp() {
@@ -462,8 +463,11 @@ export default class ClipboardMonitorExtension extends Extension {
 
         // Export D-Bus interface for the Flatpak app to use
         try {
+            log('[TFCBM] Attempting to export D-Bus service...');
             const nodeInfo = Gio.DBusNodeInfo.new_for_xml(EXTENSION_DBUS_IFACE_XML);
+            log('[TFCBM] XML parsed successfully');
             const interfaceInfo = nodeInfo.lookup_interface(EXTENSION_DBUS_NAME);
+            log(`[TFCBM] Interface info obtained for ${EXTENSION_DBUS_NAME}`);
 
             // Register D-Bus object using the modern API
             this._exportedDBusId = Gio.DBus.session.register_object(
@@ -471,6 +475,7 @@ export default class ClipboardMonitorExtension extends Extension {
                 interfaceInfo,
                 (connection, sender, objectPath, interfaceName, methodName, parameters, invocation) => {
                     try {
+                        log(`[TFCBM Extension] D-Bus method called: ${methodName}`);
                         let result;
                         if (methodName === 'GetSetting') {
                             const [schema_id, key] = parameters.deepUnpack();
@@ -495,6 +500,15 @@ export default class ClipboardMonitorExtension extends Extension {
                 null  // set property handler
             );
             log(`[TFCBM] Extension D-Bus service '${EXTENSION_DBUS_NAME}' exported on path '${EXTENSION_DBUS_PATH}' with ID ${this._exportedDBusId}`);
+
+            // Own the D-Bus name so clients can find us
+            this._busNameOwnerId = Gio.DBus.session.own_name(
+                EXTENSION_DBUS_NAME,
+                Gio.BusNameOwnerFlags.NONE,
+                null, // name acquired callback
+                null  // name lost callback
+            );
+            log(`[TFCBM] D-Bus name '${EXTENSION_DBUS_NAME}' ownership requested`);
         } catch (e) {
             logError(e, 'TFCBM: Error exporting extension D-Bus service');
         }
@@ -543,6 +557,13 @@ export default class ClipboardMonitorExtension extends Extension {
             Gio.DBus.session.unregister_object(this._exportedDBusId);
             this._exportedDBusId = null;
             log(`[TFCBM] Extension D-Bus service '${EXTENSION_DBUS_NAME}' unexported.`);
+        }
+
+        // Unown the D-Bus name
+        if (this._busNameOwnerId) {
+            Gio.DBus.session.unown_name(this._busNameOwnerId);
+            this._busNameOwnerId = null;
+            log(`[TFCBM] D-Bus name '${EXTENSION_DBUS_NAME}' unowned.`);
         }
 
         if (this._dbus) {
