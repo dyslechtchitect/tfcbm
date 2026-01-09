@@ -233,13 +233,63 @@ def install_extension() -> tuple[bool, str]:
                 logger.warning(f"Extension installed but failed to enable: {enable_result.stderr}")
                 return True, "Extension installed! Please log out and log back in to activate it."
 
-        # Non-Flatpak: use the directory method
+        # Non-Flatpak: check for installed zip file first, then fall back to directory
+        # Try the installed location first (Meson install puts it here)
+        installed_zip = Path("/usr/local/share/tfcbm/tfcbm-clipboard-monitor@github.com.zip")
+
+        if installed_zip.exists():
+            logger.info(f"Found installed extension zip at: {installed_zip}")
+
+            # Use gnome-extensions install command with the zip
+            env = os.environ.copy()
+            common_paths = '/usr/bin:/usr/local/bin:/bin:/snap/bin'
+            if 'PATH' not in env:
+                env['PATH'] = common_paths
+            elif common_paths not in env['PATH']:
+                env['PATH'] = f"{common_paths}:{env['PATH']}"
+
+            cmd_prefix = _get_command_prefix()
+
+            # Install the extension from the zip
+            logger.info(f"Installing extension from: {installed_zip}")
+            install_result = subprocess.run(
+                cmd_prefix + ['gnome-extensions', 'install', '--force', str(installed_zip)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env
+            )
+
+            if install_result.returncode != 0:
+                error_msg = f"Failed to install extension: {install_result.stderr}"
+                logger.error(error_msg)
+                return False, error_msg
+
+            logger.info("Extension installed successfully from zip")
+
+            # Try to enable the extension
+            enable_result = subprocess.run(
+                cmd_prefix + ['gnome-extensions', 'enable', EXTENSION_UUID],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=env
+            )
+
+            if enable_result.returncode == 0:
+                logger.info("Extension enabled successfully")
+                return True, "Extension installed and enabled! Please log out and log back in to activate it."
+            else:
+                logger.warning(f"Extension installed but failed to enable: {enable_result.stderr}")
+                return True, "Extension installed! Please enable it manually or log out and log back in."
+
+        # Fall back to development directory method
         project_root = Path(__file__).parent.parent.parent
         extension_dir = project_root / "gnome-extension"
-        logger.info(f"Regular install, using extension directory: {extension_dir}")
+        logger.info(f"No installed zip found, trying development directory: {extension_dir}")
 
         if not extension_dir.exists():
-            error_msg = f"Extension directory not found at {extension_dir}"
+            error_msg = f"Extension not found. Looked for:\n  - {installed_zip}\n  - {extension_dir}"
             logger.error(error_msg)
             return False, error_msg
 
