@@ -19,7 +19,7 @@ pkglibdir = prefix / 'lib' / meson.project_name()
 install_subdir('ui', install_dir: pkglibdir)
 install_subdir('server', install_dir: pkglibdir)
 install_data('main.py', install_dir: pkglibdir)
-install_data('settings.yml', install_dir: pkglibdir)
+install_data('settings.json', install_dir: pkglibdir)
 
 # Install resources
 install_subdir('resouces', install_dir: pkgdatadir)

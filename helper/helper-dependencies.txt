@@ -1,2 +1,0 @@
-python-xlib==0.31
-pynput==1.7.6

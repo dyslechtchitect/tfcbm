@@ -1,14 +1,8 @@
 # TFCBM - The Friendly Clipboard Manager
 # Runtime dependencies for development environment
 
-# GTK4 and Libadwaita (UI dependencies)
+# GTK4 and Libadwaita (UI dependencies) - includes GdkPixbuf for image processing
 PyGObject>=3.42.0
-
-# Configuration parsing
-PyYAML>=6.0.2
-
-# Image processing for thumbnails
-Pillow>=11.0.0
 
 # WebSocket server for clipboard monitoring
 websockets>=14.0

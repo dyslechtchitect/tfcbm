@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 TFCBM Settings Management
-Loads and validates settings from settings.yml using dataclasses
+Loads and validates settings from settings.json using dataclasses
 """
 
-import yaml
+import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -61,14 +61,14 @@ class SettingsManager:
         Initialize settings manager
 
         Args:
-            config_path: Path to settings.yml file. Defaults to ~/.config/tfcbm/settings.yml
+            config_path: Path to settings.json file. Defaults to ~/.config/tfcbm/settings.json
         """
         if config_path is None:
             # Use XDG_CONFIG_HOME for user settings (writable in Flatpak)
             import os
             xdg_config_home = os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')
             config_dir = Path(xdg_config_home) / 'tfcbm'
-            config_path = config_dir / 'settings.yml'
+            config_path = config_dir / 'settings.json'
 
             # Ensure config directory exists
             config_dir.mkdir(parents=True, exist_ok=True)
@@ -77,14 +77,14 @@ class SettingsManager:
         self.settings = self._load_settings()
 
     def _load_settings(self) -> Settings:
-        """Load and validate settings from YAML file"""
+        """Load and validate settings from JSON file"""
         try:
             if not self.config_path.exists():
                 print(f"Settings file not found at {self.config_path}, using defaults")
                 return Settings()
 
             with open(self.config_path, 'r') as f:
-                config_data = yaml.safe_load(f)
+                config_data = json.load(f)
 
             if config_data is None:
                 print("Settings file is empty, using defaults")
@@ -100,7 +100,7 @@ class SettingsManager:
             print(f"  - Max page length: {settings.display.max_page_length}")
             return settings
 
-        except (yaml.YAMLError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError) as e:
             print(f"Error loading or validating settings: {e}")
             print("Using default settings")
             return Settings()
@@ -161,11 +161,10 @@ class SettingsManager:
         self._save_settings()
 
     def _save_settings(self):
-        """Save current settings to YAML file"""
-        import yaml
+        """Save current settings to JSON file"""
         config_data = asdict(self.settings)
         with open(self.config_path, 'w') as f:
-            yaml.dump(config_data, f, default_flow_style=False)
+            json.dump(config_data, f, indent=2)
 
 
 # Global settings instance

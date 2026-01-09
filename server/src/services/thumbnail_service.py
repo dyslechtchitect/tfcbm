@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Thumbnail Service - Handles thumbnail generation for images
+Thumbnail Service - Handles thumbnail generation for images using GdkPixbuf
 """
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
 from typing import Optional
 
-from PIL import Image
+import gi
+gi.require_version('GdkPixbuf', '2.0')
+from gi.repository import GdkPixbuf, GLib
 
 from server.src.services.database_service import DatabaseService
 
@@ -33,7 +34,7 @@ class ThumbnailService:
 
     def generate_thumbnail(self, image_data: bytes, max_size: int = 250) -> Optional[bytes]:
         """
-        Generate a thumbnail from image data
+        Generate a thumbnail from image data using GdkPixbuf
 
         Args:
             image_data: Original image bytes
@@ -43,28 +44,53 @@ class ThumbnailService:
             Thumbnail image bytes (PNG format) or None on error
         """
         try:
-            # Open image from bytes
-            image = Image.open(BytesIO(image_data))
+            # Load image from bytes using GdkPixbuf
+            loader = GdkPixbuf.PixbufLoader()
+            loader.write(image_data)
+            loader.close()
+            pixbuf = loader.get_pixbuf()
 
-            # Convert RGBA to RGB if needed (for JPEG compatibility)
-            if image.mode in ("RGBA", "LA", "P"):
-                background = Image.new("RGB", image.size, (255, 255, 255))
-                if image.mode == "P":
-                    image = image.convert("RGBA")
-                background.paste(image, mask=image.split()[-1] if image.mode in ("RGBA", "LA") else None)
-                image = background
+            if pixbuf is None:
+                logger.error("Failed to load image data")
+                return None
+
+            # Get original dimensions
+            orig_width = pixbuf.get_width()
+            orig_height = pixbuf.get_height()
 
             # Calculate thumbnail size maintaining aspect ratio
-            image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            if orig_width > orig_height:
+                new_width = max_size
+                new_height = int((max_size / orig_width) * orig_height)
+            else:
+                new_height = max_size
+                new_width = int((max_size / orig_height) * orig_width)
 
-            # Save to bytes
-            thumbnail_io = BytesIO()
-            image.save(thumbnail_io, format="PNG", optimize=True)
-            thumbnail_bytes = thumbnail_io.getvalue()
+            # Scale the pixbuf
+            thumbnail = pixbuf.scale_simple(
+                new_width,
+                new_height,
+                GdkPixbuf.InterpType.BILINEAR
+            )
 
-            logger.info(f"Generated thumbnail: {image.size} -> {len(thumbnail_bytes)} bytes")
+            if thumbnail is None:
+                logger.error("Failed to scale image")
+                return None
+
+            # Save to bytes as PNG
+            success, buffer = thumbnail.save_to_bufferv('png', [], [])
+
+            if not success:
+                logger.error("Failed to save thumbnail to buffer")
+                return None
+
+            thumbnail_bytes = bytes(buffer)
+            logger.info(f"Generated thumbnail: {orig_width}x{orig_height} -> {new_width}x{new_height} ({len(thumbnail_bytes)} bytes)")
             return thumbnail_bytes
 
+        except GLib.Error as e:
+            logger.error(f"GdkPixbuf error generating thumbnail: {e}")
+            return None
         except Exception as e:
             logger.error(f"Error generating thumbnail: {e}")
             return None

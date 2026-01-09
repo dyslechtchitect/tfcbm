@@ -157,27 +157,63 @@ class TFCBMServer:
         # This prevents the tray icon from appearing when autostart is disabled
         if self._is_autostart_enabled():
             try:
-                import gi
-                gi.require_version('Gio', '2.0')
-                from gi.repository import Gio, GLib
-
                 logging.info("Autostart is enabled - ensuring GNOME extension is enabled...")
-                # Use DBus to enable extension (works from Flatpak sandbox)
-                connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-                result = connection.call_sync(
-                    'org.gnome.Shell.Extensions',
-                    '/org/gnome/Shell/Extensions',
-                    'org.gnome.Shell.Extensions',
-                    'EnableExtension',
-                    GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                    None,
-                    Gio.DBusCallFlags.NONE,
-                    -1,
-                    None
-                )
-                logging.info("✓ GNOME extension enabled via DBus")
+
+                # Try multiple methods to enable extension (for compatibility across distros)
+                enabled = False
+
+                # Method 1: Try DBus first (fastest, works on most systems)
+                try:
+                    import gi
+                    gi.require_version('Gio', '2.0')
+                    from gi.repository import Gio, GLib
+
+                    connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+                    result = connection.call_sync(
+                        'org.gnome.Shell.Extensions',
+                        '/org/gnome/Shell/Extensions',
+                        'org.gnome.Shell.Extensions',
+                        'EnableExtension',
+                        GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
+                        None,
+                        Gio.DBusCallFlags.NONE,
+                        -1,
+                        None
+                    )
+                    logging.info("✓ GNOME extension enabled via DBus")
+                    enabled = True
+                except GLib.Error as dbus_error:
+                    # GNOME Shell DBus service not available (expected when not running GNOME)
+                    logging.debug(f"GNOME Shell DBus not available: {dbus_error}")
+                except Exception as dbus_error:
+                    logging.debug(f"DBus enable failed: {dbus_error}")
+
+                # Method 2: Fall back to gnome-extensions command if DBus fails
+                if not enabled:
+                    try:
+                        # Detect if running in Flatpak
+                        is_flatpak = 'FLATPAK_ID' in os.environ or os.path.exists('/.flatpak-info')
+                        cmd_prefix = ['flatpak-spawn', '--host'] if is_flatpak else []
+
+                        result = subprocess.run(
+                            cmd_prefix + ['gnome-extensions', 'enable', 'tfcbm-clipboard-monitor@github.com'],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            logging.info("✓ GNOME extension enabled via command line")
+                            enabled = True
+                        else:
+                            logging.warning(f"Command line enable failed: {result.stderr}")
+                    except Exception as cmd_error:
+                        logging.warning(f"Command line enable failed: {cmd_error}")
+
+                if not enabled:
+                    logging.warning("Could not enable GNOME extension automatically - user may need to enable manually")
+
             except Exception as e:
-                logging.warning(f"Failed to enable GNOME extension via DBus: {e}")
+                logging.warning(f"Failed to enable GNOME extension: {e}")
         else:
             logging.info("Autostart is disabled - skipping GNOME extension auto-enable")
 
