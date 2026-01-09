@@ -4,10 +4,13 @@ IPC Service - Handles UNIX domain socket communication with UI
 Replaces WebSocket for local inter-process communication
 """
 import asyncio
+import base64
 import json
 import logging
 import os
 from typing import Set, Optional, Tuple
+
+from server.src.services.thumbnail_service import ThumbnailService
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +99,6 @@ class IPCService:
 
     def prepare_item_for_ui(self, item: dict) -> dict:
         """Convert database item to UI-renderable format"""
-        # Import here to avoid circular imports
-        import base64
-
         item_type = item["type"]
         data = item["data"]
         thumbnail = item.get("thumbnail")
@@ -129,7 +129,6 @@ class IPCService:
                     logger.warning(f"Thumbnail for item {item['id']} is too large, sending None.")
                     thumbnail_b64 = None
             else:
-                from server.src.services.thumbnail_service import ThumbnailService
                 thumb_service = ThumbnailService(self.db_service)
                 thumb = thumb_service.generate_thumbnail(data, max_size=250)
                 if thumb:
