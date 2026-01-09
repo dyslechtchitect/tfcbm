@@ -299,8 +299,7 @@ class SettingsPage:
             # Apply it to the extension
             print(f"[DEBUG] Applying shortcut: {shortcut.to_display_string()}")
             self.shortcut_service.apply_shortcut(shortcut)
-            # Detach controller immediately after recording
-            self._detach_keyboard_controller()
+            # Note: Controller will be detached in on_shortcut_applied callback
             return True
 
         return False
@@ -332,10 +331,11 @@ class SettingsPage:
                 "Failed to apply shortcut. Make sure the extension is enabled."
             )
 
-        # Reset button state
+        # Reset button state and detach controller
         self.record_btn.set_label("Record")
         self.record_btn.remove_css_class("destructive-action")
         self.record_btn.add_css_class("suggested-action")
+        self._detach_keyboard_controller()
 
     def _build_retention_group(self) -> Adw.PreferencesGroup:
         """Build the retention settings section."""
