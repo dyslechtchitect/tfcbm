@@ -35,6 +35,9 @@ finish-args:
   - --env=GTK_USE_PORTAL=1
   - --env=APPINDICATOR=1
 
+  # DBus access for extension communication
+  - --own-name=org.tfcbm.ClipboardService
+
 modules:
   # Python dependencies - only websockets needed (PyGObject and GdkPixbuf provided by runtime)
   - name: python3-websockets

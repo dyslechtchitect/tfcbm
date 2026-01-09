@@ -55,16 +55,16 @@
 }
 
 .full-item-text {
-    white-space: pre-wrap; /* Preserve whitespace and allow wrapping */
+    /* white-space: pre-wrap; */ /* Not supported in GTK CSS - use label.set_wrap() instead */
     /* text-wrap: wrap; This is not a standard CSS property for GTK */
 }
 
 .full-item-image {
-    max-width: 100%;
-    max-height: 100%;
-    width: auto;
-    height: auto;
-    object-fit: contain;
+    /* max-width: 100%; */ /* Not supported in GTK CSS - use widget sizing instead */
+    /* max-height: 100%; */
+    /* width: auto; */
+    /* height: auto; */
+    /* object-fit: contain; */ /* Not supported in GTK CSS */
 }
 
 .typewriter-text {
@@ -85,15 +85,15 @@
     font-weight: bold;
     padding: 5px 10px;
     border-top: 1px solid @theme_border_color;
-    overflow: hidden; /* Hide overflowing text */
-    position: relative; /* Needed for absolute positioning of marquee-text */
+    /* overflow: hidden; */ /* Not supported in GTK CSS */
+    /* position: relative; */ /* Not supported in GTK CSS */
 }
 
 .notification-area .marquee-text {
-    display: inline-block; /* Allow text to be wider than its container */
-    white-space: nowrap; /* Prevent text from wrapping */
-    position: absolute; /* Position absolutely within the notification-area */
-    padding-left: 100%; /* Start text off-screen to the right */
+    /* display: inline-block; */ /* Not supported in GTK CSS */
+    /* white-space: nowrap; */ /* Not supported in GTK CSS */
+    /* position: absolute; */ /* Not supported in GTK CSS */
+    /* padding-left: 100%; */ /* Percentages not allowed in GTK CSS */
     animation: marquee 15s linear infinite; /* Apply marquee animation continuously */
     font-family: 'monospace'; /* Use a generic monospace font */
     font-size: 1.1em; /* Same as text items */
@@ -101,7 +101,7 @@
 
 @keyframes marquee {
     0% { transform: translateX(0); }
-    100% { transform: translateX(-100%); } /* Move text completely off-screen to the left */
+    100% { transform: translateX(-100px); } /* Move text off-screen (fixed value instead of percentage) */
 }
 
 /* Hide close buttons on tabs */
@@ -120,10 +120,10 @@ tab button.close,
 
 /* Filter bar styling */
 button.pill {
-    padding: 4px 12px;
+    padding: 2px 8px;
     border-radius: 12px;
     font-size: 0.85em;
-    min-height: 24px;
+    min-height: 20px;
     background: alpha(@theme_bg_color, 0.5);
     border: 1px solid alpha(@borders, 0.3);
 }

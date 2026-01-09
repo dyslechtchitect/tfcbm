@@ -41,6 +41,9 @@ class FilterBarManager:
         self.filter_sort_btn = None
         self.system_filter_chips = []
 
+        # Store signal handler IDs for each chip
+        self.chip_signal_handlers = {}
+
         self._create_filter_bar()
 
     def build(self) -> Gtk.Box:
@@ -72,8 +75,12 @@ class FilterBarManager:
         self.active_filters.clear()
         for flow_child in list(self.filter_box):
             chip = flow_child.get_child()
-            if isinstance(chip, Gtk.ToggleButton):
+            if isinstance(chip, Gtk.ToggleButton) and chip in self.chip_signal_handlers:
+                # Block signal handler to prevent recursion
+                handler_id = self.chip_signal_handlers[chip]
+                chip.handler_block(handler_id)
                 chip.set_active(False)
+                chip.handler_unblock(handler_id)
 
     def _create_filter_bar(self):
         """Create the filter bar with system content types, file extensions, and controls."""
@@ -233,7 +240,10 @@ class FilterBarManager:
         chip_box.append(chip_label)
 
         chip.set_child(chip_box)
-        chip.connect("toggled", lambda btn: self._on_filter_toggled(filter_id, btn))
+        handler_id = chip.connect("toggled", lambda btn: self._on_filter_toggled(filter_id, btn))
+
+        # Store the signal handler ID so we can block/unblock it later
+        self.chip_signal_handlers[chip] = handler_id
 
         # Wrap in FlowBoxChild
         flow_child = Gtk.FlowBoxChild()
@@ -347,8 +357,12 @@ class FilterBarManager:
         # Uncheck all filter chips
         for flow_child in list(self.filter_box):
             chip = flow_child.get_child()
-            if isinstance(chip, Gtk.ToggleButton):
+            if isinstance(chip, Gtk.ToggleButton) and chip in self.chip_signal_handlers:
+                # Block signal handler to prevent recursion
+                handler_id = self.chip_signal_handlers[chip]
+                chip.handler_block(handler_id)
                 chip.set_active(False)
+                chip.handler_unblock(handler_id)
 
         # Notify caller that filters changed
         self.on_filter_changed()

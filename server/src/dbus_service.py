@@ -62,24 +62,11 @@ class TFCBMDBusService:
                 logger.error("Failed to get DBus connection")
                 return False
 
-            # Own the bus name (only if we're the server, not the UI)
-            # The UI already owns io.github.dyslechtchitect.tfcbm via its application_id
-            if not hasattr(self.app, 'props'):
-                # This is the server (mock DBusApp), so own the bus name
-                self.bus_name_id = Gio.bus_own_name_on_connection(
-                    self.connection,
-                    "org.tfcbm.ClipboardService",
-                    Gio.BusNameOwnerFlags.NONE,
-                    None,  # name_acquired_closure
-                    None,  # name_lost_closure
-                )
-                logger.info("✓ Owned D-Bus name org.tfcbm.ClipboardService")
-
             # Parse DBus interface
             node_info = Gio.DBusNodeInfo.new_for_xml(DBUS_XML)
             interface_info = node_info.interfaces[0]
 
-            # Register object
+            # Register object at /org/tfcbm/ClipboardService
             self.registration_id = self.connection.register_object(
                 "/org/tfcbm/ClipboardService",
                 interface_info,
@@ -87,12 +74,25 @@ class TFCBMDBusService:
                 None,  # get_property
                 None,  # set_property
             )
+            logger.info("✓ DBus object registered at /org/tfcbm/ClipboardService")
 
-            logger.info("✓ DBus service registered at org.tfcbm.ClipboardService")
+            # Own the bus name org.tfcbm.ClipboardService
+            # This makes the service available to the GNOME extension
+            self.bus_name_id = Gio.bus_own_name_on_connection(
+                self.connection,
+                "org.tfcbm.ClipboardService",
+                Gio.BusNameOwnerFlags.NONE,
+                None,  # name_acquired_closure
+                None,  # name_lost_closure
+            )
+            logger.info("✓ Owned D-Bus name org.tfcbm.ClipboardService")
+
             return True
 
         except Exception as e:
             logger.error(f"Failed to register DBus service: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     def stop(self):
@@ -312,7 +312,7 @@ class TFCBMDBusService:
     def _handle_clipboard_change(self, parameters, invocation):
         """Handle OnClipboardChange method - process clipboard event from extension"""
         event_data_json = parameters.unpack()[0]
-        logger.debug(f"DBus OnClipboardChange called with data: {event_data_json[:100]}...")
+        logger.info(f"DBus OnClipboardChange called, data length: {len(event_data_json)}")
 
         # Return immediately to avoid blocking the extension
         invocation.return_value(None)
@@ -320,10 +320,12 @@ class TFCBMDBusService:
         try:
             # Parse event data
             event_data = json.loads(event_data_json)
+            logger.info(f"Parsed clipboard event: type={event_data.get('type')}, has_data={bool(event_data.get('data'))}")
 
             # Call clipboard handler if provided
             if self.clipboard_handler:
                 self.clipboard_handler(event_data)
+                logger.info(f"Clipboard handler called successfully for type: {event_data.get('type')}")
             else:
                 logger.warning("No clipboard handler registered, event ignored")
 
@@ -331,3 +333,5 @@ class TFCBMDBusService:
             logger.error(f"Failed to parse clipboard event JSON: {e}")
         except Exception as e:
             logger.error(f"Error processing clipboard event: {e}")
+            import traceback
+            logger.error(traceback.format_exc())

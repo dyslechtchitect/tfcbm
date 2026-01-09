@@ -21,6 +21,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Clutter from 'gi://Clutter';
+import Shell from 'gi://Shell';
 import { ClipboardMonitorService } from './src/ClipboardMonitorService.js';
 import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { DBusNotifier } from './src/adapters/DBusNotifier.js';
@@ -77,18 +78,18 @@ export default class ClipboardMonitorExtension extends Extension {
         this._dbusOwner = null;
         this._dbusOwnerWatchId = null;
         this._icon = null;
-        this._flatpakCheckTimeout = null;
     }
 
     _launchApp() {
         try {
-            const tfcbmPath = this._settings.get_string('tfcbm-path');
-            if (!tfcbmPath || !GLib.file_test(tfcbmPath, GLib.FileTest.IS_DIR)) {
-                logError(new Error(`TFCBM path not configured or invalid: ${tfcbmPath}`));
-                return;
+            let command;
+            // Check if running inside a Flatpak sandbox
+            if (GLib.file_test('/.flatpak-info', GLib.FileTest.EXISTS)) {
+                command = ['flatpak', 'run', 'io.github.dyslechtchitect.tfcbm', '--activate'];
+            } else {
+                command = ['tfcbm', '--activate'];
             }
-
-            const command = [`${tfcbmPath}/install.sh`, 'run'];
+            
             GLib.spawn_async(
                 null, // CWD
                 command,
@@ -108,13 +109,9 @@ export default class ClipboardMonitorExtension extends Extension {
                 this._dbus.ActivateRemote(timestamp);
             } catch (e) {
                 logError(e, 'Failed to activate TFCBM UI');
-                // Check if app was uninstalled before trying to launch
-                this._checkFlatpakInstalled();
                 this._launchApp();
             }
         } else {
-            // Check if app is installed before trying to launch
-            this._checkFlatpakInstalled();
             this._launchApp();
         }
     }
@@ -201,24 +198,7 @@ export default class ClipboardMonitorExtension extends Extension {
         }
     }
 
-    _checkFlatpakInstalled() {
-        // Check if the Flatpak is still installed
-        // If not, disable this extension (cleanup after uninstall)
-        try {
-            GLib.spawn_command_line_sync('flatpak list --app');
-            const [ok, stdout] = GLib.spawn_command_line_sync('flatpak list --app');
-            if (ok) {
-                const output = new TextDecoder().decode(stdout);
-                if (!output.includes('io.github.dyslechtchitect.tfcbm')) {
-                    // Flatpak was uninstalled, disable this extension
-                    log('[TFCBM] Flatpak uninstalled, disabling extension...');
-                    GLib.spawn_command_line_async('gnome-extensions disable tfcbm-clipboard-monitor@github.com');
-                }
-            }
-        } catch (e) {
-            // Ignore errors - might not have flatpak command
-        }
-    }
+
 
     _registerKeybinding() {
         try {
@@ -343,16 +323,6 @@ export default class ClipboardMonitorExtension extends Extension {
         // Set initial icon visibility (will be hidden if app not running)
         this._updateIconStyle();
 
-        // Check immediately on enable
-        this._checkFlatpakInstalled();
-
-        // Check periodically if Flatpak is still installed (every 10 seconds)
-        // This ensures the extension auto-disables quickly if the Flatpak is uninstalled
-        this._flatpakCheckTimeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
-            this._checkFlatpakInstalled();
-            return GLib.SOURCE_CONTINUE; // Keep running
-        });
-
         log('[TFCBM] Extension enable() complete - extension is now active');
     }
 
@@ -380,12 +350,6 @@ export default class ClipboardMonitorExtension extends Extension {
             this._indicator.destroy();
             this._indicator = null;
             this._icon = null;
-        }
-
-        // Stop Flatpak check timeout
-        if (this._flatpakCheckTimeout) {
-            GLib.source_remove(this._flatpakCheckTimeout);
-            this._flatpakCheckTimeout = null;
         }
 
         // Disconnect DBus owner watch

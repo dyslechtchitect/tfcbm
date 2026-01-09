@@ -261,51 +261,67 @@ class SettingsPage:
 
     def _show_recording_popup(self) -> None:
         """Show a popup window to capture keyboard shortcut."""
-        # Use Adw.MessageDialog for better integration and focus handling
-        dialog = Adw.MessageDialog.new(
-            None,  # parent window
-            "Recording Shortcut...",
-            "Press any key combination. The shortcut will be recorded automatically."
-        )
-        dialog.add_response("cancel", "Cancel")
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
+        # Create a simple modal window for better keyboard event capture
+        window = Gtk.Window()
+        window.set_title("Recording Shortcut...")
+        window.set_modal(True)
+        window.set_default_size(400, 150)
 
-        def on_response(dialog, response):
-            if response == "cancel":
-                self._cancel_recording()
-            dialog.close()
+        # Create content box
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(24)
+        box.set_margin_bottom(24)
+        box.set_margin_start(24)
+        box.set_margin_end(24)
 
-        dialog.connect("response", on_response)
+        # Add label
+        label = Gtk.Label()
+        label.set_markup("<big><b>Recording Shortcut...</b></big>\n\nPress any key combination.\nThe shortcut will be recorded automatically.")
+        label.set_justify(Gtk.Justification.CENTER)
+        box.append(label)
 
-        # Setup keyboard event handler
+        # Add cancel button
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.set_halign(Gtk.Align.CENTER)
+        cancel_btn.connect("clicked", lambda _: self._cancel_recording_and_close_window())
+        box.append(cancel_btn)
+
+        window.set_child(box)
+
+        # Setup keyboard event handler with capture phase for better event handling
         key_controller = Gtk.EventControllerKey.new()
+        key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key_controller.connect("key-pressed", self._on_key_pressed_in_popup)
-        dialog.add_controller(key_controller)
+        window.add_controller(key_controller)
 
-        # Store reference to the dialog
-        self.shortcut_recorder_window = dialog
-        self.shortcut_recorder_window.set_modal(True)
+        # Store reference to the window
+        self.shortcut_recorder_window = window
         self.shortcut_recorder_window.present()
 
     def _on_key_pressed_in_popup(
         self, controller: Gtk.EventControllerKey, keyval: int, keycode: int, state: int
     ) -> bool:
         """Handle key press in recording popup."""
+        print(f"[DEBUG] Key pressed in popup: keyval={keyval}, keycode={keycode}, state={state}, is_recording={self.shortcut_service.is_recording}")
+
         if not self.shortcut_service.is_recording:
             return False
 
         # Parse the key event
         event = self.keyboard_parser.parse_key_event(keyval, keycode, state)
+        print(f"[DEBUG] Parsed event: {event}")
 
         # Process it through the service
         shortcut = self.shortcut_service.process_key_event(event)
+        print(f"[DEBUG] Processed shortcut: {shortcut}")
 
         if shortcut:
             # Apply it to the extension
+            print(f"[DEBUG] Applying shortcut: {shortcut.to_display_string()}")
             self.shortcut_service.apply_shortcut(shortcut)
             # Close the popup
             if self.shortcut_recorder_window:
+                print("[DEBUG] Closing popup window")
                 self.shortcut_recorder_window.close()
                 self.shortcut_recorder_window = None
             return True
@@ -322,6 +338,10 @@ class SettingsPage:
         if self.shortcut_recorder_window:
             self.shortcut_recorder_window.close()
             self.shortcut_recorder_window = None
+
+    def _cancel_recording_and_close_window(self) -> None:
+        """Cancel recording and close the popup window."""
+        self._cancel_recording()
 
 
     # ShortcutObserver implementations

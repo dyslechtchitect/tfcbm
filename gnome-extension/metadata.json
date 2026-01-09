@@ -10,5 +10,5 @@
     "49"
   ],
   "url": "https://github.com/dyslechtchitect/tfcbm",
-  "settings-schema": "org.gnome.shell.extensions.simple-clipboard"
+  "settings-schema": "org.gnome.shell.extensions.tfcbm-clipboard-monitor"
 }

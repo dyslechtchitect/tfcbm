@@ -2,15 +2,20 @@
 set -e
 
 EXTENSION_UUID="tfcbm-clipboard-monitor@github.com"
-EXTENSION_ZIP="/app/share/tfcbm/${EXTENSION_UUID}.zip"
 
 # Detect if we're running inside flatpak
 if [ -n "${FLATPAK_ID}" ]; then
     # Running inside flatpak - use flatpak-spawn to run host commands
     CMD_PREFIX="flatpak-spawn --host"
+    EXTENSION_ZIP="/app/share/tfcbm/${EXTENSION_UUID}.zip"
 else
-    # Running on host
+    # Running on host (non-Flatpak)
     CMD_PREFIX=""
+    echo "Running native GNOME extension installer..."
+    # Execute the install.sh script located in the gnome-extension subdirectory
+    # We need to change to that directory first for relative paths in install.sh to work
+    (cd gnome-extension && ./install.sh)
+    exit 0 # Exit after running native installer
 fi
 
 # Check if gnome-extensions command is available on host
@@ -60,3 +65,4 @@ else
     echo "Error: Failed to install extension."
     exit 1
 fi
+

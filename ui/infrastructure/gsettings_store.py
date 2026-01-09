@@ -57,12 +57,38 @@ class GSettingsStore(ISettingsStore):
         """
         from ui.utils.extension_check import is_flatpak
 
+        cmd = []
+        env = os.environ.copy()
+
+        if self.schema_dir and Path(self.schema_dir).exists():
+            schema_dir_str = str(self.schema_dir)
+            if "GSETTINGS_SCHEMA_DIR" in env:
+                env["GSETTINGS_SCHEMA_DIR"] = (
+                    f"{schema_dir_str}:{env['GSETTINGS_SCHEMA_DIR']}"
+                )
+            else:
+                env["GSETTINGS_SCHEMA_DIR"] = schema_dir_str
+        else:
+            # If schema_dir doesn't exist, GSETTINGS_SCHEMA_DIR shouldn't be set
+            # as it might point to a non-existent path and cause issues.
+            # In this case, gsettings will rely on system-wide schemas.
+            if "GSETTINGS_SCHEMA_DIR" in env:
+                del env["GSETTINGS_SCHEMA_DIR"]
+
         if is_flatpak():
             # Run gsettings on host system to access the same dconf database as GNOME Shell
             # Use --directory to set a working directory that exists on the host
-            return ["flatpak-spawn", "--host", "--directory=/tmp", "gsettings"] + args
+            cmd.extend(["flatpak-spawn", "--host", "--directory=/tmp"])
+            # Pass GSETTINGS_SCHEMA_DIR explicitly via --env
+            if "GSETTINGS_SCHEMA_DIR" in env:
+                cmd.append(f"--env=GSETTINGS_SCHEMA_DIR={env['GSETTINGS_SCHEMA_DIR']}")
+                # Remove from env dict so it's not passed twice implicitly by subprocess
+                del env["GSETTINGS_SCHEMA_DIR"]
+            cmd.extend(["gsettings"] + args)
         else:
-            return ["gsettings"] + args
+            cmd.extend(["gsettings"] + args)
+
+        return cmd, env
 
     def get_shortcut(self) -> Optional[KeyboardShortcut]:
         """
@@ -72,14 +98,13 @@ class GSettingsStore(ISettingsStore):
             KeyboardShortcut if configured, None otherwise
         """
         try:
-            cmd = self._get_gsettings_command(["get", self.schema_id, self.key])
-            env = None if "flatpak-spawn" in cmd else self._get_env_with_schema_dir()
+            cmd, env_vars = self._get_gsettings_command(["get", self.schema_id, self.key])
 
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                env=env,
+                env=env_vars,
                 timeout=5,
             )
 
@@ -106,15 +131,14 @@ class GSettingsStore(ISettingsStore):
         """
         try:
             gsettings_format = f"['{shortcut.to_gsettings_string()}']"
-            cmd = self._get_gsettings_command(["set", self.schema_id, self.key, gsettings_format])
-            env = None if "flatpak-spawn" in cmd else self._get_env_with_schema_dir()
+            cmd, env_vars = self._get_gsettings_command(["set", self.schema_id, self.key, gsettings_format])
 
             print(f"[DEBUG] Running command: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                env=env,
+                env=env_vars,
                 timeout=5,
             )
 

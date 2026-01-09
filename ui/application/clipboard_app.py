@@ -74,7 +74,8 @@ class ClipboardApp(Adw.Application):
         # Register D-Bus service for extension integration
         # The UI handles Activate/ShowSettings/Quit commands AND forwards clipboard events to server
         self.dbus_service = TFCBMDBusService(self, clipboard_handler=self._handle_clipboard_event)
-        self.dbus_service.start()
+        if not self.dbus_service.start():
+            logger.error("Failed to start DBus service - extension integration may not work")
 
         # Register actions for tray icon integration
         activate_action = Gio.SimpleAction.new("show-window", None)

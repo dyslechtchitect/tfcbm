@@ -47,6 +47,7 @@ echo "Copying extension files..."
 cp "$SCRIPT_DIR/extension.js" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/metadata.json" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/tfcbm.svg" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/stylesheet.css" "$INSTALL_DIR/"
 
 # Copy src directory
 if [ -d "$SCRIPT_DIR/src" ]; then
