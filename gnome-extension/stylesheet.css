@@ -71,11 +71,11 @@
 .tfcbm-item-button {
     background-color: @theme_bg_color;
     border-radius: 12px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     margin-bottom: 8px;
     padding: 12px;
     min-height: 60px;
-    transition: background-color 0.2s ease-in-out;
+    transition-duration: 200ms;
+    transition-property: background-color;
 }
 
 .tfcbm-item-button:hover {
