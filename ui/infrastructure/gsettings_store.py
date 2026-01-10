@@ -113,3 +113,74 @@ class GSettingsStore(ISettingsStore):
             logger.error(f"Unexpected error writing shortcut: {e}")
             return False
 
+    def disable_keybinding(self) -> bool:
+        """
+        Temporarily disable the global keybinding via the extension's D-Bus.
+
+        This is used during shortcut recording to prevent the extension from
+        intercepting the key events before the GTK window can capture them.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            proxy = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None,
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor",
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                None
+            )
+            proxy.call_sync(
+                "DisableKeybinding",
+                None,
+                Gio.DBusCallFlags.NONE,
+                2000,
+                None
+            )
+            logger.debug("Keybinding disabled successfully")
+            return True
+        except GLib.Error as e:
+            logger.error(f"Error disabling keybinding via D-Bus: {e.message}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error disabling keybinding: {e}")
+            return False
+
+    def enable_keybinding(self) -> bool:
+        """
+        Re-enable the global keybinding via the extension's D-Bus.
+
+        This is called after shortcut recording completes.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            proxy = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None,
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor",
+                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                None
+            )
+            proxy.call_sync(
+                "EnableKeybinding",
+                None,
+                Gio.DBusCallFlags.NONE,
+                2000,
+                None
+            )
+            logger.debug("Keybinding re-enabled successfully")
+            return True
+        except GLib.Error as e:
+            logger.error(f"Error re-enabling keybinding via D-Bus: {e.message}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error re-enabling keybinding: {e}")
+            return False
+

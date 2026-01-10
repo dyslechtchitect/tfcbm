@@ -49,6 +49,8 @@ const EXTENSION_DBUS_IFACE_XML = `
         </method>
         <!-- Methods for global input monitoring/paste simulation could be added here -->
         <method name="SimulatePaste"/>
+        <method name="DisableKeybinding"/>
+        <method name="EnableKeybinding"/>
     </interface>
 </node>
 `;
@@ -112,6 +114,7 @@ export default class ClipboardMonitorExtension extends Extension {
         this._icon = null;
         this._exportedDBusId = null; // Registration ID for our exported D-Bus object
         this._busNameOwnerId = null; // Bus name ownership ID
+        this._keybindingDisabled = false; // Track if keybinding is temporarily disabled
     }
 
     _launchApp() {
@@ -353,6 +356,29 @@ export default class ClipboardMonitorExtension extends Extension {
         }
     }
 
+    _DisableKeybinding() {
+        try {
+            log('[TFCBM Extension] Disabling keybinding for recording');
+            Main.wm.removeKeybinding('toggle-tfcbm-ui');
+            this._keybindingDisabled = true;
+            log('[TFCBM Extension] Keybinding disabled successfully');
+        } catch (e) {
+            logError(e, '[TFCBM Extension] Error disabling keybinding');
+            throw new Gio.DBusError(Gio.DBusError.quark(), Gio.DBusError.Code.FAILED, `Failed to disable keybinding: ${e.message}`);
+        }
+    }
+
+    _EnableKeybinding() {
+        try {
+            log('[TFCBM Extension] Re-enabling keybinding after recording');
+            this._registerKeybinding();
+            this._keybindingDisabled = false;
+            log('[TFCBM Extension] Keybinding re-enabled successfully');
+        } catch (e) {
+            logError(e, '[TFCBM Extension] Error re-enabling keybinding');
+            throw new Gio.DBusError(Gio.DBusError.quark(), Gio.DBusError.Code.FAILED, `Failed to re-enable keybinding: ${e.message}`);
+        }
+    }
 
 
     _registerKeybinding() {
@@ -503,6 +529,12 @@ export default class ClipboardMonitorExtension extends Extension {
                             invocation.return_value(null);
                         } else if (methodName === 'SimulatePaste') {
                             this._SimulatePaste();
+                            invocation.return_value(null);
+                        } else if (methodName === 'DisableKeybinding') {
+                            this._DisableKeybinding();
+                            invocation.return_value(null);
+                        } else if (methodName === 'EnableKeybinding') {
+                            this._EnableKeybinding();
                             invocation.return_value(null);
                         } else {
                             invocation.return_error_literal(Gio.DBusError.quark(), Gio.DBusError.Code.UNKNOWN_METHOD, 'Unknown method');

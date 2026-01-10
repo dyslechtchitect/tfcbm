@@ -18,7 +18,6 @@ from ui.domain.keyboard import KeyboardShortcut
 from ui.infrastructure.gtk_keyboard_parser import GtkKeyboardParser
 from ui.infrastructure.gsettings_store import GSettingsStore
 from ui.services.shortcut_service import ShortcutService
-from ui.utils.extension_check import get_extension_status, get_extension_install_command, get_extension_enable_command
 
 
 class SettingsPage:
@@ -65,10 +64,6 @@ class SettingsPage:
         general_group.add(startup_row)
 
         settings_page.add(general_group)
-
-        # GNOME Extension Status group
-        extension_status_group = self._build_extension_status_group()
-        settings_page.add(extension_status_group)
 
         # Clipboard behavior group
         clipboard_group = self._build_clipboard_group()
@@ -247,6 +242,10 @@ class SettingsPage:
                 self.record_btn.add_css_class("destructive-action")
                 self.recording_status.set_markup("<i>Press any key combination...</i>")
 
+                # Disable the global keybinding so we can capture it in the GTK window
+                logger.info("Disabling global keybinding...")
+                self.settings_store.disable_keybinding()
+
                 # Attach keyboard controller to main window to capture shortcut
                 logger.info("Attaching keyboard controller...")
                 self._attach_keyboard_controller()
@@ -264,6 +263,9 @@ class SettingsPage:
                 self._detach_keyboard_controller()
                 logger.info("Clearing recording state...")
                 self._set_main_app_recording_state(False)
+                # Re-enable the global keybinding
+                logger.info("Re-enabling global keybinding...")
+                self.settings_store.enable_keybinding()
                 logger.info("Record mode deactivated successfully")
         except Exception as e:
             logger.error(f"Error in record button click handler: {e}", exc_info=True)
@@ -369,6 +371,9 @@ class SettingsPage:
         self._detach_keyboard_controller()
         # CRITICAL: Clear the recording flag so shortcuts work!
         self._set_main_app_recording_state(False)
+        # Re-enable the global keybinding
+        logger.info("Re-enabling global keybinding after shortcut applied...")
+        self.settings_store.enable_keybinding()
         logger.info("🔚 Recording mode UI reset complete")
 
     def _build_retention_group(self) -> Adw.PreferencesGroup:
@@ -662,67 +667,3 @@ class SettingsPage:
         else:
             logger.warning("No window reference available to set recording state")
 
-    def _build_extension_status_group(self) -> Adw.PreferencesGroup:
-        """Build the GNOME Extension status section."""
-        group = Adw.PreferencesGroup()
-        group.set_title("GNOME Shell Extension Status")
-        group.set_description("Required for global shortcut and enhanced clipboard monitoring")
-
-        # Status display row
-        status_row = Adw.ActionRow()
-        status_row.set_title("Extension Status")
-        self.extension_status_label = Gtk.Label(label="Checking status...")
-        self.extension_status_label.set_halign(Gtk.Align.END)
-        status_row.add_suffix(self.extension_status_label)
-        group.add(status_row)
-
-        # Guidance row
-        guidance_row = Adw.ActionRow()
-        guidance_row.set_title("Guidance")
-        self.extension_guidance_label = Gtk.Label(label="")
-        self.extension_guidance_label.set_halign(Gtk.Align.START)
-        self.extension_guidance_label.set_wrap(True)
-        self.extension_guidance_label.set_max_width_chars(50) # Limit width for readability
-        guidance_row.set_child(self.extension_guidance_label)
-        group.add(guidance_row)
-
-        # Check status button
-        check_button_row = Adw.ActionRow()
-        check_button = Gtk.Button(label="Refresh Status")
-        check_button.add_css_class("suggested-action")
-        check_button.set_halign(Gtk.Align.CENTER)
-        check_button.connect("clicked", self._on_refresh_extension_status_clicked)
-        check_button_row.add_suffix(check_button)
-        group.add(check_button_row)
-
-        # Initial status update
-        self._update_extension_status_ui()
-
-        return group
-
-    def _update_extension_status_ui(self):
-        """Update the UI with the current extension status and guidance."""
-        status = get_extension_status()
-        if status['ready']:
-            self.extension_status_label.set_markup("<span foreground='green'><b>Installed and Enabled</b></span>")
-            self.extension_guidance_label.set_text("The extension is running and integrated with TFCBM.")
-        elif status['installed']:
-            self.extension_status_label.set_markup("<span foreground='orange'><b>Installed but Not Enabled</b></span>")
-            self.extension_guidance_label.set_markup(
-                f"The extension is installed but not active. "
-                f"You may need to log out and log back in, or enable it manually. "
-                f"Command: <code>{get_extension_enable_command()}</code>"
-            )
-        else:
-            self.extension_status_label.set_markup("<span foreground='red'><b>Not Installed</b></span>")
-            self.extension_guidance_label.set_markup(
-                f"The extension is not installed. TFCBM's global shortcut and enhanced clipboard monitoring will not work. "
-                f"Please install it manually. "
-                f"Instructions: <code>{get_extension_install_command()}</code>"
-            )
-
-    def _on_refresh_extension_status_clicked(self, button):
-        """Handle refresh status button click."""
-        self.extension_status_label.set_text("Checking status...")
-        self.extension_guidance_label.set_text("")
-        self._update_extension_status_ui()
