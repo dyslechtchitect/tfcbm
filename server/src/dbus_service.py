@@ -160,6 +160,13 @@ class TFCBMDBusService:
             try:
                 is_visible = win.is_visible()
 
+                # If recording shortcut and window is visible, do NOT hide it.
+                # This prevents unfocusing during shortcut recording.
+                is_recording = getattr(win, 'is_recording_shortcut', False)
+                if is_recording and is_visible:
+                    logger.info("Ignoring Activate call to hide window because shortcut recording is active.")
+                    return
+
                 if is_visible:
                     win.hide()
                     if hasattr(win, 'keyboard_handler'):

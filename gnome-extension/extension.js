@@ -27,7 +27,7 @@ import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { DBusNotifier } from './src/adapters/DBusNotifier.js';
 import { PollingScheduler } from './src/PollingScheduler.js';
 
-const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm';
+const DBUS_NAME = 'org.tfcbm.ClipboardService';
 const DBUS_PATH = '/org/tfcbm/ClipboardService';
 const DBUS_IFACE = 'org.tfcbm.ClipboardService';
 
@@ -244,7 +244,14 @@ export default class ClipboardMonitorExtension extends Extension {
         }
 
         try {
-            // Get the GSettings value as a string (assuming all settings for Flatpak are strings)
+            // For the keyboard shortcut, we need to read the array and return the first element as a string
+            if (key === 'toggle-tfcbm-ui') {
+                const valueArray = this._settings.get_strv(key);
+                const value = valueArray.length > 0 ? valueArray[0] : '';
+                log(`TFCBM Extension: GetSetting('${key}') -> '${value}' (from array: [${valueArray.join(', ')}])`);
+                return value;
+            }
+            // For other settings, use get_string
             const value = this._settings.get_string(key);
             log(`TFCBM Extension: GetSetting('${key}') -> '${value}'`);
             return value;
@@ -265,12 +272,17 @@ export default class ClipboardMonitorExtension extends Extension {
         }
 
         try {
-            // Set the GSettings value as a string
-            this._settings.set_string(key, value);
-            log(`TFCBM Extension: SetSetting('${key}', '${value}') successful`);
-            // Trigger re-registration if the key is 'toggle-tfcbm-ui' (for the shortcut)
+            // For the keyboard shortcut, we need to convert the string to an array
             if (key === 'toggle-tfcbm-ui') {
+                // Convert single string like "<Control><Shift>v" to array ["<Control><Shift>v"]
+                this._settings.set_strv(key, [value]);
+                log(`TFCBM Extension: SetSetting('${key}', ['${value}']) successful (converted to array)`);
+                // Trigger re-registration for the shortcut
                 this._reregisterKeybinding();
+            } else {
+                // For other settings, use set_string
+                this._settings.set_string(key, value);
+                log(`TFCBM Extension: SetSetting('${key}', '${value}') successful`);
             }
         } catch (e) {
             logError(e, `TFCBM Extension: Failed to set setting for key '${key}' to '${value}'`);
@@ -366,8 +378,12 @@ export default class ClipboardMonitorExtension extends Extension {
 
     _reregisterKeybinding() {
         try {
+            const currentBinding = this._settings.get_strv('toggle-tfcbm-ui');
+            log(`[TFCBM] Re-registering keyboard shortcut: ${currentBinding}`);
+
             // Remove old keybinding
             Main.wm.removeKeybinding('toggle-tfcbm-ui');
+            log('[TFCBM] Old keybinding removed');
 
             // Re-register with new shortcut
             this._registerKeybinding();
@@ -502,13 +518,19 @@ export default class ClipboardMonitorExtension extends Extension {
             log(`[TFCBM] Extension D-Bus service '${EXTENSION_DBUS_NAME}' exported on path '${EXTENSION_DBUS_PATH}' with ID ${this._exportedDBusId}`);
 
             // Own the D-Bus name so clients can find us
-            this._busNameOwnerId = Gio.DBus.session.own_name(
+            this._busNameOwnerId = Gio.bus_own_name(
+                Gio.BusType.SESSION,
                 EXTENSION_DBUS_NAME,
                 Gio.BusNameOwnerFlags.NONE,
-                null, // name acquired callback
-                null  // name lost callback
+                null, // bus acquired callback
+                (connection, name) => {
+                    log(`[TFCBM] D-Bus name '${name}' acquired successfully`);
+                },
+                (connection, name) => {
+                    log(`[TFCBM] WARNING: Lost D-Bus name '${name}'`);
+                }
             );
-            log(`[TFCBM] D-Bus name '${EXTENSION_DBUS_NAME}' ownership requested`);
+            log(`[TFCBM] D-Bus name '${EXTENSION_DBUS_NAME}' ownership requested with ID ${this._busNameOwnerId}`);
         } catch (e) {
             logError(e, 'TFCBM: Error exporting extension D-Bus service');
         }
@@ -561,7 +583,7 @@ export default class ClipboardMonitorExtension extends Extension {
 
         // Unown the D-Bus name
         if (this._busNameOwnerId) {
-            Gio.DBus.session.unown_name(this._busNameOwnerId);
+            Gio.bus_unown_name(this._busNameOwnerId);
             this._busNameOwnerId = null;
             log(`[TFCBM] D-Bus name '${EXTENSION_DBUS_NAME}' unowned.`);
         }

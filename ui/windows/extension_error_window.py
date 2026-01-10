@@ -238,32 +238,48 @@ class ExtensionErrorWindow(Adw.ApplicationWindow):
 
                 if success:
                     # Extension installed successfully
-                    self.install_succeeded = True
-                    self.status_label.set_visible(True)
+                    logger.info("Extension installed successfully, checking if ready to proceed")
 
-                    # Show restart instructions
-                    import os
-                    session_type = os.environ.get('XDG_SESSION_TYPE', 'unknown')
+                    # Check if extension is now ready (our new logic accepts INITIALIZED+Enabled)
+                    from ui.utils.extension_check import get_extension_status
+                    import time
+                    time.sleep(0.5)  # Give GNOME Shell a moment to update
 
-                    if session_type == 'x11':
-                        restart_msg = (
-                            "<span color='green'>✓ Extension installed!</span>\n\n"
-                            "<b>Next steps:</b>\n"
-                            "1. Press Alt+F2\n"
-                            "2. Type: <tt>r</tt>\n"
-                            "3. Press Enter to restart GNOME Shell\n"
-                            "4. Launch TFCBM again"
-                        )
-                    else:  # Wayland or unknown
-                        restart_msg = (
-                            "<span color='green'>✓ Extension installed!</span>\n\n"
-                            "<b>Next steps:</b>\n"
-                            "1. Log out\n"
-                            "2. Log back in\n"
-                            "3. Launch TFCBM again"
-                        )
+                    status = get_extension_status()
+                    if status['ready']:
+                        # Extension is ready! - close window and launch app
+                        logger.info("Extension is ready after installation, launching main app")
+                        app = self.get_application()
+                        self.close()
+                        if app:
+                            GLib.idle_add(lambda: (app._show_splash(), app._load_main_window()))
+                    else:
+                        # Extension installed but not ready - show restart instructions
+                        self.install_succeeded = True
+                        self.status_label.set_visible(True)
 
-                    self.status_label.set_markup(restart_msg)
+                        import os
+                        session_type = os.environ.get('XDG_SESSION_TYPE', 'unknown')
+
+                        if session_type == 'x11':
+                            restart_msg = (
+                                "<span color='green'>✓ Extension installed!</span>\n\n"
+                                "<b>Next steps:</b>\n"
+                                "1. Press Alt+F2\n"
+                                "2. Type: <tt>r</tt>\n"
+                                "3. Press Enter to restart GNOME Shell\n"
+                                "4. Click 'Check Again' button"
+                            )
+                        else:  # Wayland or unknown
+                            restart_msg = (
+                                "<span color='green'>✓ Extension installed!</span>\n\n"
+                                "<b>Next steps:</b>\n"
+                                "1. Log out\n"
+                                "2. Log back in\n"
+                                "3. Click 'Check Again' button"
+                            )
+
+                        self.status_label.set_markup(restart_msg)
                 else:
                     self.status_label.set_visible(True)
                     self.status_label.set_markup(f"<span color='red'>Error: {message}</span>")
@@ -288,14 +304,47 @@ class ExtensionErrorWindow(Adw.ApplicationWindow):
 
             def update_ui():
                 if success:
-                    # Extension enabled successfully - close window and launch app
-                    logger.info("Extension enabled successfully, launching main app")
-                    # Get app reference before closing window
-                    app = self.get_application()
-                    self.close()
-                    # Directly trigger loading the main window
-                    if app:
-                        GLib.idle_add(lambda: (app._show_splash(), app._load_main_window()))
+                    # Extension enabled successfully
+                    logger.info("Extension enabled successfully, checking if we can proceed")
+
+                    # Check if extension is now ready
+                    from ui.utils.extension_check import get_extension_status
+                    import time
+                    time.sleep(0.5)  # Give GNOME Shell a moment to update
+
+                    status = get_extension_status()
+                    if status['ready']:
+                        # Extension is active - close window and launch app
+                        logger.info("Extension is active, launching main app")
+                        app = self.get_application()
+                        self.close()
+                        if app:
+                            GLib.idle_add(lambda: (app._show_splash(), app._load_main_window()))
+                    else:
+                        # Extension enabled but not active yet (needs restart)
+                        button.set_sensitive(True)
+                        button.set_label("Enable Extension")
+                        self.status_label.set_visible(True)
+
+                        import os
+                        session_type = os.environ.get('XDG_SESSION_TYPE', 'unknown')
+
+                        if session_type == 'x11':
+                            restart_msg = (
+                                "<span color='orange'>⚠ Extension enabled but not active</span>\n\n"
+                                "<b>You may need to restart GNOME Shell:</b>\n"
+                                "1. Press Alt+F2\n"
+                                "2. Type: <tt>r</tt>\n"
+                                "3. Press Enter\n"
+                                "4. Click 'Check Again' button"
+                            )
+                        else:
+                            restart_msg = (
+                                "<span color='orange'>⚠ Extension enabled but not active</span>\n\n"
+                                "<b>You may need to log out and back in, then click 'Check Again'</b>"
+                            )
+
+                        self.status_label.set_markup(restart_msg)
                 else:
                     # Show error message
                     button.set_sensitive(True)

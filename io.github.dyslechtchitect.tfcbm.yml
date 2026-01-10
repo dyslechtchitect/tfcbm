@@ -23,6 +23,8 @@ finish-args:
 
   # D-Bus for GNOME extension communication
   - --own-name=org.tfcbm.ClipboardService            # Main app's D-Bus service for extension communication
+  - --talk-name=org.gnome.Shell.Extensions.TfcbmClipboardMonitor  # Extension's D-Bus service for GSettings access
+  - --talk-name=org.gnome.Shell.Extensions           # For installing/enabling GNOME extensions (Flathub-compliant)
   # Note: GSettings access is via the host extension's D-Bus interface, not direct dconf
 
   # Filesystem access for app data and config

@@ -498,7 +498,8 @@ class MainWindowBuilder:
 
         settings_page_obj = SettingsPage(
             settings=self.window.settings,
-            on_notification=self.window.show_notification
+            on_notification=self.window.show_notification,
+            window=self.window  # Pass window reference for direct communication
         )
         settings_page = settings_page_obj.build()
 

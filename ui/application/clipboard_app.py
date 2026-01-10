@@ -181,6 +181,25 @@ class ClipboardApp(Adw.Application):
             # Load main window in background
             GLib.timeout_add(100, self._load_main_window)
         else:
+            # Check extension status before showing existing window
+            from ui.utils.extension_check import get_extension_status
+            ext_status = get_extension_status()
+
+            # If extension was uninstalled while app is running, show error window
+            if not ext_status['installed']:
+                logger.warning("Extension was uninstalled - showing setup window")
+                from ui.windows.extension_error_window import ExtensionErrorWindow
+
+                # Close/destroy the old main window
+                if self.main_window:
+                    self.main_window.close()
+                    self.main_window = None
+
+                error_win = ExtensionErrorWindow(self, ext_status)
+                error_win.present()
+                return
+
+            # Extension is installed, proceed with toggle
             # Toggle window visibility instead of always showing
             logger.info("Toggling window visibility...")
             if win.is_visible():

@@ -61,6 +61,14 @@ gnome_extension_zip = custom_target('gnome-extension-zip',
   install_dir: pkgdatadir
 )
 
+# Install GNOME Shell extension files for Flatpak
+# This allows the Flatpak app to install the extension on first run
+install_subdir('gnome-extension',
+  install_dir: datadir / 'gnome-shell/extensions/tfcbm-clipboard-monitor@github.com',
+  strip_directory: true,
+  exclude_files: ['install.sh', 'uninstall.sh', 'README.md', 'package.json']
+)
+
 # Configure and install wrapper scripts
 conf_data = configuration_data()
 conf_data.set('PYTHON', python.full_path())

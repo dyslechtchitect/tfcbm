@@ -6,9 +6,13 @@ from typing import Callable, Optional
 
 import gi
 
+import logging
+
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, GObject, Gtk, Gio
+
+logger = logging.getLogger("TFCBM.SettingsPage")
 
 from ui.domain.keyboard import KeyboardShortcut
 from ui.infrastructure.gtk_keyboard_parser import GtkKeyboardParser
@@ -22,9 +26,11 @@ class SettingsPage:
         self,
         settings,
         on_notification: Callable[[str], None],
+        window=None,  # Optional window reference for direct communication
     ):
         self.settings = settings
         self.on_notification = on_notification
+        self.window = window  # Store window reference for setting recording state
 
         # Shortcut service setup
         self.settings_store = GSettingsStore(
@@ -230,24 +236,38 @@ class SettingsPage:
 
     def _on_record_button_clicked(self, button: Gtk.Button) -> None:
         """Handle record button click."""
-        is_recording = self.shortcut_service.toggle_recording()
+        try:
+            logger.info("Record button clicked")
+            is_recording = self.shortcut_service.toggle_recording()
+            logger.info(f"Recording state toggled to: {is_recording}")
 
-        if is_recording:
-            self.record_btn.set_label("Stop Recording")
-            self.record_btn.remove_css_class("suggested-action")
-            self.record_btn.add_css_class("destructive-action")
-            self.recording_status.set_markup("<i>Press any key combination...</i>")
+            if is_recording:
+                self.record_btn.set_label("Stop Recording")
+                self.record_btn.remove_css_class("suggested-action")
+                self.record_btn.add_css_class("destructive-action")
+                self.recording_status.set_markup("<i>Press any key combination...</i>")
 
-            # Attach keyboard controller to main window to capture shortcut
-            self._attach_keyboard_controller()
-        else:
-            self.record_btn.set_label("Record")
-            self.record_btn.remove_css_class("destructive-action")
-            self.record_btn.add_css_class("suggested-action")
-            self.recording_status.set_text("")
+                # Attach keyboard controller to main window to capture shortcut
+                logger.info("Attaching keyboard controller...")
+                self._attach_keyboard_controller()
+                logger.info("Setting recording state...")
+                self._set_main_app_recording_state(True)
+                logger.info("Record mode activated successfully")
+            else:
+                self.record_btn.set_label("Record")
+                self.record_btn.remove_css_class("destructive-action")
+                self.record_btn.add_css_class("suggested-action")
+                self.recording_status.set_text("")
 
-            # Remove keyboard controller when not recording
-            self._detach_keyboard_controller()
+                # Remove keyboard controller when not recording
+                logger.info("Detaching keyboard controller...")
+                self._detach_keyboard_controller()
+                logger.info("Clearing recording state...")
+                self._set_main_app_recording_state(False)
+                logger.info("Record mode deactivated successfully")
+        except Exception as e:
+            logger.error(f"Error in record button click handler: {e}", exc_info=True)
+            self.on_notification(f"Error: {str(e)}")
 
     def _attach_keyboard_controller(self) -> None:
         """Attach keyboard event controller to window for shortcut recording."""
@@ -261,7 +281,7 @@ class SettingsPage:
                     break
 
         if not self.parent_window:
-            print("[ERROR] Could not find parent window for keyboard controller")
+            logger.error("Could not find parent window for keyboard controller")
             return
 
         # Create and attach keyboard controller
@@ -269,38 +289,45 @@ class SettingsPage:
         self.key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         self.key_controller.connect("key-pressed", self._on_key_pressed_for_recording)
         self.parent_window.add_controller(self.key_controller)
-        print("[DEBUG] Attached keyboard controller to window")
+        logger.debug("Attached keyboard controller to window")
 
     def _detach_keyboard_controller(self) -> None:
         """Remove keyboard event controller from window."""
         if self.key_controller and self.parent_window:
             self.parent_window.remove_controller(self.key_controller)
             self.key_controller = None
-            print("[DEBUG] Detached keyboard controller from window")
+            logger.debug("Detached keyboard controller from window")
 
     def _on_key_pressed_for_recording(
         self, controller: Gtk.EventControllerKey, keyval: int, keycode: int, state: int
     ) -> bool:
         """Handle key press during shortcut recording (no popup)."""
-        print(f"[DEBUG] Key pressed: keyval={keyval}, keycode={keycode}, state={state}, is_recording={self.shortcut_service.is_recording}")
+        logger.info(f"🔑 Key pressed: keyval={keyval}, keycode={keycode}, state={state}, is_recording={self.shortcut_service.is_recording}")
 
         if not self.shortcut_service.is_recording:
+            logger.warning("Key pressed but service not in recording mode!")
             return False
 
-        # Parse the key event
-        event = self.keyboard_parser.parse_key_event(keyval, keycode, state)
-        print(f"[DEBUG] Parsed event: {event}")
+        try:
+            # Parse the key event
+            event = self.keyboard_parser.parse_key_event(keyval, keycode, state)
+            logger.info(f"✅ Parsed event: {event}")
 
-        # Process it through the service
-        shortcut = self.shortcut_service.process_key_event(event)
-        print(f"[DEBUG] Processed shortcut: {shortcut}")
+            # Process it through the service
+            shortcut = self.shortcut_service.process_key_event(event)
+            logger.info(f"✅ Processed shortcut: {shortcut}")
 
-        if shortcut:
-            # Apply it to the extension
-            print(f"[DEBUG] Applying shortcut: {shortcut.to_display_string()}")
-            self.shortcut_service.apply_shortcut(shortcut)
-            # Note: Controller will be detached in on_shortcut_applied callback
-            return True
+            if shortcut:
+                # Apply it to the extension
+                logger.info(f"🎯 Applying shortcut: {shortcut.to_display_string()}")
+                self.shortcut_service.apply_shortcut(shortcut)
+                # Note: Controller will be detached in on_shortcut_applied callback
+                return True
+            else:
+                logger.info("⚠️ No shortcut generated (likely modifier-only)")
+
+        except Exception as e:
+            logger.error(f"❌ Error processing key event: {e}", exc_info=True)
 
         return False
 
@@ -309,10 +336,12 @@ class SettingsPage:
     # ShortcutObserver implementations
     def on_shortcut_recorded(self, shortcut: KeyboardShortcut) -> None:
         """Called when a shortcut is recorded."""
+        logger.info(f"📝 Shortcut recorded: {shortcut.to_display_string()}")
         pass  # Handled in on_shortcut_applied
 
     def on_shortcut_applied(self, shortcut: KeyboardShortcut, success: bool) -> None:
         """Called when a shortcut application completes."""
+        logger.info(f"🔄 on_shortcut_applied callback: shortcut={shortcut.to_display_string()}, success={success}")
         display_text = shortcut.to_display_string()
 
         if success:
@@ -323,6 +352,7 @@ class SettingsPage:
             self.on_notification(
                 f"Shortcut changed to {display_text}! The extension will use it immediately."
             )
+            logger.info(f"✅ Shortcut successfully applied: {display_text}")
         else:
             self.recording_status.set_markup(
                 f"<span color='red'>✗ Failed to apply shortcut</span>"
@@ -330,12 +360,16 @@ class SettingsPage:
             self.on_notification(
                 "Failed to apply shortcut. Make sure the extension is enabled."
             )
+            logger.error(f"❌ Failed to apply shortcut: {display_text}")
 
         # Reset button state and detach controller
         self.record_btn.set_label("Record")
         self.record_btn.remove_css_class("destructive-action")
         self.record_btn.add_css_class("suggested-action")
         self._detach_keyboard_controller()
+        # CRITICAL: Clear the recording flag so shortcuts work!
+        self._set_main_app_recording_state(False)
+        logger.info("🔚 Recording mode UI reset complete")
 
     def _build_retention_group(self) -> Adw.PreferencesGroup:
         """Build the retention settings section."""
@@ -615,6 +649,18 @@ class SettingsPage:
     def _get_installed_app_id(self):
         """Get the app ID."""
         return 'io.github.dyslechtchitect.tfcbm'
+
+    def _set_main_app_recording_state(self, is_recording: bool):
+        """Set the recording state directly on the window to prevent hiding during shortcut recording."""
+        # Use parent_window if window not available (parent_window is found via widget traversal)
+        target_window = self.window or self.parent_window
+
+        if target_window:
+            # Set flag directly on the window
+            target_window.is_recording_shortcut = is_recording
+            logger.info(f"Recording state set directly on window: {is_recording}")
+        else:
+            logger.warning("No window reference available to set recording state")
 
     def _build_extension_status_group(self) -> Adw.PreferencesGroup:
         """Build the GNOME Extension status section."""

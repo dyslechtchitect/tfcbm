@@ -8,7 +8,10 @@ from typing import Optional
 import gi
 gi.require_version("Gio", "2.0")
 gi.require_version("GLib", "2.0")
+import logging
 from gi.repository import Gio, GLib
+
+logger = logging.getLogger("TFCBM.GSettingsStore")
 
 from ui.domain.keyboard import KeyboardShortcut
 from ui.interfaces.settings import ISettingsStore
@@ -56,7 +59,7 @@ class GSettingsStore(ISettingsStore):
                 "GetSetting",
                 GLib.Variant("(ss)", (self.schema_id, self.key)),
                 Gio.DBusCallFlags.NONE,
-                -1, # Timeout
+                2000, # 2 second timeout to avoid blocking startup
                 None # GCancellable
             )
             # result is a GLib.Variant, e.g., (s) for a string
@@ -66,7 +69,7 @@ class GSettingsStore(ISettingsStore):
                 return KeyboardShortcut.from_gsettings_array(gsettings_value)
             return None
         except GLib.Error as e:
-            print(f"Error reading shortcut from host extension via D-Bus: {e.message}")
+            logger.error(f"Error reading shortcut from host extension via D-Bus: {e.message}")
             return None
         except Exception as e:
             print(f"Unexpected error reading shortcut: {e}")
@@ -98,15 +101,15 @@ class GSettingsStore(ISettingsStore):
                 "SetSetting",
                 GLib.Variant("(sss)", (self.schema_id, self.key, shortcut.to_gsettings_string())),
                 Gio.DBusCallFlags.NONE,
-                -1, # Timeout
+                5000, # 5 second timeout (writing might take longer)
                 None # GCancellable
             )
-            print(f"[DEBUG] Shortcut set via D-Bus: {shortcut.to_gsettings_string()}")
+            logger.debug(f"Shortcut set via D-Bus: {shortcut.to_gsettings_string()}")
             return True
         except GLib.Error as e:
-            print(f"Error writing shortcut to host extension via D-Bus: {e.message}")
+            logger.error(f"Error writing shortcut to host extension via D-Bus: {e.message}")
             return False
         except Exception as e:
-            print(f"Unexpected error writing shortcut: {e}")
+            logger.error(f"Unexpected error writing shortcut: {e}")
             return False
 
