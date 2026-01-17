@@ -16,7 +16,7 @@ import tempfile
 import threading
 import traceback
 
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
 
 logger = logging.getLogger("TFCBM.UI")
@@ -40,14 +40,14 @@ class ItemDragDropHandler:
             item: The clipboard item data dictionary
             card_frame: The card widget used for drag icon
             password_service: PasswordService for authentication
-            ws_service: ItemWebSocketService for server communication
+            ipc_service: ItemIPCService for server communication
             on_show_auth_required: Callback to show auth required notification
             on_show_fetch_error: Callback to show fetch error notification
         """
         self.item = item
         self.card_frame = card_frame
         self.password_service = password_service
-        self.ws_service = ws_service
+        self.ipc_service = ws_service
         self.on_show_auth_required = on_show_auth_required
         self.on_show_fetch_error = on_show_fetch_error
         self._file_temp_path = None
@@ -82,7 +82,7 @@ class ItemDragDropHandler:
             # For secrets, fetch real content (not the "-secret-" placeholder)
             if is_secret:
                 logger.info(f"Fetching real content for secret item {item_id} for drag")
-                real_content = self.ws_service.fetch_secret_content(item_id)
+                real_content = self.ipc_service.fetch_secret_content(item_id)
                 if real_content:
                     content = real_content
                     logger.info(f"Using real content for drag (length: {len(str(content))})")
@@ -251,24 +251,20 @@ class ItemDragDropHandler:
                 async def get_file():
                     item_id = self.item.get("id")
                     print(f"[DND] Async get_file() started for item {item_id}")
-                    uri = "ws://localhost:8765"
-                    max_size = 100 * 1024 * 1024  # 100MB for files
 
                     print(f"[DND] Pre-fetching file for item {item_id}")
 
                     try:
-                        async with websockets.connect(
-                            uri, max_size=max_size
-                        ) as websocket:
+                        async with ipc_connect() as conn:
                             # Use same action as Save button: get_full_image
                             request = {
                                 "action": "get_full_image",
                                 "id": item_id,
                             }
-                            await websocket.send(json.dumps(request))
+                            await conn.send(json.dumps(request))
 
                             # Wait for response
-                            response = await websocket.recv()
+                            response = await conn.recv()
                             data = json.loads(response)
 
                             if (

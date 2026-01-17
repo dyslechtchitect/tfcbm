@@ -1,0 +1,57 @@
+id: io.github.dyslechtchitect.tfcbm
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: tfcbm
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - '*.la'
+  - '*.a'
+
+finish-args:
+  # Display and IPC - Required for GTK4 applications
+  - --share=ipc                                      # Required: Inter-process communication for GTK
+  - --socket=wayland                                 # Required: Wayland display server support
+  - --socket=fallback-x11                            # Required: X11 fallback for systems without Wayland
+  - --device=dri                                     # Required: Hardware acceleration for GTK/EGL rendering
+
+  # XDG Portals - Using portals for security and proper desktop integration
+  - --talk-name=org.freedesktop.portal.Desktop       # Required: Notifications and autostart functionality
+  - --talk-name=org.freedesktop.secrets              # Required: Secure storage for "Secret Items" feature
+  - --env=GTK_USE_PORTAL=1                           # Force GTK to use portals when available
+
+  # D-Bus services - Required for optional GNOME Shell extension communication
+  - --own-name=org.tfcbm.ClipboardService            # Required: Main app's D-Bus service for extension IPC
+  - --talk-name=org.gnome.Shell.Extensions.TfcbmClipboardMonitor  # Required: Communication with our extension
+  - --talk-name=org.gnome.Shell                      # Required: Register global keyboard shortcuts via GNOME Shell
+                                                     # Note: Extension must be enabled manually by user:
+                                                     # gnome-extensions enable tfcbm-clipboard-monitor@github.com
+
+  # Filesystem access - Minimal permissions for core functionality
+  - --filesystem=xdg-data:rw                         # Required: Store clipboard history database
+  - --filesystem=xdg-config:rw                       # Required: Store application settings (settings.json)
+  - --filesystem=home:ro                             # Required: Read-only access to copy files/folders from clipboard
+                                                     # Note: Only READ access needed - app doesn't write to home,
+                                                     # it copies file content into its own database in xdg-data
+
+modules:
+  - name: python3-pyyaml
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} "PyYAML==6.0.2" --no-build-isolation
+    post-install:
+      - install -Dm0644 ${FLATPAK_DEST}/lib/python3.*/site-packages/PyYAML-*.dist-info/LICENSE -t ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/python3-pyyaml
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/04/24/b7721e4845c2f162d26f50521b825fb061bc0a5afcf9a386840f23ea19fa/PyYAML-6.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        sha256: 70b189594dbe54f75ab3a1acec5f1e3faa7e8cf2f1e08d9b561cb41b845f69d5
+
+  - name: tfcbm
+    buildsystem: meson
+    sources:
+      - type: dir
+        path: .
+

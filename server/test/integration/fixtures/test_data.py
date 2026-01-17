@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import random
 import string
 from datetime import datetime, timedelta
@@ -45,7 +46,6 @@ def generate_file_data(filename: str, content: bytes = None, size: int = 1024) -
         content = generate_random_text(size)
 
     # Extract extension from filename
-    import os
     _, ext = os.path.splitext(filename)
 
     metadata = {

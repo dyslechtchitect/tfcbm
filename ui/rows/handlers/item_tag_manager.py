@@ -12,7 +12,8 @@ import json
 import logging
 import threading
 
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
+from ui.utils.color_utils import sanitize_color
 from gi.repository import GLib, Gtk
 
 from ui.components.items import ItemTags
@@ -37,16 +38,15 @@ class ItemTagManager:
             item: The clipboard item data dictionary
             window: The window instance for accessing all_tags
             overlay: The overlay widget where tags are displayed
-            ws_service: ItemWebSocketService for tag loading
+            ipc_service: ItemIPCService for tag loading
             on_tags_action: Callback for tags button click action
         """
         self.item = item
         self.window = window
         self.overlay = overlay
-        self.ws_service = ws_service
+        self.ipc_service = ws_service
         self.on_tags_action_callback = on_tags_action
         self.tags_widget = None
-        self.ws_uri = "ws://localhost:8765"
 
     def handle_tags_action(self, anchor_to_tags=False):
         """Handle tags button click - show tags popover.
@@ -141,7 +141,7 @@ class ItemTagManager:
 
                 tag_id = tag.get("id")
                 tag_name = tag.get("name", "")
-                tag_color = tag.get("color", "#9a9996")
+                tag_color = tag.get("color", "#9a9996").strip()
 
                 # Create row with checkbutton
                 row = Gtk.ListBoxRow()
@@ -157,8 +157,14 @@ class ItemTagManager:
                 color_box = Gtk.Box()
                 color_box.set_size_request(16, 16)
                 css_provider = Gtk.CssProvider()
-                css_data = f"box {{ background-color: {tag_color}; border-radius: 3px; }}"
-                css_provider.load_from_data(css_data.encode())
+                tag_color_clean = sanitize_color(tag_color)
+                css_data = f"box {{ background-color: {tag_color_clean}; border-radius: 3px; }}"
+                try:
+                    css_provider.load_from_string(css_data)
+                except Exception as e:
+                    logger.error(f"ERROR loading CSS for tag popover color: {e}")
+                    logger.error(f"  CSS data: {repr(css_data)}")
+                    logger.error(f"  Tag: {tag_name}, Color: {repr(tag_color)}")
                 color_box.get_style_context().add_provider(
                     css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 )
@@ -239,27 +245,36 @@ class ItemTagManager:
 
         def send_tag_update():
             try:
+                logger.info(f"[TAG_TOGGLE] Starting tag toggle - item_id={item_id}, tag_id={tag_id}, is_active={is_active}")
 
                 async def update_tag():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    logger.info(f"[TAG_TOGGLE] Connecting to IPC server...")
+                    async with ipc_connect() as conn:
                         action = "add_item_tag" if is_active else "remove_item_tag"
                         request = {
                             "action": action,
                             "item_id": item_id,
                             "tag_id": tag_id,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
-                        data = json.loads(response)
+                        logger.info(f"[TAG_TOGGLE] Sending request: {request}")
+                        await conn.send(json.dumps(request))
 
-                        if data.get("type") in ["item_tag_added", "item_tag_removed"]:
+                        logger.info(f"[TAG_TOGGLE] Waiting for response...")
+                        response = await conn.recv()
+                        data = json.loads(response)
+                        logger.info(f"[TAG_TOGGLE] Received response: {data}")
+
+                        if data.get("type") in ["item_tag_added", "item_tag_removed", "tag_added", "tag_removed"]:
+                            logger.info(f"[TAG_TOGGLE] Success! Reloading tags...")
                             # Reload tags for this item
-                            GLib.idle_add(self.ws_service.load_item_tags)
+                            GLib.idle_add(self.ipc_service.load_item_tags)
                             # Notify window to refresh if needed
                             if hasattr(self.window, "_on_item_tags_changed"):
                                 GLib.idle_add(
                                     self.window._on_item_tags_changed, item_id
                                 )
+                        else:
+                            logger.warning(f"[TAG_TOGGLE] Unexpected response type: {data.get('type')}")
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -268,7 +283,9 @@ class ItemTagManager:
                 finally:
                     loop.close()
             except Exception as e:
-                logger.error(f"[UI] Error toggling tag: {e}")
+                logger.error(f"[TAG_TOGGLE] Error toggling tag: {e}")
+                import traceback
+                logger.error(f"[TAG_TOGGLE] Traceback:\n{traceback.format_exc()}")
                 # Revert checkbox on error
                 GLib.idle_add(lambda: checkbutton.set_active(not is_active))
 

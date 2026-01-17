@@ -8,6 +8,7 @@ import logging
 import mimetypes
 import re
 import subprocess
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
@@ -126,8 +127,18 @@ class ClipboardService:
                 logger.warning(f"File too large: {file_size} bytes (max: {MAX_FILE_SIZE})")
                 return None
 
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
+            try:
+                with open(file_path, 'rb') as f:
+                    file_content = f.read()
+            except PermissionError as e:
+                logger.error(f"Permission denied reading file: {file_path}")
+                logger.error(f"  This may be due to Flatpak sandbox restrictions")
+                logger.error(f"  Error: {e}")
+                return None
+            except OSError as e:
+                logger.error(f"OS error reading file: {file_path}")
+                logger.error(f"  Error: {e}")
+                return None
 
             metadata = {
                 'name': file_name,
@@ -176,7 +187,6 @@ class ClipboardService:
 
         except Exception as e:
             logger.error(f"Error handling clipboard event from DBus: {e}")
-            import traceback
             logger.error(traceback.format_exc())
 
     def _handle_text(self, text: str, event_data: Dict):

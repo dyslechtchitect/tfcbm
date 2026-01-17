@@ -4,6 +4,7 @@ import logging
 from typing import Callable, Dict, List, Set
 
 import gi
+from ui.utils.color_utils import sanitize_color, hex_to_rgba
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -79,7 +80,7 @@ class TagDisplayManager:
             empty_box.set_margin_start(12)
             empty_box.set_margin_end(12)
 
-            empty_label = Gtk.Label(label="Start adding tags with the")
+            empty_label = Gtk.Label(label="Psst, you, yeah you... add tags here ... ")
             empty_label.add_css_class("dim-label")
             empty_box.append(empty_label)
 
@@ -93,10 +94,10 @@ class TagDisplayManager:
                 css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
             empty_box.append(arrow_label)
-
-            plus_label = Gtk.Label(label="button")
-            plus_label.add_css_class("dim-label")
-            empty_box.append(plus_label)
+            #
+            # plus_label = Gtk.Label(label="button")
+            # plus_label.add_css_class("dim-label")
+            # empty_box.append(plus_label)
 
             self.tag_flowbox.append(empty_box)
             return
@@ -114,12 +115,24 @@ class TagDisplayManager:
 
             # Apply color styling - selected tags colored, unselected with weak color tint
             css_provider = Gtk.CssProvider()
+            # Sanitize color value
+            tag_color_clean = sanitize_color(tag_color)
             if is_selected:
-                css_data = f"button.pill {{ background-color: alpha({tag_color}, 0.25); color: {tag_color}; font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha({tag_color}, 0.4); border-radius: 2px; }}"
+                bg_color = hex_to_rgba(tag_color_clean, 0.25)
+                border_color = hex_to_rgba(tag_color_clean, 0.4)
+                css_data = f"button.pill {{ background-color: {bg_color}; color: {tag_color_clean}; font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid {border_color}; border-radius: 2px; }}"
             else:
                 # Unselected: weak color tint (very subtle alpha on the tag color)
-                css_data = f"button.pill {{ background-color: alpha({tag_color}, 0.06); color: alpha({tag_color}, 0.4); font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid alpha({tag_color}, 0.15); border-radius: 2px; }}"
-            css_provider.load_from_data(css_data.encode())
+                bg_color = hex_to_rgba(tag_color_clean, 0.06)
+                text_color = hex_to_rgba(tag_color_clean, 0.4)
+                border_color = hex_to_rgba(tag_color_clean, 0.15)
+                css_data = f"button.pill {{ background-color: {bg_color}; color: {text_color}; font-size: 9pt; font-weight: normal; padding: 2px 8px; min-height: 20px; border: 1px solid {border_color}; border-radius: 2px; }}"
+            try:
+                css_provider.load_from_string(css_data)
+            except Exception as e:
+                logger.error(f"ERROR loading CSS for tag button: {e}")
+                logger.error(f"  CSS data: {repr(css_data)}")
+                logger.error(f"  Tag: {tag_name}, Color: {repr(tag_color)}")
             btn.get_style_context().add_provider(
                 css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )

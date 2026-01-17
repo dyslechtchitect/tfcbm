@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 
 import gi
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -25,7 +25,6 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from server.src.settings import get_settings
-from ui.about import AboutWindow
 from ui.builders.main_window_builder import MainWindowBuilder
 from ui.managers.filter_bar_manager import FilterBarManager
 from ui.managers.history_loader_manager import HistoryLoaderManager
@@ -76,7 +75,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         # Initialize password service for secrets
         from ui.services.password_service import PasswordService
-        self.password_service = PasswordService()
+        self.password_service = PasswordService(on_notification=self.show_notification)
 
         # Connect close request handler
         self.connect("close-request", self._on_close_request)
@@ -91,15 +90,17 @@ class ClipboardWindow(Adw.ApplicationWindow):
         click_gesture.connect("released", self._on_window_clicked)
         self.add_controller(click_gesture)
 
-        # Set window properties
+        # Set window properties - tall and narrow
         display = Gdk.Display.get_default()
         if display:
             monitors = display.get_monitors()
             if monitors and monitors.get_n_items() > 0:
                 primary_monitor = monitors.get_item(0)
                 monitor_geometry = primary_monitor.get_geometry()
-                width = monitor_geometry.width // 3
-                self.set_default_size(width, 800)
+                # Narrow width (just enough for UI components) and full height
+                width = 350
+                height = monitor_geometry.height
+                self.set_default_size(width, height)
             else:
                 self.set_default_size(350, 800)
         else:
@@ -107,14 +108,14 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
         self.set_resizable(True)
 
-        # Initialize WindowPositionManager and position window to the left
+        # Initialize WindowPositionManager and position window to the right
         self.position_manager = WindowPositionManager(self)
-        self.position_manager.position_left()
+        self.position_manager.position_right()
 
         self.page_size = self.settings.max_page_length
 
         # Set window icon - just use the icon name, GTK will find it from the theme
-        self.set_icon_name("org.tfcbm.ClipboardManager")
+        self.set_icon_name("io.github.dyslechtchitect.tfcbm")
 
         # ========== UI Construction via MainWindowBuilder ==========
         builder = MainWindowBuilder(self)
@@ -269,8 +270,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
             page_size=self.page_size,
         )
 
-        # Position window to the left (again, to ensure it's positioned)
-        self.position_manager.position_left()
+        # Position window to the right (again, to ensure it's positioned)
+        self.position_manager.position_right()
 
         # Set up global keyboard shortcut
 
@@ -460,10 +461,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _show_splash_screen(self, button):
         """Show the about dialog"""
-        about = AboutWindow()
-        about.set_transient_for(self)
-        about.set_modal(True)
-        about.show()
+        from ui.about import show_about_dialog
+        show_about_dialog(self)
 
     def _show_settings_page(self, button):
         self.main_stack.set_visible_child_name("settings")
@@ -488,15 +487,15 @@ class ClipboardWindow(Adw.ApplicationWindow):
     def _register_ui_pid_with_server(self):
         """Register UI PID with server so server can kill UI on exit"""
         try:
-            import websockets
+            from ui.services.ipc_helpers import connect as ipc_connect
 
             async def register_pid():
                 try:
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "register_ui_pid", "pid": os.getpid()}
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         logger.info(f"UI PID registration response: {response}")
                 except Exception as e:
                     logger.error(f"Failed to register UI PID with server: {e}")
@@ -511,10 +510,11 @@ class ClipboardWindow(Adw.ApplicationWindow):
             logger.error(f"Error in PID registration: {e}")
 
     def _on_close_request(self, window):
-        """Handle window close request - hide window instead of closing app"""
-        logger.info("Window close requested - hiding window, keeping app running for tray icon")
-        self.hide()
-        return True  # Prevent window from closing (we hide it instead)
+        """Handle window close request - quit the application"""
+        logger.info("Window close requested - quitting application")
+        # Quit the app completely
+        self.get_application().quit()
+        return False  # Allow the window to close
 
     def _on_focus_changed(self, window, param):
         """Handle window focus changes - clear secret authentication when focus is lost."""
@@ -599,7 +599,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
     # ========== Tag Methods ==========
 
     def load_tags(self):
-        """Load tags from server via WebSocket"""
+        """Load tags from server via IPC"""
         self.tags_load_start_time = time.time()
         logger.info("Starting tags load...")
 
@@ -607,12 +607,12 @@ class ClipboardWindow(Adw.ApplicationWindow):
             try:
 
                 async def fetch_tags():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "get_tags"}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "tags":

@@ -5,6 +5,11 @@ TFCBM DBus Service - Handles DBus communication for GNOME extension integration
 
 import json
 import logging
+import os
+import signal
+import subprocess
+import traceback
+
 from gi.repository import Gio, GLib
 
 logger = logging.getLogger("TFCBM.DBus")
@@ -62,24 +67,11 @@ class TFCBMDBusService:
                 logger.error("Failed to get DBus connection")
                 return False
 
-            # Own the bus name (only if we're the server, not the UI)
-            # The UI already owns org.tfcbm.ClipboardManager via its application_id
-            if not hasattr(self.app, 'props'):
-                # This is the server (mock DBusApp), so own the bus name
-                self.bus_name_id = Gio.bus_own_name_on_connection(
-                    self.connection,
-                    "org.tfcbm.ClipboardService",
-                    Gio.BusNameOwnerFlags.NONE,
-                    None,  # name_acquired_closure
-                    None,  # name_lost_closure
-                )
-                logger.info("✓ Owned D-Bus name org.tfcbm.ClipboardService")
-
             # Parse DBus interface
             node_info = Gio.DBusNodeInfo.new_for_xml(DBUS_XML)
             interface_info = node_info.interfaces[0]
 
-            # Register object
+            # Register object at /org/tfcbm/ClipboardService
             self.registration_id = self.connection.register_object(
                 "/org/tfcbm/ClipboardService",
                 interface_info,
@@ -87,12 +79,24 @@ class TFCBMDBusService:
                 None,  # get_property
                 None,  # set_property
             )
+            logger.info("✓ DBus object registered at /org/tfcbm/ClipboardService")
 
-            logger.info("✓ DBus service registered at org.tfcbm.ClipboardService")
+            # Own the bus name org.tfcbm.ClipboardService
+            # This makes the service available to the GNOME extension
+            self.bus_name_id = Gio.bus_own_name_on_connection(
+                self.connection,
+                "org.tfcbm.ClipboardService",
+                Gio.BusNameOwnerFlags.NONE,
+                None,  # name_acquired_closure
+                None,  # name_lost_closure
+            )
+            logger.info("✓ Owned D-Bus name org.tfcbm.ClipboardService")
+
             return True
 
         except Exception as e:
             logger.error(f"Failed to register DBus service: {e}")
+            logger.error(traceback.format_exc())
             return False
 
     def stop(self):
@@ -160,6 +164,13 @@ class TFCBMDBusService:
             try:
                 is_visible = win.is_visible()
 
+                # If recording shortcut and window is visible, do NOT hide it.
+                # This prevents unfocusing during shortcut recording.
+                is_recording = getattr(win, 'is_recording_shortcut', False)
+                if is_recording and is_visible:
+                    logger.info("Ignoring Activate call to hide window because shortcut recording is active.")
+                    return
+
                 if is_visible:
                     win.hide()
                     if hasattr(win, 'keyboard_handler'):
@@ -180,22 +191,28 @@ class TFCBMDBusService:
             except Exception as e:
                 logger.error(f"Error toggling window: {e}")
         else:
-            # If no window (called from server), try to activate UI via GtkApplication D-Bus interface
-            try:
-                import subprocess
-                result = subprocess.run([
-                    'gdbus', 'call', '--session',
-                    '--dest', 'org.tfcbm.ClipboardManager',
-                    '--object-path', '/org/tfcbm/ClipboardManager',
-                    '--method', 'org.gtk.Application.Activate',
-                    '{}'
-                ], capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    logger.info("Activated UI via org.gtk.Application")
-                else:
-                    logger.warning(f"Failed to activate UI: {result.stderr.decode()}")
-            except Exception as e:
-                logger.error(f"Error forwarding activate to UI: {e}")
+            # No window exists yet - activate the app to create it
+            if hasattr(self.app, 'activate'):
+                # Directly call the app's activate method
+                GLib.idle_add(self.app.activate)
+                logger.info("Activated app to create window")
+            else:
+                # Fallback: try to activate UI via GtkApplication D-Bus interface
+                # (This path is for when D-Bus service runs in separate process)
+                try:
+                    result = subprocess.run([
+                        'gdbus', 'call', '--session',
+                        '--dest', 'io.github.dyslechtchitect.tfcbm',
+                        '--object-path', '/io/github/dyslechtchitect/tfcbm',
+                        '--method', 'org.gtk.Application.Activate',
+                        '{}'
+                    ], capture_output=True, timeout=2)
+                    if result.returncode == 0:
+                        logger.info("Activated UI via org.gtk.Application")
+                    else:
+                        logger.warning(f"Failed to activate UI: {result.stderr.decode()}")
+                except Exception as e:
+                    logger.error(f"Error forwarding activate to UI: {e}")
 
     def _handle_show_settings(self, parameters, invocation):
         """Handle ShowSettings method - show settings page"""
@@ -227,64 +244,53 @@ class TFCBMDBusService:
             except Exception as e:
                 logger.error(f"Error showing settings: {e}")
         else:
-            # If no window (called from server), trigger show-settings action on UI
-            try:
-                import subprocess
-                result = subprocess.run([
-                    'gdbus', 'call', '--session',
-                    '--dest', 'org.tfcbm.ClipboardManager',
-                    '--object-path', '/org/tfcbm/ClipboardManager',
-                    '--method', 'org.freedesktop.Application.ActivateAction',
-                    'show-settings', '[]', '{}'
-                ], capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    logger.info("Triggered show-settings action on UI")
-                else:
-                    logger.warning(f"Failed to trigger show-settings: {result.stderr.decode()}")
-            except Exception as e:
-                logger.error(f"Error forwarding show settings to UI: {e}")
+            # No window exists yet - activate the show-settings action
+            if hasattr(self.app, 'activate_action'):
+                # Directly call the app's action
+                GLib.idle_add(self.app.activate_action, 'show-settings', None)
+                logger.info("Triggered show-settings action directly")
+            else:
+                # Fallback: trigger show-settings action via D-Bus
+                # (This path is for when D-Bus service runs in separate process)
+                try:
+                    result = subprocess.run([
+                        'gdbus', 'call', '--session',
+                        '--dest', 'io.github.dyslechtchitect.tfcbm',
+                        '--object-path', '/io/github/dyslechtchitect/tfcbm',
+                        '--method', 'org.freedesktop.Application.ActivateAction',
+                        'show-settings', '[]', '{}'
+                    ], capture_output=True, timeout=2)
+                    if result.returncode == 0:
+                        logger.info("Triggered show-settings action on UI")
+                    else:
+                        logger.warning(f"Failed to trigger show-settings: {result.stderr.decode()}")
+                except Exception as e:
+                    logger.error(f"Error forwarding show settings to UI: {e}")
 
     def _handle_quit(self, invocation):
-        """Handle Quit method - quit the application"""
+        """Handle Quit method - quit the application
+
+        Note: The extension stays enabled. The tray icon will automatically hide
+        when the app quits and unregisters its D-Bus name (see extension.js:_updateIconStyle).
+        This allows the extension to remain ready for when the app is launched again.
+        """
         logger.info("DBus Quit called")
 
         invocation.return_value(None)
 
-        # Disable the GNOME extension when quitting
-        try:
-            logger.info("Disabling GNOME extension...")
-            # Use DBus to disable extension (works from Flatpak sandbox)
-            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            result = connection.call_sync(
-                'org.gnome.Shell.Extensions',
-                '/org/gnome/Shell/Extensions',
-                'org.gnome.Shell.Extensions',
-                'DisableExtension',
-                GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None
-            )
-            logger.info("GNOME extension disabled via DBus")
-        except Exception as e:
-            logger.warning(f"Failed to disable GNOME extension via DBus: {e}")
-
-        # Try to quit the app if it has a quit method
+        # Just quit the app - DBus cleanup happens automatically
+        # The extension watches for the name to disappear
         if hasattr(self.app, 'quit'):
+            logger.info("Quitting application - DBus name will be unregistered automatically")
             GLib.idle_add(self.app.quit)
-            logger.info("Application quit requested via DBus")
         else:
             # If no app (called from server), send quit to UI via D-Bus
             try:
-                import subprocess
-                import os
-                import signal
                 # Try to quit the UI gracefully
                 result = subprocess.run([
                     'gdbus', 'call', '--session',
-                    '--dest', 'org.tfcbm.ClipboardManager',
-                    '--object-path', '/org/tfcbm/ClipboardManager',
+                    '--dest', 'io.github.dyslechtchitect.tfcbm',
+                    '--object-path', '/io/github/dyslechtchitect/tfcbm',
                     '--method', 'org.freedesktop.Application.ActivateAction',
                     'quit', '[]', '{}'
                 ], capture_output=True, timeout=2)
@@ -298,7 +304,7 @@ class TFCBMDBusService:
     def _handle_clipboard_change(self, parameters, invocation):
         """Handle OnClipboardChange method - process clipboard event from extension"""
         event_data_json = parameters.unpack()[0]
-        logger.debug(f"DBus OnClipboardChange called with data: {event_data_json[:100]}...")
+        logger.info(f"DBus OnClipboardChange called, data length: {len(event_data_json)}")
 
         # Return immediately to avoid blocking the extension
         invocation.return_value(None)
@@ -306,10 +312,12 @@ class TFCBMDBusService:
         try:
             # Parse event data
             event_data = json.loads(event_data_json)
+            logger.info(f"Parsed clipboard event: type={event_data.get('type')}, has_data={bool(event_data.get('data'))}")
 
             # Call clipboard handler if provided
             if self.clipboard_handler:
                 self.clipboard_handler(event_data)
+                logger.info(f"Clipboard handler called successfully for type: {event_data.get('type')}")
             else:
                 logger.warning("No clipboard handler registered, event ignored")
 
@@ -317,3 +325,4 @@ class TFCBMDBusService:
             logger.error(f"Failed to parse clipboard event JSON: {e}")
         except Exception as e:
             logger.error(f"Error processing clipboard event: {e}")
+            logger.error(traceback.format_exc())

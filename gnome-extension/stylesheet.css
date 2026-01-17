@@ -1,0 +1,5 @@
+/* Minimal styles for TFCBM extension */
+
+.disabled {
+    opacity: 0.5;
+}

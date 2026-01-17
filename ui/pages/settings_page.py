@@ -6,9 +6,13 @@ from typing import Callable, Optional
 
 import gi
 
+import logging
+
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, GObject, Gtk
+from gi.repository import Adw, Gdk, GLib, GObject, Gtk, Gio
+
+logger = logging.getLogger("TFCBM.SettingsPage")
 
 from ui.domain.keyboard import KeyboardShortcut
 from ui.infrastructure.gtk_keyboard_parser import GtkKeyboardParser
@@ -21,32 +25,17 @@ class SettingsPage:
         self,
         settings,
         on_notification: Callable[[str], None],
+        window=None,  # Optional window reference for direct communication
     ):
         self.settings = settings
         self.on_notification = on_notification
+        self.window = window  # Store window reference for setting recording state
 
         # Shortcut service setup
-        # Look for the extension in the user's extensions directory
-        extension_dir = Path.home() / ".local/share/gnome-shell/extensions/tfcbm-clipboard-monitor@github.com"
-        schema_dir = extension_dir / "schemas"
-
-        # Fall back to bundled extension if not installed
-        if not schema_dir.exists():
-            from ui.utils.extension_check import is_flatpak
-
-            if is_flatpak():
-                # In Flatpak, extension is bundled at /app/share/tfcbm/gnome-extension
-                extension_dir = Path("/app/share/tfcbm/gnome-extension")
-            else:
-                # Regular install - extension is in project directory
-                extension_dir = Path(__file__).parent.parent.parent / "gnome-extension"
-
-            schema_dir = extension_dir / "schemas"
-
         self.settings_store = GSettingsStore(
-            schema_id="org.gnome.shell.extensions.simple-clipboard",
+            schema_id="org.gnome.shell.extensions.tfcbm-clipboard-monitor",
             key="toggle-tfcbm-ui",
-            schema_dir=schema_dir,
+            schema_dir=None, # schema_dir is now handled by the extension via D-Bus, not loaded by the Flatpak app.
         )
         self.shortcut_service = ShortcutService(self.settings_store)
         self.keyboard_parser = GtkKeyboardParser()
@@ -55,7 +44,8 @@ class SettingsPage:
         self.shortcut_display = None
         self.record_btn = None
         self.recording_status = None
-        self.shortcut_recorder_window = None
+        self.key_controller = None  # Store keyboard event controller
+        self.parent_window = None  # Store reference to parent window
 
     def build(self) -> Adw.PreferencesPage:
         settings_page = Adw.PreferencesPage()
@@ -67,13 +57,17 @@ class SettingsPage:
 
         # Load on startup switch
         startup_row = Adw.SwitchRow()
-        startup_row.set_title("Load on Startup")
-        startup_row.set_subtitle("Automatically start TFCBM when you log in")
+        startup_row.set_title("Start on Login")
+        startup_row.set_subtitle("Automatically start TFCBM app and show tray icon when you log in")
         startup_row.set_active(self._is_autostart_enabled())
         startup_row.connect("notify::active", self._on_autostart_toggled)
         general_group.add(startup_row)
 
         settings_page.add(general_group)
+
+        # Clipboard behavior group
+        clipboard_group = self._build_clipboard_group()
+        settings_page.add(clipboard_group)
 
         # Keyboard shortcut group
         shortcut_group = self._build_shortcut_group()
@@ -101,7 +95,91 @@ class SettingsPage:
         storage_group.add(db_size_row)
         settings_page.add(storage_group)
 
+        # Extension management group
+        extension_group = self._build_extension_group()
+        settings_page.add(extension_group)
+
         return settings_page
+
+    def _build_clipboard_group(self) -> Adw.PreferencesGroup:
+        """Build the clipboard behavior settings section."""
+        group = Adw.PreferencesGroup()
+        group.set_title("Clipboard Behavior")
+        group.set_description("Configure keyboard selection behavior")
+
+        # Refocus on copy switch
+        refocus_row = Adw.SwitchRow()
+        refocus_row.set_title("Refocus on Copy")
+        refocus_row.set_subtitle(
+            "Automatically hide window and refocus previous app when selecting via keyboard"
+        )
+        refocus_row.set_active(self.settings.refocus_on_copy)
+        refocus_row.connect("notify::active", self._on_refocus_on_copy_toggled)
+        group.add(refocus_row)
+
+        return group
+
+    def _on_refocus_on_copy_toggled(self, switch_row, _param):
+        """Handle refocus on copy toggle."""
+        is_enabled = switch_row.get_active()
+
+        # Update via IPC in background thread
+        import threading
+
+        def update_in_thread():
+            result = self._update_clipboard_settings_sync(is_enabled)
+            GLib.idle_add(self._handle_clipboard_settings_result, result, is_enabled)
+
+        thread = threading.Thread(target=update_in_thread, daemon=True)
+        thread.start()
+
+    def _update_clipboard_settings_sync(self, refocus_on_copy: bool) -> dict:
+        """Update clipboard settings via IPC synchronously (runs in background thread)."""
+        import asyncio
+        import json
+        from ui.services.ipc_helpers import connect as ipc_connect
+
+        async def update_settings():
+            try:
+                async with ipc_connect() as conn:
+                    request = {
+                        "action": "update_clipboard_settings",
+                        "refocus_on_copy": refocus_on_copy
+                    }
+                    await conn.send(json.dumps(request))
+                    response = await conn.recv()
+                    return json.loads(response)
+            except Exception as e:
+                print(f"Error updating clipboard settings: {e}")
+                return {"status": "error", "message": str(e)}
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(update_settings())
+        finally:
+            loop.close()
+        return result
+
+    def _handle_clipboard_settings_result(self, result: dict, refocus_on_copy: bool):
+        """Handle clipboard settings update result in GTK main thread."""
+        if result.get("status") == "success":
+            # Update local in-memory settings reference
+            self.settings.settings.clipboard.refocus_on_copy = refocus_on_copy
+
+            if refocus_on_copy:
+                self.on_notification(
+                    "Window will hide and refocus previous app when selecting via keyboard"
+                )
+            else:
+                self.on_notification(
+                    "Window will stay visible when selecting items via keyboard"
+                )
+        else:
+            self.on_notification(f"Error updating setting: {result.get('message', 'Unknown error')}")
+            print(f"Error updating refocus_on_copy: {result.get('message')}")
+
+        return False  # Don't repeat idle_add
 
     def _build_shortcut_group(self) -> Adw.PreferencesGroup:
         """Build the keyboard shortcut recorder section."""
@@ -118,7 +196,17 @@ class SettingsPage:
         if current:
             display_text = current.to_display_string()
         else:
+            # No shortcut set - initialize with the default from schema
             display_text = "Ctrl+Escape (default)"
+            logger.info("No shortcut configured, initializing with default: Ctrl+Escape")
+            default_shortcut = KeyboardShortcut(modifiers=["Ctrl"], key="Escape")
+            # Apply the default shortcut to ensure it's actually set in GSettings
+            success = self.settings_store.set_shortcut(default_shortcut)
+            if success:
+                logger.info("Default shortcut initialized successfully")
+                current = default_shortcut
+            else:
+                logger.warning("Failed to initialize default shortcut")
 
         self.shortcut_display = Gtk.Label()
         self.shortcut_display.set_markup(f"<b>{display_text}</b>")
@@ -157,100 +245,119 @@ class SettingsPage:
 
     def _on_record_button_clicked(self, button: Gtk.Button) -> None:
         """Handle record button click."""
-        is_recording = self.shortcut_service.toggle_recording()
+        try:
+            logger.info("Record button clicked")
+            is_recording = self.shortcut_service.toggle_recording()
+            logger.info(f"Recording state toggled to: {is_recording}")
 
-        if is_recording:
-            self.record_btn.set_label("Stop Recording")
-            self.record_btn.remove_css_class("suggested-action")
-            self.record_btn.add_css_class("destructive-action")
-            self.recording_status.set_markup("<i>Press any key combination...</i>")
+            if is_recording:
+                self.record_btn.set_label("Stop Recording")
+                self.record_btn.remove_css_class("suggested-action")
+                self.record_btn.add_css_class("destructive-action")
+                self.recording_status.set_markup("<i>Press any key combination...</i>")
 
-            # Create and show a popup window to capture the key
-            self._show_recording_popup()
-        else:
-            self.record_btn.set_label("Record")
-            self.record_btn.remove_css_class("destructive-action")
-            self.record_btn.add_css_class("suggested-action")
-            self.recording_status.set_text("")
-            if self.shortcut_recorder_window:
-                self.shortcut_recorder_window.close()
+                # Disable the global keybinding so we can capture it in the GTK window
+                logger.info("Disabling global keybinding...")
+                self.settings_store.disable_keybinding()
 
-    def _show_recording_popup(self) -> None:
-        """Show a popup window to capture keyboard shortcut."""
-        self.shortcut_recorder_window = Gtk.Window()
-        self.shortcut_recorder_window.set_title("Recording Shortcut...")
-        self.shortcut_recorder_window.set_default_size(400, 150)
-        self.shortcut_recorder_window.set_modal(True)
+                # Attach keyboard controller to main window to capture shortcut
+                logger.info("Attaching keyboard controller...")
+                self._attach_keyboard_controller()
+                logger.info("Setting recording state...")
+                self._set_main_app_recording_state(True)
+                logger.info("Record mode activated successfully")
+            else:
+                self.record_btn.set_label("Record")
+                self.record_btn.remove_css_class("destructive-action")
+                self.record_btn.add_css_class("suggested-action")
+                self.recording_status.set_text("")
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        box.set_margin_top(30)
-        box.set_margin_bottom(30)
-        box.set_margin_start(30)
-        box.set_margin_end(30)
+                # Remove keyboard controller when not recording
+                logger.info("Detaching keyboard controller...")
+                self._detach_keyboard_controller()
+                logger.info("Clearing recording state...")
+                self._set_main_app_recording_state(False)
+                # Re-enable the global keybinding
+                logger.info("Re-enabling global keybinding...")
+                self.settings_store.enable_keybinding()
+                logger.info("Record mode deactivated successfully")
+        except Exception as e:
+            logger.error(f"Error in record button click handler: {e}", exc_info=True)
+            self.on_notification(f"Error: {str(e)}")
 
-        label = Gtk.Label()
-        label.set_markup("<big><b>Press any key combination...</b></big>")
-        box.append(label)
+    def _attach_keyboard_controller(self) -> None:
+        """Attach keyboard event controller to window for shortcut recording."""
+        # Get the parent window
+        if not self.parent_window:
+            widget = self.record_btn
+            while widget:
+                widget = widget.get_parent()
+                if isinstance(widget, Gtk.Window):
+                    self.parent_window = widget
+                    break
 
-        instruction = Gtk.Label()
-        instruction.set_text("The shortcut will be recorded automatically")
-        instruction.add_css_class("dim-label")
-        box.append(instruction)
+        if not self.parent_window:
+            logger.error("Could not find parent window for keyboard controller")
+            return
 
-        cancel_btn = Gtk.Button(label="Cancel")
-        cancel_btn.connect("clicked", lambda _: self._cancel_recording())
-        cancel_btn.set_halign(Gtk.Align.CENTER)
-        box.append(cancel_btn)
+        # Create and attach keyboard controller
+        self.key_controller = Gtk.EventControllerKey.new()
+        self.key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        self.key_controller.connect("key-pressed", self._on_key_pressed_for_recording)
+        self.parent_window.add_controller(self.key_controller)
+        logger.debug("Attached keyboard controller to window")
 
-        self.shortcut_recorder_window.set_child(box)
+    def _detach_keyboard_controller(self) -> None:
+        """Remove keyboard event controller from window."""
+        if self.key_controller and self.parent_window:
+            self.parent_window.remove_controller(self.key_controller)
+            self.key_controller = None
+            logger.debug("Detached keyboard controller from window")
 
-        # Setup keyboard event handler
-        key_controller = Gtk.EventControllerKey()
-        key_controller.connect("key-pressed", self._on_key_pressed_in_popup)
-        self.shortcut_recorder_window.add_controller(key_controller)
-
-        self.shortcut_recorder_window.present()
-
-    def _on_key_pressed_in_popup(
+    def _on_key_pressed_for_recording(
         self, controller: Gtk.EventControllerKey, keyval: int, keycode: int, state: int
     ) -> bool:
-        """Handle key press in recording popup."""
+        """Handle key press during shortcut recording (no popup)."""
+        logger.info(f"🔑 Key pressed: keyval={keyval}, keycode={keycode}, state={state}, is_recording={self.shortcut_service.is_recording}")
+
         if not self.shortcut_service.is_recording:
+            logger.warning("Key pressed but service not in recording mode!")
             return False
 
-        # Parse the key event
-        event = self.keyboard_parser.parse_key_event(keyval, keycode, state)
+        try:
+            # Parse the key event
+            event = self.keyboard_parser.parse_key_event(keyval, keycode, state)
+            logger.info(f"✅ Parsed event: {event}")
 
-        # Process it through the service
-        shortcut = self.shortcut_service.process_key_event(event)
+            # Process it through the service
+            shortcut = self.shortcut_service.process_key_event(event)
+            logger.info(f"✅ Processed shortcut: {shortcut}")
 
-        if shortcut:
-            # Apply it to the extension
-            self.shortcut_service.apply_shortcut(shortcut)
-            # Close the popup
-            if self.shortcut_recorder_window:
-                self.shortcut_recorder_window.close()
-            return True
+            if shortcut:
+                # Apply it to the extension
+                logger.info(f"🎯 Applying shortcut: {shortcut.to_display_string()}")
+                self.shortcut_service.apply_shortcut(shortcut)
+                # Note: Controller will be detached in on_shortcut_applied callback
+                return True
+            else:
+                logger.info("⚠️ No shortcut generated (likely modifier-only)")
+
+        except Exception as e:
+            logger.error(f"❌ Error processing key event: {e}", exc_info=True)
 
         return False
 
-    def _cancel_recording(self) -> None:
-        """Cancel the recording process."""
-        self.shortcut_service.stop_recording()
-        self.record_btn.set_label("Record")
-        self.record_btn.remove_css_class("destructive-action")
-        self.record_btn.add_css_class("suggested-action")
-        self.recording_status.set_text("")
-        if self.shortcut_recorder_window:
-            self.shortcut_recorder_window.close()
+
 
     # ShortcutObserver implementations
     def on_shortcut_recorded(self, shortcut: KeyboardShortcut) -> None:
         """Called when a shortcut is recorded."""
+        logger.info(f"📝 Shortcut recorded: {shortcut.to_display_string()}")
         pass  # Handled in on_shortcut_applied
 
     def on_shortcut_applied(self, shortcut: KeyboardShortcut, success: bool) -> None:
         """Called when a shortcut application completes."""
+        logger.info(f"🔄 on_shortcut_applied callback: shortcut={shortcut.to_display_string()}, success={success}")
         display_text = shortcut.to_display_string()
 
         if success:
@@ -261,6 +368,7 @@ class SettingsPage:
             self.on_notification(
                 f"Shortcut changed to {display_text}! The extension will use it immediately."
             )
+            logger.info(f"✅ Shortcut successfully applied: {display_text}")
         else:
             self.recording_status.set_markup(
                 f"<span color='red'>✗ Failed to apply shortcut</span>"
@@ -268,11 +376,19 @@ class SettingsPage:
             self.on_notification(
                 "Failed to apply shortcut. Make sure the extension is enabled."
             )
+            logger.error(f"❌ Failed to apply shortcut: {display_text}")
 
-        # Reset button state
+        # Reset button state and detach controller
         self.record_btn.set_label("Record")
         self.record_btn.remove_css_class("destructive-action")
         self.record_btn.add_css_class("suggested-action")
+        self._detach_keyboard_controller()
+        # CRITICAL: Clear the recording flag so shortcuts work!
+        self._set_main_app_recording_state(False)
+        # Re-enable the global keybinding
+        logger.info("Re-enabling global keybinding after shortcut applied...")
+        self.settings_store.enable_keybinding()
+        logger.info("🔚 Recording mode UI reset complete")
 
     def _build_retention_group(self) -> Adw.PreferencesGroup:
         """Build the retention settings section."""
@@ -375,13 +491,13 @@ class SettingsPage:
         """Get total item count synchronously (runs in background thread)."""
         import asyncio
         import json
-        import websockets
+        from ui.services.ipc_helpers import connect as ipc_connect
 
         async def get_count():
             try:
-                async with websockets.connect('ws://localhost:8765', ping_timeout=5) as websocket:
-                    await websocket.send(json.dumps({"action": "get_total_count"}))
-                    response = await websocket.recv()
+                async with ipc_connect() as conn:
+                    await conn.send(json.dumps({"action": "get_total_count"}))
+                    response = await conn.recv()
                     data = json.loads(response)
                     return data.get("total", 0)
             except Exception as e:
@@ -442,19 +558,19 @@ class SettingsPage:
         """Save retention settings synchronously (runs in background thread)."""
         import asyncio
         import json
-        import websockets
+        from ui.services.ipc_helpers import connect as ipc_connect
 
         async def save_settings():
             try:
-                async with websockets.connect('ws://localhost:8765', ping_timeout=10) as websocket:
+                async with ipc_connect() as conn:
                     request = {
                         "action": "update_retention_settings",
                         "enabled": enabled,
                         "max_items": max_items,
                         "delete_count": delete_count
                     }
-                    await websocket.send(json.dumps(request))
-                    response = await websocket.recv()
+                    await conn.send(json.dumps(request))
+                    response = await conn.recv()
                     return json.loads(response)
             except Exception as e:
                 print(f"Error saving retention settings: {e}")
@@ -471,13 +587,10 @@ class SettingsPage:
     def _handle_retention_save_result(self, result: dict, enabled: bool, max_items: int):
         """Handle save result in GTK main thread."""
         if result.get("status") == "success":
-            # Update local settings object
-            self.settings.update_settings(
-                **{
-                    "retention.enabled": enabled,
-                    "retention.max_items": max_items
-                }
-            )
+            # Update local in-memory settings reference
+            # Note: The backend already saved to file via IPC handler
+            self.settings.settings.retention.enabled = enabled
+            self.settings.settings.retention.max_items = max_items
 
             deleted = result.get("deleted", 0)
             if deleted > 0:
@@ -492,119 +605,202 @@ class SettingsPage:
         return False  # Don't repeat idle_add
 
     def _is_autostart_enabled(self) -> bool:
-        """Check if autostart is enabled."""
-        autostart_dir = Path.home() / ".config" / "autostart"
-        # Check both old and new filenames
-        return (autostart_dir / "org.tfcbm.ClipboardManager.desktop").exists() or \
-               (autostart_dir / "tfcbm.desktop").exists()
+        """Check if autostart is enabled for the application using Gio.DesktopAppInfo."""
+        app_id = self._get_installed_app_id()
+        try:
+            # Use DesktopAppInfo.new() instead of AppInfo.create_from_id()
+            app_info = Gio.DesktopAppInfo.new(app_id + ".desktop")
+            if app_info:
+                # Check if the app has autostart enabled
+                # For desktop files, we'd need to check the autostart directory
+                autostart_file = Path.home() / ".config" / "autostart" / f"{app_id}.desktop"
+                return autostart_file.exists()
+        except GLib.Error as e:
+            print(f"Error checking autostart status for {app_id}: {e.message}")
+        return False
 
-    def _on_autostart_toggled(self, switch_row, _param):
-        """Handle autostart toggle."""
-        is_enabled = switch_row.get_active()
+    def _set_autostart_via_desktop_file(self, enable: bool):
+        """Set autostart by directly creating/removing autostart desktop file."""
+        import os
+        import shutil
 
         try:
-            if is_enabled:
-                self._enable_autostart()
-                # Also enable the extension so tray icon appears immediately
-                self._enable_extension()
-                self.on_notification("TFCBM will now start automatically on login")
-            else:
-                self._disable_autostart()
-                # Also disable the extension so tray icon doesn't appear on next login
-                self._disable_extension()
-                self.on_notification("TFCBM autostart and extension disabled")
-        except Exception as e:
-            self.on_notification(f"Error toggling autostart: {e}")
-            print(f"Error toggling autostart: {e}")
+            autostart_dir = Path.home() / ".config" / "autostart"
+            autostart_file = autostart_dir / f"{self._get_installed_app_id()}.desktop"
 
-    def _disable_extension(self):
-        """Disable the GNOME extension."""
-        try:
-            import gi
-            gi.require_version('Gio', '2.0')
-            from gi.repository import Gio, GLib
+            if enable:
+                # Create autostart directory if it doesn't exist
+                autostart_dir.mkdir(parents=True, exist_ok=True)
 
-            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            connection.call_sync(
-                'org.gnome.Shell.Extensions',
-                '/org/gnome/Shell/Extensions',
-                'org.gnome.Shell.Extensions',
-                'DisableExtension',
-                GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None
-            )
-            print("GNOME extension disabled")
-        except Exception as e:
-            print(f"Error disabling extension: {e}")
+                # Autostart files are executed by the host system, not from inside Flatpak
+                # So we always need to use the flatpak run command
+                # Check if app is installed as Flatpak by checking if the flatpak exists
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['flatpak', 'list', '--app', '--columns=application'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    is_flatpak = 'io.github.dyslechtchitect.tfcbm' in result.stdout
+                except Exception:
+                    # If we can't determine, assume flatpak since that's the primary distribution method
+                    is_flatpak = True
 
-    def _enable_extension(self):
-        """Enable the GNOME extension."""
-        try:
-            import gi
-            gi.require_version('Gio', '2.0')
-            from gi.repository import Gio, GLib
+                # Create desktop file with correct Exec line
+                if is_flatpak:
+                    exec_line = "flatpak run io.github.dyslechtchitect.tfcbm --activate"
+                else:
+                    exec_line = "tfcbm --activate"
 
-            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            connection.call_sync(
-                'org.gnome.Shell.Extensions',
-                '/org/gnome/Shell/Extensions',
-                'org.gnome.Shell.Extensions',
-                'EnableExtension',
-                GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None
-            )
-            print("GNOME extension enabled")
-        except Exception as e:
-            print(f"Error enabling extension: {e}")
-
-    def _enable_autostart(self):
-        """Enable autostart by creating .desktop file in autostart directory."""
-        from ui.utils.extension_check import is_flatpak
-
-        autostart_dir = Path.home() / ".config" / "autostart"
-        autostart_dir.mkdir(parents=True, exist_ok=True)
-
-        autostart_file = autostart_dir / "org.tfcbm.ClipboardManager.desktop"
-
-        # Determine the correct Exec command
-        if is_flatpak():
-            exec_cmd = "flatpak run org.tfcbm.ClipboardManager"
-        else:
-            # For non-Flatpak, try to find the executable
-            install_dir = Path(__file__).parent.parent.parent
-            exec_cmd = str(install_dir / "tfcbm-launcher.sh")
-
-        # Create the autostart desktop entry
-        desktop_content = f"""[Desktop Entry]
+                desktop_content = f"""[Desktop Entry]
 Type=Application
 Name=TFCBM
-Comment=Clipboard Manager - Manage your clipboard history
-Exec={exec_cmd}
-Icon=org.tfcbm.ClipboardManager
+GenericName=Clipboard Manager
+Comment=The * Clipboard Manager - Track and manage your clipboard history
+Icon=io.github.dyslechtchitect.tfcbm
+Exec={exec_line}
 Terminal=false
-Categories=Utility;GTK;
+Categories=Utility;GNOME;GTK;
+Keywords=clipboard;manager;history;copy;paste;
 StartupNotify=true
+X-GNOME-UsesNotifications=true
 X-GNOME-Autostart-enabled=true
 """
 
-        autostart_file.write_text(desktop_content)
-        print(f"Autostart enabled: {autostart_file}")
+                autostart_file.write_text(desktop_content)
+                self.on_notification(
+                    "Autostart enabled successfully. "
+                    "TFCBM will start automatically on your next login."
+                )
+                print(f"Created autostart file: {autostart_file}")
+            else:
+                # Remove autostart file
+                if autostart_file.exists():
+                    autostart_file.unlink()
+                    self.on_notification("Autostart disabled successfully.")
+                    print(f"Removed autostart file: {autostart_file}")
+                else:
+                    self.on_notification("Autostart already disabled.")
 
-    def _disable_autostart(self):
-        """Disable autostart by removing the .desktop file."""
-        # Check both old and new filenames
-        autostart_files = [
-            Path.home() / ".config" / "autostart" / "org.tfcbm.ClipboardManager.desktop",
-            Path.home() / ".config" / "autostart" / "tfcbm.desktop"
-        ]
+        except Exception as e:
+            error_message = f"Error toggling autostart: {e}"
+            self.on_notification(f"Error: {error_message}")
+            print(error_message)
+            raise
 
-        for autostart_file in autostart_files:
-            if autostart_file.exists():
-                autostart_file.unlink()
-                print(f"Autostart disabled: {autostart_file}")
+    def _on_autostart_toggled(self, switch_row, _param):
+        """Handle autostart toggle - directly creates/removes desktop file."""
+        is_enabled = switch_row.get_active()
+        try:
+            self._set_autostart_via_desktop_file(is_enabled)
+        except Exception:
+            # If setting autostart fails, revert the switch state
+            switch_row.set_active(not is_enabled)
+            # Error message already handled by _set_autostart_via_desktop_file
+
+    def _build_extension_group(self) -> Adw.PreferencesGroup:
+        """Build the extension management section."""
+        group = Adw.PreferencesGroup()
+        group.set_title("GNOME Extension")
+        group.set_description("Manage the TFCBM GNOME Shell extension")
+
+        # Extension status row
+        from ui.utils.extension_check import get_extension_status
+        status = get_extension_status()
+
+        status_row = Adw.ActionRow()
+        status_row.set_title("Extension Status")
+        if status['ready']:
+            status_row.set_subtitle("Installed and running")
+        elif status['installed']:
+            status_row.set_subtitle("Installed but not enabled")
+        else:
+            status_row.set_subtitle("Not installed")
+        group.add(status_row)
+
+        # Uninstall extension row
+        uninstall_row = Adw.ActionRow()
+        uninstall_row.set_title("Uninstall Extension")
+        uninstall_row.set_subtitle("Remove the GNOME Shell extension before uninstalling the app")
+
+        uninstall_button = Gtk.Button()
+        uninstall_button.set_label("Uninstall")
+        uninstall_button.add_css_class("destructive-action")
+        uninstall_button.set_valign(Gtk.Align.CENTER)
+        uninstall_button.connect("clicked", self._on_uninstall_extension_clicked)
+        uninstall_button.set_sensitive(status['installed'])  # Only enable if installed
+        uninstall_row.add_suffix(uninstall_button)
+
+        group.add(uninstall_row)
+
+        return group
+
+    def _on_uninstall_extension_clicked(self, button: Gtk.Button):
+        """Handle uninstall extension button click."""
+        # Show confirmation dialog
+        dialog = Adw.MessageDialog.new(
+            None,
+            "Uninstall GNOME Extension?",
+            "This will disable and remove the TFCBM GNOME Shell extension. "
+            "You should do this before uninstalling the app to ensure clean removal."
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("uninstall", "Uninstall Extension")
+        dialog.set_response_appearance("uninstall", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def on_response(dialog, response):
+            if response == "uninstall":
+                self._perform_extension_uninstall(button)
+            dialog.close()
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def _perform_extension_uninstall(self, button: Gtk.Button):
+        """Actually perform the extension uninstall."""
+        button.set_sensitive(False)
+        button.set_label("Uninstalling...")
+
+        import threading
+
+        def uninstall_in_thread():
+            from ui.utils.extension_check import uninstall_extension
+            success, message = uninstall_extension()
+            GLib.idle_add(self._handle_uninstall_result, success, message, button)
+
+        thread = threading.Thread(target=uninstall_in_thread, daemon=True)
+        thread.start()
+
+    def _handle_uninstall_result(self, success: bool, message: str, button: Gtk.Button):
+        """Handle extension uninstall result in GTK main thread."""
+        if success:
+            self.on_notification(f"✓ {message}")
+            button.set_label("Uninstalled")
+            # Keep button disabled since extension is now gone
+        else:
+            self.on_notification(f"Error: {message}")
+            button.set_label("Uninstall")
+            button.set_sensitive(True)
+
+        return False  # Don't repeat idle_add
+
+    def _get_installed_app_id(self):
+        """Get the app ID."""
+        return 'io.github.dyslechtchitect.tfcbm'
+
+    def _set_main_app_recording_state(self, is_recording: bool):
+        """Set the recording state directly on the window to prevent hiding during shortcut recording."""
+        # Use parent_window if window not available (parent_window is found via widget traversal)
+        target_window = self.window or self.parent_window
+
+        if target_window:
+            # Set flag directly on the window
+            target_window.is_recording_shortcut = is_recording
+            logger.info(f"Recording state set directly on window: {is_recording}")
+        else:
+            logger.warning("No window reference available to set recording state")
+

@@ -28,23 +28,8 @@ export class ClipboardMonitorService {
             await this.notificationPort.send(event);
         };
 
-        // 1. Check for file copy
-        if (mimeTypes.includes('text/uri-list')) {
-            const uriList = await this.clipboardPort.getText();
-            if (uriList) {
-                // Check if all URIs are file URIs
-                const uris = uriList.split('\n').map(u => u.trim()).filter(u => u);
-                const allFiles = uris.every(u => u.startsWith('file://'));
-
-                if (allFiles && uris.length > 0) {
-                    log(`[TFCBM] Detected file copy event with ${uris.length} files.`);
-                    await sendEvent('file', uriList);
-                    return;
-                }
-            }
-        }
-
-        // 2. Check for image (if not a file copy)
+        // 1. Check for image FIRST (before file check)
+        // This ensures copied image files display as images, not just file URIs
         const image = await this.clipboardPort.getImage();
         if (image) {
             let imageType = 'image/generic';
@@ -58,8 +43,25 @@ export class ClipboardMonitorService {
                     imageType = 'image/screenshot';
                 }
             }
+            log(`[TFCBM] Detected image: ${imageType}`);
             await sendEvent(imageType, JSON.stringify(image));
             return;
+        }
+
+        // 2. Check for file copy (after image check)
+        if (mimeTypes.includes('text/uri-list')) {
+            const uriList = await this.clipboardPort.getText();
+            if (uriList) {
+                // Check if all URIs are file URIs
+                const uris = uriList.split('\n').map(u => u.trim()).filter(u => u);
+                const allFiles = uris.every(u => u.startsWith('file://'));
+
+                if (allFiles && uris.length > 0) {
+                    log(`[TFCBM] Detected file copy event with ${uris.length} files.`);
+                    await sendEvent('file', uriList);
+                    return;
+                }
+            }
         }
 
         // 3. Check for text (if not an image or file)

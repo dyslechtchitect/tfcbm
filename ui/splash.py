@@ -14,8 +14,8 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 # Funny loading phrases
 LOADING_PHRASES = [
-    "Copying your shit...",
-    "Initializing the * clipboard...",
+    "Copying your s***...",
+    "Initializing the ****ing clipboard...",
     "Loading your copy-paste history...",
     "Preparing to manage the hell out of your clipboard...",
     "Ctrl+C, Ctrl+V... Ctrl+TFCBM!",
@@ -28,7 +28,7 @@ LOADING_PHRASES = [
     "Fetching all the things you forgot you copied...",
     "Making clipboard history great again...",
     "Loading all your accidental copies...",
-    "Preparing to unfuck your clipboard...",
+    "Preparing to un**** your clipboard...",
 ]
 
 
@@ -58,8 +58,8 @@ class SplashWindow(Gtk.Window):
         try:
             # Try Flatpak path first, then development path
             svg_paths = [
-                Path("/app/share/icons/hicolor/scalable/apps/org.tfcbm.ClipboardManager.svg"),
-                Path(__file__).parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "org.tfcbm.ClipboardManager.svg"
+                Path("/app/share/icons/hicolor/scalable/apps/io.github.dyslechtchitect.tfcbm.svg"),
+                Path(__file__).parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "io.github.dyslechtchitect.tfcbm.svg"
             ]
 
             loaded = False
@@ -83,7 +83,7 @@ class SplashWindow(Gtk.Window):
         box.append(title)
 
         # Subtitle
-        subtitle = Gtk.Label(label="The F*cking Clipboard Manager")
+        subtitle = Gtk.Label(label="The * Clipboard Manager")
         subtitle.add_css_class("dim-label")
         box.append(subtitle)
 

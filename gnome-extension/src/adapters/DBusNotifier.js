@@ -2,7 +2,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { NotificationPort } from '../domain/NotificationPort.js';
 
-const DBUS_NAME = 'org.tfcbm.ClipboardManager';
+const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm';
 const DBUS_PATH = '/org/tfcbm/ClipboardService';
 const DBUS_IFACE = 'org.tfcbm.ClipboardService';
 
@@ -27,6 +27,7 @@ export class DBusNotifier extends NotificationPort {
 
         try {
             const eventData = JSON.stringify(event.toJSON());
+            log(`[TFCBM DBusNotifier] Sending clipboard event: ${event.type}, data_length=${event.data ? event.data.length : 0}`);
 
             return new Promise((resolve) => {
                 Gio.DBus.session.call(
@@ -37,16 +38,17 @@ export class DBusNotifier extends NotificationPort {
                     new GLib.Variant('(s)', [eventData]),
                     null,
                     Gio.DBusCallFlags.NONE,
-                    1000, // 1 second timeout
+                    5000, // 5 second timeout for large images/files
                     null,
                     (connection, result) => {
                         try {
                             connection.call_finish(result);
                             this._lastFailTime = 0; // Reset on success
+                            log(`[TFCBM DBusNotifier] Successfully sent clipboard event: ${event.type}`);
                             resolve(true);
                         } catch (e) {
-                            // App not running or method doesn't exist - this is OK
-                            // Don't log errors to avoid spamming journalctl
+                            // Log errors for debugging
+                            logError(e, `[TFCBM DBusNotifier] DBus send failed for type ${event.type}`);
                             this._lastFailTime = Date.now(); // Mark failure time
                             resolve(false);
                         }
@@ -54,6 +56,7 @@ export class DBusNotifier extends NotificationPort {
                 );
             });
         } catch (e) {
+            logError(e, '[TFCBM DBusNotifier] Exception during send');
             return false;
         }
     }

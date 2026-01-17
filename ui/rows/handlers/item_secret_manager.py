@@ -37,13 +37,13 @@ class ItemSecretManager:
             item: The clipboard item data dictionary
             window: The window instance for notifications
             password_service: PasswordService for authentication
-            ws_service: ItemWebSocketService for toggling secret status
+            ipc_service: ItemIPCService for toggling secret status
             get_root: Callback to get the root window for dialog presentation
         """
         self.item = item
         self.window = window
         self.password_service = password_service
-        self.ws_service = ws_service
+        self.ipc_service = ws_service
         self.get_root = get_root
 
     def handle_secret_action(self):
@@ -89,7 +89,7 @@ class ItemSecretManager:
 
             def on_response(dialog_obj, response):
                 if response == "confirm":
-                    self.ws_service.toggle_secret_status(item_id, False, item_name)
+                    self.ipc_service.toggle_secret_status(item_id, False, item_name)
                 # Consume authentication regardless of user choice (confirm or cancel)
                 self.password_service.consume_authentication("toggle_secret", item_id)
 
@@ -100,10 +100,10 @@ class ItemSecretManager:
         elif not item_name:
 
             def on_name_provided(name):
-                self.ws_service.toggle_secret_status(item_id, True, name)
+                self.ipc_service.toggle_secret_status(item_id, True, name)
 
             dialog = SecretNamingDialog(self.get_root(), on_name_provided)
             dialog.show()
         else:
             # Item already has name, just mark as secret
-            self.ws_service.toggle_secret_status(item_id, True, item_name)
+            self.ipc_service.toggle_secret_status(item_id, True, item_name)

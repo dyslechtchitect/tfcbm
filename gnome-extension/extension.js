@@ -1,20 +1,49 @@
+/*
+ * TFCBM GNOME Shell Extension
+ *
+ * Provides clipboard monitoring and keyboard shortcuts for TFCBM.
+ * - Monitors clipboard changes and notifies the app via DBus
+ * - Registers global keyboard shortcut to toggle the UI
+ * - Provides DBus interface for the Flatpak app to interact with the host
+ */
+
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
-import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import GObject from 'gi://GObject';
-import Clutter from 'gi://Clutter';
+import Shell from 'gi://Shell';
 import { ClipboardMonitorService } from './src/ClipboardMonitorService.js';
 import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { DBusNotifier } from './src/adapters/DBusNotifier.js';
 import { PollingScheduler } from './src/PollingScheduler.js';
 
-const DBUS_NAME = 'org.tfcbm.ClipboardManager';
+const DBUS_NAME = 'org.tfcbm.ClipboardService';
 const DBUS_PATH = '/org/tfcbm/ClipboardService';
 const DBUS_IFACE = 'org.tfcbm.ClipboardService';
+
+// D-Bus constants for the extension's OWN service (to be consumed by the Flatpak app)
+const EXTENSION_DBUS_NAME = 'org.gnome.Shell.Extensions.TfcbmClipboardMonitor';
+const EXTENSION_DBUS_PATH = '/org/gnome/Shell/Extensions/TfcbmClipboardMonitor';
+const EXTENSION_DBUS_IFACE_XML = `
+<node>
+    <interface name="${EXTENSION_DBUS_NAME}">
+        <method name="GetSetting">
+            <arg type="s" name="schema_id" direction="in"/>
+            <arg type="s" name="key" direction="in"/>
+            <arg type="s" name="value" direction="out"/>
+        </method>
+        <method name="SetSetting">
+            <arg type="s" name="schema_id" direction="in"/>
+            <arg type="s" name="key" direction="in"/>
+            <arg type="s" name="value" direction="in"/>
+        </method>
+        <!-- Methods for global input monitoring/paste simulation could be added here -->
+        <method name="SimulatePaste"/>
+        <method name="DisableKeybinding"/>
+        <method name="EnableKeybinding"/>
+    </interface>
+</node>
+`;
 
 const DBusInterface = `
 <node>
@@ -26,54 +55,45 @@ const DBusInterface = `
             <arg type="u" name="timestamp" direction="in"/>
         </method>
         <method name="Quit"/>
+        <method name="GetSetting">
+            <arg type="s" name="schema_id" direction="in"/>
+            <arg type="s" name="key" direction="in"/>
+            <arg type="s" name="value" direction="out"/>
+        </method>
+        <method name="SetSetting">
+            <arg type="s" name="schema_id" direction="in"/>
+            <arg type="s" name="key" direction="in"/>
+            <arg type="s" name="value" direction="in"/>
+        </method>
     </interface>
 </node>
 `;
 
-// Custom PanelMenu.Button that intercepts left-click to toggle UI instead of showing menu
-const TFCBMIndicator = GObject.registerClass(
-class TFCBMIndicator extends PanelMenu.Button {
-    _init(extension) {
-        super._init(0.0, 'TFCBM Clipboard Monitor', false);
-        this._extension = extension;
-    }
-
-    vfunc_event(event) {
-        // Intercept left-click to toggle UI instead of opening menu
-        if (event.type() === Clutter.EventType.BUTTON_PRESS) {
-            const button = event.get_button();
-            if (button === 1) { // Left click
-                this._extension._toggleUI();
-                return Clutter.EVENT_STOP; // Stop event propagation (don't open menu)
-            }
-        }
-        // For all other events (including right-click), use default behavior (show menu)
-        return super.vfunc_event(event);
-    }
-});
-
 export default class ClipboardMonitorExtension extends Extension {
     constructor(metadata) {
         super(metadata);
-        this._indicator = null;
         this._scheduler = null;
+        this._clipboardService = null;
         this._settings = null;
+        this._settingsChangedId = null;
         this._dbus = null;
         this._dbusOwner = null;
         this._dbusOwnerWatchId = null;
-        this._icon = null;
-        this._flatpakCheckTimeout = null;
+        this._exportedDBusId = null; // Registration ID for our exported D-Bus object
+        this._busNameOwnerId = null; // Bus name ownership ID
+        this._keybindingDisabled = false; // Track if keybinding is temporarily disabled
     }
 
     _launchApp() {
         try {
-            const tfcbmPath = this._settings.get_string('tfcbm-path');
-            if (!tfcbmPath || !GLib.file_test(tfcbmPath, GLib.FileTest.IS_DIR)) {
-                logError(new Error(`TFCBM path not configured or invalid: ${tfcbmPath}`));
-                return;
+            let command;
+            // Check if running inside a Flatpak sandbox
+            if (GLib.file_test('/.flatpak-info', GLib.FileTest.EXISTS)) {
+                command = ['flatpak', 'run', 'io.github.dyslechtchitect.tfcbm', '--activate'];
+            } else {
+                command = ['tfcbm', '--activate'];
             }
-
-            const command = [`${tfcbmPath}/install.sh`, 'run'];
+            
             GLib.spawn_async(
                 null, // CWD
                 command,
@@ -87,35 +107,53 @@ export default class ClipboardMonitorExtension extends Extension {
     }
 
     _toggleUI() {
+        // Only toggle UI if app is already running (dock icon visible)
+        // Don't auto-launch - user must explicitly start the app
         if (this._dbusOwner) {
             try {
                 const timestamp = global.display.get_current_time_roundtrip();
                 this._dbus.ActivateRemote(timestamp);
             } catch (e) {
                 logError(e, 'Failed to activate TFCBM UI');
-                // Check if app was uninstalled before trying to launch
-                this._checkFlatpakInstalled();
-                this._launchApp();
             }
-        } else {
-            // Check if app is installed before trying to launch
-            this._checkFlatpakInstalled();
-            this._launchApp();
+        }
+        // Do nothing if app is not running - keyboard shortcut only works when app is visible
+    }
+
+    _onOwnerChanged(connection, sender, path, iface, signal, params) {
+        // NameOwnerChanged signal: (name, old_owner, new_owner)
+        const [name, oldOwner, newOwner] = params.deep_unpack();
+        log(`[TFCBM] DBus name owner changed: ${name}, old=${oldOwner}, new=${newOwner}`);
+
+        const wasRunning = !!this._dbusOwner;
+        const isRunning = !!newOwner;
+
+        this._dbusOwner = newOwner;
+
+        // Only update monitoring state if the state actually changed
+        if (wasRunning !== isRunning) {
+            log(`[TFCBM] App running state changed: ${wasRunning} -> ${isRunning}`);
+            this._updateMonitoringState();
         }
     }
 
-    _onOwnerChanged(connection, name, owner) {
-        this._dbusOwner = owner;
-        this._updateIconStyle();
-    }
-
-    _updateIconStyle() {
-        if (!this._icon) return;
-
+    _updateMonitoringState() {
         if (this._dbusOwner) {
-            this._icon.remove_style_class_name('disabled');
+            // Start clipboard monitoring when app is running
+            if (!this._scheduler && this._clipboardService) {
+                log('[TFCBM] Starting clipboard monitoring (app is running)');
+                this._scheduler = new PollingScheduler(() => {
+                    this._clipboardService.checkAndNotify();
+                }, 250);
+                this._scheduler.start();
+            }
         } else {
-            this._icon.add_style_class_name('disabled');
+            // Stop clipboard monitoring when app is not running
+            if (this._scheduler) {
+                log('[TFCBM] Stopping clipboard monitoring (app is not running)');
+                this._scheduler.stop();
+                this._scheduler = null;
+            }
         }
     }
 
@@ -139,9 +177,12 @@ export default class ClipboardMonitorExtension extends Extension {
         const nodeInfo = Gio.DBusNodeInfo.new_for_xml(DBusInterface);
         const interfaceInfo = nodeInfo.lookup_interface(DBUS_IFACE);
 
+        // Use DO_NOT_AUTO_START to prevent triggering D-Bus auto-activation
+        // This ensures the extension doesn't force-launch TFCBM on login
+        // D-Bus communication still works when app is manually started or via XDG autostart
         Gio.DBusProxy.new_for_bus(
             Gio.BusType.SESSION,
-            Gio.DBusProxyFlags.NONE,
+            Gio.DBusProxyFlags.DO_NOT_AUTO_START,
             interfaceInfo, // interface info
             DBUS_NAME,
             DBUS_PATH,
@@ -155,161 +196,317 @@ export default class ClipboardMonitorExtension extends Extension {
                     this._dbus = null;
                     this._dbusOwner = null;
                 }
-                this._updateIconStyle();
+                this._updateMonitoringState();
             }
         );
     }
 
-    _showSettings() {
-        if (!this._dbus) return;
+    // D-Bus methods for Flatpak to read/write extension settings
+    _GetSetting(schema_id, key) {
+        if (!this._settings) {
+            throw new Error(`Extension settings not initialized.`);
+        }
+        // Ensure the schema_id matches the extension's schema
+        if (schema_id !== this._settings.schema_id) {
+            logError(new Error(`TFCBM Extension: Requested schema_id '${schema_id}' does not match extension schema '${this._settings.schema_id}'`), 'Invalid schema_id for GetSetting');
+            throw new Error(`Invalid schema_id: ${schema_id}`);
+        }
+
         try {
-            const timestamp = global.display.get_current_time_roundtrip();
-            this._dbus.ShowSettingsRemote(timestamp);
+            // For the keyboard shortcut, we need to read the array and return the first element as a string
+            if (key === 'toggle-tfcbm-ui') {
+                const valueArray = this._settings.get_strv(key);
+                const value = valueArray.length > 0 ? valueArray[0] : '';
+                log(`TFCBM Extension: GetSetting('${key}') -> '${value}' (from array: [${valueArray.join(', ')}])`);
+                return value;
+            }
+            // For other settings, use get_string
+            const value = this._settings.get_string(key);
+            log(`TFCBM Extension: GetSetting('${key}') -> '${value}'`);
+            return value;
         } catch (e) {
-            logError(e, 'Failed to show TFCBM settings');
+            logError(e, `TFCBM Extension: Failed to get setting for key '${key}'`);
+            throw new Error(`Failed to get setting '${key}': ${e.message}`);
         }
     }
 
-    _quitApp() {
-        if (!this._dbus) return;
+    _SetSetting(schema_id, key, value) {
+        if (!this._settings) {
+            throw new Error(`Extension settings not initialized.`);
+        }
+        // Ensure the schema_id matches the extension's schema
+        if (schema_id !== this._settings.schema_id) {
+            logError(new Error(`TFCBM Extension: Requested schema_id '${schema_id}' does not match extension schema '${this._settings.schema_id}'`), 'Invalid schema_id for SetSetting');
+            throw new Error(`Invalid schema_id: ${schema_id}`);
+        }
+
         try {
-            this._dbus.QuitRemote();
+            // For the keyboard shortcut, we need to convert the string to an array
+            if (key === 'toggle-tfcbm-ui') {
+                // Convert single string like "<Control><Shift>v" to array ["<Control><Shift>v"]
+                this._settings.set_strv(key, [value]);
+                log(`TFCBM Extension: SetSetting('${key}', ['${value}']) successful (converted to array)`);
+                // Trigger re-registration for the shortcut
+                this._reregisterKeybinding();
+            } else {
+                // For other settings, use set_string
+                this._settings.set_string(key, value);
+                log(`TFCBM Extension: SetSetting('${key}', '${value}') successful`);
+            }
         } catch (e) {
-            logError(e, 'Failed to quit TFCBM');
+            logError(e, `TFCBM Extension: Failed to set setting for key '${key}' to '${value}'`);
+            throw new Error(`Failed to set setting '${key}': ${e.message}`);
         }
     }
 
-    _checkFlatpakInstalled() {
-        // Check if the Flatpak is still installed
-        // If not, disable this extension (cleanup after uninstall)
+    // D-Bus method for Flatpak to request paste simulation on the host
+    _SimulatePaste() {
+        log('[TFCBM Extension] Received request to simulate paste.');
+        let cmd = [];
+        let success = false;
+
+        // Try xdotool first (X11)
         try {
-            GLib.spawn_command_line_sync('flatpak list --app');
-            const [ok, stdout] = GLib.spawn_command_line_sync('flatpak list --app');
-            if (ok) {
-                const output = new TextDecoder().decode(stdout);
-                if (!output.includes('org.tfcbm.ClipboardManager')) {
-                    // Flatpak was uninstalled, disable this extension
-                    log('[TFCBM] Flatpak uninstalled, disabling extension...');
-                    GLib.spawn_command_line_async('gnome-extensions disable tfcbm-clipboard-monitor@github.com');
+            cmd = ['xdotool', 'key', 'ctrl+v'];
+            const [res, pid, stdin, stdout, stderr] = GLib.spawn_sync(
+                null, // CWD
+                cmd,
+                null, // envp
+                GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+                null // child_setup
+            );
+            if (res) {
+                const status = GLib.get_child_status(GLib.Pid.from_string(pid), stdout, stderr, null);
+                if (status === 0) {
+                    log('[TFCBM Extension] Simulated Ctrl+V paste with xdotool');
+                    success = true;
+                } else {
+                    logError(new Error(`xdotool failed with status ${status}: ${stderr.toString()}`), '[TFCBM Extension] xdotool error');
                 }
             }
         } catch (e) {
-            // Ignore errors - might not have flatpak command
+            logError(e, '[TFCBM Extension] xdotool not available or error');
+        }
+
+        if (!success) {
+            // Try ydotool (Wayland) if xdotool failed
+            try {
+                cmd = [
+                    'ydotool', 'key',
+                    '29:1', '47:1', '47:0', '29:0' // Ctrl+V
+                ];
+                const [res, pid, stdin, stdout, stderr] = GLib.spawn_sync(
+                    null, // CWD
+                    cmd,
+                    null, // envp
+                    GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+                    null // child_setup
+                );
+                if (res) {
+                    const status = GLib.get_child_status(GLib.Pid.from_string(pid), stdout, stderr, null);
+                    if (status === 0) {
+                        log('[TFCBM Extension] Simulated Ctrl+V paste with ydotool');
+                        success = true;
+                    } else {
+                        logError(new Error(`ydotool failed with status ${status}: ${stderr.toString()}`), '[TFCBM Extension] ydotool error');
+                    }
+                }
+            } catch (e) {
+                logError(e, '[TFCBM Extension] ydotool not available or error');
+            }
+        }
+
+        if (!success) {
+            log('[TFCBM Extension] Failed to simulate paste: neither xdotool nor ydotool worked.');
+            throw new Error('Failed to simulate paste: neither xdotool nor ydotool worked.');
         }
     }
 
-    enable() {
-        // Initialize clipboard monitoring
-        const clipboardAdapter = new GnomeClipboardAdapter();
-        const notifier = new DBusNotifier();
-        const service = new ClipboardMonitorService(clipboardAdapter, notifier);
-
-        this._scheduler = new PollingScheduler(() => {
-            service.checkAndNotify();
-        }, 250);
-
-        this._scheduler.start();
-
-        // Add keyboard shortcut
+    _DisableKeybinding() {
         try {
-            this._settings = this.getSettings();
+            log('[TFCBM Extension] Disabling keybinding for recording');
+            Main.wm.removeKeybinding('toggle-tfcbm-ui');
+            this._keybindingDisabled = true;
+            log('[TFCBM Extension] Keybinding disabled successfully');
+        } catch (e) {
+            logError(e, '[TFCBM Extension] Error disabling keybinding');
+            throw new Error(`Failed to disable keybinding: ${e.message}`);
+        }
+    }
+
+    _EnableKeybinding() {
+        try {
+            log('[TFCBM Extension] Re-enabling keybinding after recording');
+            this._registerKeybinding();
+            this._keybindingDisabled = false;
+            log('[TFCBM Extension] Keybinding re-enabled successfully');
+        } catch (e) {
+            logError(e, '[TFCBM Extension] Error re-enabling keybinding');
+            throw new Error(`Failed to re-enable keybinding: ${e.message}`);
+        }
+    }
+
+
+    _registerKeybinding() {
+        try {
+            const currentBinding = this._settings.get_strv('toggle-tfcbm-ui');
+            log(`[TFCBM] Registering keyboard shortcut: ${currentBinding}`);
+
             Main.wm.addKeybinding(
                 'toggle-tfcbm-ui',
                 this._settings,
                 0, // Gio.SettingsBindFlags.DEFAULT
-                1, // Shell.ActionMode.NORMAL
+                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW, // Allow in normal mode and overview
                 () => {
+                    log('[TFCBM] Keyboard shortcut activated');
                     this._toggleUI();
                 }
             );
+            log('[TFCBM] Keyboard shortcut registered successfully');
+        } catch (e) {
+            logError(e, '[TFCBM] Failed to register keyboard shortcut');
+        }
+    }
+
+    _reregisterKeybinding() {
+        try {
+            const currentBinding = this._settings.get_strv('toggle-tfcbm-ui');
+            log(`[TFCBM] Re-registering keyboard shortcut: ${currentBinding}`);
+
+            // Remove old keybinding
+            Main.wm.removeKeybinding('toggle-tfcbm-ui');
+            log('[TFCBM] Old keybinding removed');
+
+            // Re-register with new shortcut
+            this._registerKeybinding();
+
+            log('[TFCBM] Keyboard shortcut successfully updated');
+        } catch (e) {
+            logError(e, 'TFCBM: Error re-registering keybinding');
+        }
+    }
+
+    enable() {
+        log('[TFCBM] Extension enable() called - starting initialization...');
+
+        // DON'T start clipboard monitoring yet - it will start when app launches
+        // Store the clipboard service for later use
+        const clipboardAdapter = new GnomeClipboardAdapter();
+        const notifier = new DBusNotifier();
+        this._clipboardService = new ClipboardMonitorService(clipboardAdapter, notifier);
+
+        // Scheduler will be started when app is detected as running
+        log('[TFCBM] Clipboard service initialized (monitoring will start when app launches)');
+
+        // Add keyboard shortcut
+        try {
+            log('[TFCBM] Getting extension settings...');
+            this._settings = this.getSettings();
+
+            if (!this._settings) {
+                throw new Error('getSettings() returned null');
+            }
+
+            log('[TFCBM] Settings obtained successfully');
+            this._registerKeybinding();
+
+            // Listen for changes to the shortcut setting
+            this._settingsChangedId = this._settings.connect('changed::toggle-tfcbm-ui', () => {
+                log('[TFCBM] Keyboard shortcut changed, re-registering...');
+                this._reregisterKeybinding();
+            });
         } catch (e) {
             logError(e, 'TFCBM: Error adding keybinding');
         }
 
-        // Create system tray indicator
+        // Export D-Bus interface for the Flatpak app to use
         try {
-            this._indicator = new TFCBMIndicator(this);
+            log('[TFCBM] Attempting to export D-Bus service...');
+            const nodeInfo = Gio.DBusNodeInfo.new_for_xml(EXTENSION_DBUS_IFACE_XML);
+            log('[TFCBM] XML parsed successfully');
+            const interfaceInfo = nodeInfo.lookup_interface(EXTENSION_DBUS_NAME);
+            log(`[TFCBM] Interface info obtained for ${EXTENSION_DBUS_NAME}`);
 
-            // Load custom icon from extension directory
-            const iconPath = `${this.metadata.path}/tfcbm.svg`;
+            // Register D-Bus object using the modern API
+            this._exportedDBusId = Gio.DBus.session.register_object(
+                EXTENSION_DBUS_PATH,
+                interfaceInfo,
+                (connection, sender, objectPath, interfaceName, methodName, parameters, invocation) => {
+                    try {
+                        log(`[TFCBM Extension] D-Bus method called: ${methodName}`);
+                        let result;
+                        if (methodName === 'GetSetting') {
+                            const [schema_id, key] = parameters.deepUnpack();
+                            result = this._GetSetting(schema_id, key);
+                            invocation.return_value(GLib.Variant.new('(s)', [result]));
+                        } else if (methodName === 'SetSetting') {
+                            const [schema_id, key, value] = parameters.deepUnpack();
+                            this._SetSetting(schema_id, key, value);
+                            invocation.return_value(null);
+                        } else if (methodName === 'SimulatePaste') {
+                            this._SimulatePaste();
+                            invocation.return_value(null);
+                        } else if (methodName === 'DisableKeybinding') {
+                            this._DisableKeybinding();
+                            invocation.return_value(null);
+                        } else if (methodName === 'EnableKeybinding') {
+                            this._EnableKeybinding();
+                            invocation.return_value(null);
+                        } else {
+                            invocation.return_dbus_error('org.freedesktop.DBus.Error.UnknownMethod', 'Unknown method');
+                        }
+                    } catch (e) {
+                        logError(e, `TFCBM Extension: Error handling D-Bus method call ${methodName}`);
+                        // Use a numeric error code directly for cross-platform compatibility
+                        // instead of Gio.DBusError.Code.FAILED which is undefined in some GNOME Shell versions
+                        invocation.return_dbus_error('org.freedesktop.DBus.Error.Failed', e.message || 'Unknown error');
+                    }
+                },
+                null, // get property handler
+                null  // set property handler
+            );
+            log(`[TFCBM] Extension D-Bus service '${EXTENSION_DBUS_NAME}' exported on path '${EXTENSION_DBUS_PATH}' with ID ${this._exportedDBusId}`);
 
-            if (GLib.file_test(iconPath, GLib.FileTest.EXISTS)) {
-                const gicon = Gio.icon_new_for_string(iconPath);
-                this._icon = new St.Icon({
-                    gicon: gicon,
-                    style_class: 'system-status-icon',
-                });
-            } else {
-                // Fallback to system icon
-                this._icon = new St.Icon({
-                    icon_name: 'edit-paste-symbolic',
-                    style_class: 'system-status-icon',
-                });
-            }
-
-            this._indicator.add_child(this._icon);
-
-            // Create popup menu (right-click)
-            const settingsItem = new PopupMenu.PopupMenuItem('TFCBM Settings');
-            settingsItem.connect('activate', () => {
-                this._showSettings();
-            });
-            this._indicator.menu.addMenuItem(settingsItem);
-
-            // Add separator
-            this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-            const quitAppItem = new PopupMenu.PopupMenuItem('Quit TFCBM App');
-            quitAppItem.connect('activate', () => {
-                this._quitApp();
-            });
-            this._indicator.menu.addMenuItem(quitAppItem);
-
-            // Add to panel
-            Main.panel.addToStatusArea('tfcbm-indicator', this._indicator);
-
-            this._updateIconStyle();
+            // Own the D-Bus name so clients can find us
+            this._busNameOwnerId = Gio.bus_own_name(
+                Gio.BusType.SESSION,
+                EXTENSION_DBUS_NAME,
+                Gio.BusNameOwnerFlags.NONE,
+                null, // bus acquired callback
+                (connection, name) => {
+                    log(`[TFCBM] D-Bus name '${name}' acquired successfully`);
+                },
+                (connection, name) => {
+                    log(`[TFCBM] WARNING: Lost D-Bus name '${name}'`);
+                }
+            );
+            log(`[TFCBM] D-Bus name '${EXTENSION_DBUS_NAME}' ownership requested with ID ${this._busNameOwnerId}`);
         } catch (e) {
-            logError(e, 'TFCBM: Error creating tray indicator');
+            logError(e, 'TFCBM: Error exporting extension D-Bus service');
         }
 
         this._reconnect();
 
-        // Check immediately on enable
-        this._checkFlatpakInstalled();
-
-        // Check periodically if Flatpak is still installed (every 10 seconds)
-        // This ensures the extension auto-disables quickly if the Flatpak is uninstalled
-        this._flatpakCheckTimeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
-            this._checkFlatpakInstalled();
-            return GLib.SOURCE_CONTINUE; // Keep running
-        });
+        log('[TFCBM] Extension enable() complete - extension is now active');
     }
 
     disable() {
+        log('[TFCBM] Extension disable() called - shutting down...');
+
         // Stop clipboard monitoring
         if (this._scheduler) {
             this._scheduler.stop();
             this._scheduler = null;
         }
 
-        // Remove keybinding
+        // Remove keybinding and disconnect settings listener
         if (this._settings) {
+            if (this._settingsChangedId) {
+                this._settings.disconnect(this._settingsChangedId);
+                this._settingsChangedId = null;
+            }
             Main.wm.removeKeybinding('toggle-tfcbm-ui');
             this._settings = null;
-        }
-
-        // Remove tray indicator
-        if (this._indicator) {
-            this._indicator.destroy();
-            this._indicator = null;
-            this._icon = null;
-        }
-
-        // Stop Flatpak check timeout
-        if (this._flatpakCheckTimeout) {
-            GLib.source_remove(this._flatpakCheckTimeout);
-            this._flatpakCheckTimeout = null;
         }
 
         // Disconnect DBus owner watch
@@ -317,6 +514,20 @@ export default class ClipboardMonitorExtension extends Extension {
             Gio.DBus.session.signal_unsubscribe(this._dbusOwnerWatchId);
             this._dbusOwnerWatchId = null;
         }
+        // Unexport extension D-Bus service
+        if (this._exportedDBusId) {
+            Gio.DBus.session.unregister_object(this._exportedDBusId);
+            this._exportedDBusId = null;
+            log(`[TFCBM] Extension D-Bus service '${EXTENSION_DBUS_NAME}' unexported.`);
+        }
+
+        // Unown the D-Bus name
+        if (this._busNameOwnerId) {
+            Gio.bus_unown_name(this._busNameOwnerId);
+            this._busNameOwnerId = null;
+            log(`[TFCBM] D-Bus name '${EXTENSION_DBUS_NAME}' unowned.`);
+        }
+
         if (this._dbus) {
             this._dbus = null;
         }

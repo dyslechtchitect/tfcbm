@@ -1,4 +1,4 @@
-"""History Loader Manager - Handles WebSocket data loading for clipboard history."""
+"""History Loader Manager - Handles IPC data loading for clipboard history."""
 
 import asyncio
 import json
@@ -10,7 +10,7 @@ import traceback
 from typing import Callable
 
 import gi
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect, ConnectionClosedError
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
@@ -21,7 +21,7 @@ logger = logging.getLogger("TFCBM.HistoryLoaderManager")
 
 
 class HistoryLoaderManager:
-    """Manages WebSocket data loading for clipboard history."""
+    """Manages IPC data loading for clipboard history."""
 
     def __init__(
         self,
@@ -37,7 +37,7 @@ class HistoryLoaderManager:
         get_active_filters: Callable,
         get_search_query: Callable,
         page_size: int,
-        websocket_uri: str = "ws://localhost:8765",
+        socket_path: str = "",
     ):
         """Initialize HistoryLoaderManager.
 
@@ -54,7 +54,7 @@ class HistoryLoaderManager:
             get_active_filters: Callback to get active filter set
             get_search_query: Callback to get current search query
             page_size: Number of items per page
-            websocket_uri: WebSocket server URI
+            socket_path: IPC socket path
         """
         self.copied_listbox = copied_listbox
         self.pasted_listbox = pasted_listbox
@@ -68,7 +68,12 @@ class HistoryLoaderManager:
         self.get_active_filters = get_active_filters
         self.get_search_query = get_search_query
         self.page_size = page_size
-        self.websocket_uri = websocket_uri
+        # Use provided socket_path or default to XDG_RUNTIME_DIR
+        if not socket_path:
+            import os
+            runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+            socket_path = os.path.join(runtime_dir, "tfcbm-ipc.sock")
+        self.socket_path = socket_path
 
         # Pagination state
         self.copied_offset = 0
@@ -82,33 +87,30 @@ class HistoryLoaderManager:
         self.pasted_loading = False
 
     def load_history(self):
-        """Load clipboard history and listen for updates via WebSocket."""
+        """Load clipboard history and listen for updates via IPC."""
         self.history_load_start_time = time.time()
         logger.info("Starting initial history load...")
 
-        def run_websocket():
+        def run_ipc():
             # Create new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                loop.run_until_complete(self.websocket_client())
+                loop.run_until_complete(self.ipc_client())
             finally:
                 loop.close()
 
         # Run in background thread
-        thread = threading.Thread(target=run_websocket, daemon=True)
+        thread = threading.Thread(target=run_ipc, daemon=True)
         thread.start()
 
-    async def websocket_client(self):
-        """WebSocket client to connect to backend."""
-        max_size = 5 * 1024 * 1024  # 5MB to match server
-        print(f"Connecting to WebSocket server at {self.websocket_uri}...")
+    async def ipc_client(self):
+        """IPC client to connect to backend."""
+        print(f"Connecting to IPC server at {self.socket_path}...")
 
         try:
-            async with websockets.connect(
-                self.websocket_uri, max_size=max_size
-            ) as websocket:
-                print("Connected to WebSocket server")
+            async with ipc_connect(self.socket_path) as conn:
+                print("Connected to IPC server")
 
                 # Request history
                 request = {"action": "get_history", "limit": self.page_size}
@@ -117,7 +119,7 @@ class HistoryLoaderManager:
                     print(
                         f"[FILTER] Sending filters to server: {list(self.get_active_filters())}"
                     )
-                await websocket.send(json.dumps(request))
+                await conn.send(json.dumps(request))
                 print(
                     f"Requested history with filters: {request.get('filters', 'none')}"
                 )
@@ -129,15 +131,17 @@ class HistoryLoaderManager:
                 }
                 if self.get_active_filters():
                     pasted_request["filters"] = list(self.get_active_filters())
-                await websocket.send(json.dumps(pasted_request))
+                await conn.send(json.dumps(pasted_request))
                 print(
                     f"Requested pasted items with filters: {pasted_request.get('filters', 'none')}"
                 )
 
                 # Listen for messages
-                async for message in websocket:
+                logger.info("Starting message listener loop...")
+                async for message in conn:
                     data = json.loads(message)
                     msg_type = data.get("type")
+                    logger.debug(f"Received message type: {msg_type}")
 
                     if msg_type == "history":
                         # Initial history load
@@ -182,26 +186,25 @@ class HistoryLoaderManager:
                         if item_id:
                             GLib.idle_add(self.window.remove_item, item_id)
 
-        except websockets.exceptions.ConnectionClosedError:
+        except ConnectionClosedError:
             # Normal closure when app exits - suppress error
-            print("WebSocket connection closed")
+            logger.info("IPC connection closed normally")
+        except StopAsyncIteration:
+            logger.info("IPC async iteration stopped")
         except Exception as e:
-            print(f"WebSocket error: {e}")
+            logger.error(f"IPC error: {e}")
             traceback.print_exc()
             GLib.idle_add(self.window.show_error, str(e))
 
     def load_pasted_history(self):
-        """Load recently pasted items via WebSocket."""
+        """Load recently pasted items via IPC."""
         page_size = self.page_size  # Capture for closure
 
-        def run_websocket():
+        def run_ipc():
             try:
 
                 async def get_pasted():
-                    max_size = 5 * 1024 * 1024  # 5MB
-                    async with websockets.connect(
-                        self.websocket_uri, max_size=max_size
-                    ) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         # Request pasted history
                         request = {
                             "action": "get_recently_pasted",
@@ -213,10 +216,10 @@ class HistoryLoaderManager:
                             print(
                                 f"[FILTER] Requesting pasted items with filters: {list(self.get_active_filters())}"
                             )
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
                         # Wait for response
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "recently_pasted":
@@ -235,7 +238,7 @@ class HistoryLoaderManager:
                 print(f"Error loading pasted history: {e}")
 
         # Run in background thread
-        thread = threading.Thread(target=run_websocket, daemon=True)
+        thread = threading.Thread(target=run_ipc, daemon=True)
         thread.start()
 
     def initial_history_load(self, items, total_count, offset):
@@ -336,9 +339,9 @@ class HistoryLoaderManager:
         return False  # Don't repeat
 
     def load_more_copied_items(self):
-        """Load more copied items via WebSocket."""
+        """Load more copied items via IPC."""
 
-        def run_websocket():
+        def run_ipc():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -346,13 +349,13 @@ class HistoryLoaderManager:
             finally:
                 loop.close()
 
-        threading.Thread(target=run_websocket, daemon=True).start()
+        threading.Thread(target=run_ipc, daemon=True).start()
         return False
 
     def load_more_pasted_items(self):
-        """Load more pasted items via WebSocket."""
+        """Load more pasted items via IPC."""
 
-        def run_websocket():
+        def run_ipc():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -360,16 +363,13 @@ class HistoryLoaderManager:
             finally:
                 loop.close()
 
-        threading.Thread(target=run_websocket, daemon=True).start()
+        threading.Thread(target=run_ipc, daemon=True).start()
         return False
 
     async def _fetch_more_items(self, list_type):
-        """Fetch more items from backend via WebSocket."""
-        max_size = 5 * 1024 * 1024  # 5MB
+        """Fetch more items from backend via IPC."""
         try:
-            async with websockets.connect(
-                self.websocket_uri, max_size=max_size
-            ) as websocket:
+            async with ipc_connect(self.socket_path) as conn:
                 if list_type == "copied":
                     request = {
                         "action": "get_history",
@@ -388,8 +388,8 @@ class HistoryLoaderManager:
                     if self.get_active_filters():
                         request["filters"] = list(self.get_active_filters())
 
-                await websocket.send(json.dumps(request))
-                response = await websocket.recv()
+                await conn.send(json.dumps(request))
+                response = await conn.recv()
                 data = json.loads(response)
 
                 if data.get("type") == "history" and list_type == "copied":
@@ -419,7 +419,7 @@ class HistoryLoaderManager:
                     )
 
         except Exception as e:
-            print(f"WebSocket error fetching more {list_type} items: {e}")
+            print(f"IPC error fetching more {list_type} items: {e}")
             traceback.print_exc()
             GLib.idle_add(
                 lambda: print(f"Error loading more items: {str(e)}") or False
@@ -491,18 +491,15 @@ class HistoryLoaderManager:
             try:
 
                 async def get_history():
-                    max_size = 5 * 1024 * 1024
-                    async with websockets.connect(
-                        self.websocket_uri, max_size=max_size
-                    ) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         request = {
                             "action": "get_history",
                             "limit": self.page_size,
                         }
                         if self.get_active_filters():
                             request["filters"] = list(self.get_active_filters())
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "history":

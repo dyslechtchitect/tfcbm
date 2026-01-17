@@ -8,7 +8,8 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 import gi
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
+from ui.utils.color_utils import sanitize_color
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -56,12 +57,12 @@ class UserTagsManager:
             try:
 
                 async def fetch_tags():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "get_tags"}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "tags":
@@ -98,15 +99,15 @@ class UserTagsManager:
             try:
 
                 async def create_tag_async():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {
                             "action": "create_tag",
                             "name": name,
                             "color": color,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("success"):
@@ -152,11 +153,11 @@ class UserTagsManager:
             try:
 
                 async def delete_tag_async():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {"action": "delete_tag", "tag_id": tag_id}
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("success"):
@@ -166,9 +167,13 @@ class UserTagsManager:
                             # Refresh tag filter display (via window callback)
                             if hasattr(self.window, 'load_tags'):
                                 GLib.idle_add(self.window.load_tags)
-                            # Refresh tags on all visible items
-                            if hasattr(self.window, '_refresh_all_item_tags'):
-                                GLib.idle_add(self.window._refresh_all_item_tags)
+                            # Show success notification
+                            if hasattr(self.window, 'show_notification'):
+                                GLib.idle_add(self.window.show_notification, "Tag deleted")
+                            # Force reload of current tab to refresh item displays
+                            # Schedule with a delay to ensure load_tags completes first
+                            if hasattr(self.window, '_reload_current_tab'):
+                                GLib.timeout_add(500, self.window._reload_current_tab)
                         else:
                             error_msg = data.get("error", "Unknown error")
                             logger.error(f"Failed to delete tag: {error_msg}")
@@ -210,15 +215,15 @@ class UserTagsManager:
             try:
 
                 async def add_tag_async():
-                    uri = "ws://localhost:8765"
-                    async with websockets.connect(uri) as websocket:
+                    uri = ""
+                    async with ipc_connect(uri) as conn:
                         request = {
                             "action": "add_item_tag",
                             "item_id": item_id,
                             "tag_id": int(tag_id),
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("success"):
@@ -306,7 +311,7 @@ class UserTagsManager:
             for tag in user_tags:
                 tag_id = tag.get("id")
                 tag_name = tag.get("name", "")
-                tag_color = tag.get("color", "#9a9996")
+                tag_color = tag.get("color", "#9a9996").strip()
 
                 tag_row = Adw.ActionRow()
                 tag_row.set_title(tag_name)
@@ -318,8 +323,14 @@ class UserTagsManager:
 
                 # Apply color
                 css_provider = Gtk.CssProvider()
-                css_data = f"box {{ background-color: {tag_color}; border-radius: 4px; }}"
-                css_provider.load_from_data(css_data.encode())
+                tag_color_clean = sanitize_color(tag_color)
+                css_data = f"box {{ background-color: {tag_color_clean}; border-radius: 4px; }}"
+                try:
+                    css_provider.load_from_string(css_data)
+                except Exception as e:
+                    logger.error(f"ERROR loading CSS for tag color box: {e}")
+                    logger.error(f"  CSS data: {repr(css_data)}")
+                    logger.error(f"  Tag: {tag_name}, Color: {repr(tag_color)}")
                 color_box.get_style_context().add_provider(
                     css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 )

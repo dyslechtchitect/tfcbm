@@ -32,21 +32,35 @@ class NotificationManager:
         Returns:
             Gtk.Box containing the notification label
         """
-        # Create notification area
+        # ONE LINE NOTIFICATION - ABSOLUTELY MINIMAL
         notification_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         notification_box.set_vexpand(False)
         notification_box.set_hexpand(True)
-        notification_box.set_halign(Gtk.Align.FILL)
-        notification_box.set_valign(Gtk.Align.END)
-        notification_box.set_size_request(-1, 30)  # Narrow strip
+        notification_box.set_visible(True)  # ALWAYS VISIBLE
+
+        # LOCK IT AT 18px - ONE LINE OF TEXT
+        css_provider = Gtk.CssProvider()
+        css_data = """
+        box.notification-area {
+            min-height: 18px;
+            max-height: 18px;
+            padding: 0;
+            margin: 0;
+        }
+        """
+        css_provider.load_from_data(css_data.encode())
+        notification_box.get_style_context().add_provider(
+            css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
         notification_box.add_css_class("notification-area")
 
-        # Create notification label
+        # Label - single line, ellipsize if too long
         self.notification_label = Gtk.Label(label="")
         self.notification_label.set_hexpand(True)
         self.notification_label.set_halign(Gtk.Align.CENTER)
-        self.notification_label.set_valign(Gtk.Align.CENTER)
-        self.notification_label.set_ellipsize(3)  # PANGO_ELLIPSIZE_END - truncate long text
+        self.notification_label.set_ellipsize(3)  # Truncate if too long
+        self.notification_label.set_single_line_mode(True)  # FORCE SINGLE LINE
+        self.notification_label.set_max_width_chars(80)
         notification_box.append(self.notification_label)
 
         return notification_box
@@ -64,9 +78,8 @@ class NotificationManager:
             GLib.source_remove(self._hide_timeout_id)
             self._hide_timeout_id = None
 
-        # Set message and show
+        # Set message - box already always visible
         self.notification_label.set_label(message)
-        self.notification_box.set_visible(True)
 
         logger.debug(
             f"Notification box visible: {self.notification_box.get_visible()}"
@@ -89,7 +102,7 @@ class NotificationManager:
         Returns:
             GLib.SOURCE_REMOVE to prevent timeout from repeating
         """
-        self.notification_box.set_visible(False)
+        # Just clear text, keep box visible
         self.notification_label.set_label("")
         self._hide_timeout_id = None
         return GLib.SOURCE_REMOVE

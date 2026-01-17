@@ -7,7 +7,7 @@ import threading
 from typing import Callable
 
 import gi
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
@@ -25,7 +25,7 @@ class SortManager:
         on_pasted_load: Callable[[list, int, int], None],
         get_active_filters: Callable[[], set],
         page_size: int,
-        websocket_uri: str = "ws://localhost:8765",
+        socket_path: str = "",
     ):
         """Initialize SortManager.
 
@@ -35,14 +35,14 @@ class SortManager:
             on_pasted_load: Callback to load pasted history (items, total, offset)
             get_active_filters: Callback to get active content filters
             page_size: Number of items per page
-            websocket_uri: WebSocket server URI
+            socket_path: IPC socket path
         """
         self.sort_button = sort_button
         self.on_history_load = on_history_load
         self.on_pasted_load = on_pasted_load
         self.get_active_filters = get_active_filters
         self.page_size = page_size
-        self.websocket_uri = websocket_uri
+        self.socket_path = socket_path
 
         # Sort state
         self.copied_sort_order = "DESC"  # Default: newest first
@@ -111,9 +111,7 @@ class SortManager:
             try:
 
                 async def get_sorted_history():
-                    async with websockets.connect(
-                        self.websocket_uri, max_size=5 * 1024 * 1024
-                    ) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         request = {
                             "action": "get_history",
                             "limit": self.page_size,
@@ -122,8 +120,8 @@ class SortManager:
                         active_filters = self.get_active_filters()
                         if active_filters:
                             request["filters"] = list(active_filters)
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "history":
@@ -155,9 +153,7 @@ class SortManager:
             try:
 
                 async def get_sorted_pasted():
-                    async with websockets.connect(
-                        self.websocket_uri, max_size=5 * 1024 * 1024
-                    ) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         request = {
                             "action": "get_recently_pasted",
                             "limit": self.page_size,
@@ -167,8 +163,8 @@ class SortManager:
                         active_filters = self.get_active_filters()
                         if active_filters:
                             request["filters"] = list(active_filters)
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "recently_pasted":

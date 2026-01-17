@@ -9,7 +9,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+build*
 develop-eggs/
 dist/
 downloads/
@@ -416,8 +416,24 @@ output.txt
 
 # === Flatpak Build Artifacts ===
 build-dir/
+builddir/
+build-test/
 .flatpak-builder/
-repo/
+repo*
 *.flatpak
 tfcbm-gnome-extension.zip
+
+# === Internal Documentation (keep only README.md) ===
+docs/
+**/README_*.md
+**/TEST_*.md
+**/*_GUIDE.md
+**/*_CHECKLIST.md
+**/*_SUMMARY.md
+**/*_EXPLANATION.md
+**/*_REQUIREMENTS.md
+**/*_JUSTIFICATION.md
+**/*_INTEGRATION.md
+TODO_*.md
+PRODUCTION_*.md
 

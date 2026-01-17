@@ -12,20 +12,25 @@ import sys
 import threading
 import time
 
-import websockets
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+# Log system information for debugging
+try:
+    from ui.utils.system_info import log_system_info
+    log_system_info(logging.getLogger())
+except Exception as e:
+    logging.warning(f"Could not log system info: {e}")
+
 # Import all services
 from server.src.services.settings_service import SettingsService
 from server.src.services.database_service import DatabaseService
 from server.src.services.thumbnail_service import ThumbnailService
 from server.src.services.clipboard_service import ClipboardService
-from server.src.services.websocket_service import WebSocketService
+from server.src.services.ipc_service import IPCService
 from server.src.services.screenshot_service import ScreenshotService
 
 
@@ -41,7 +46,7 @@ class TFCBMServer:
         self.database_service = DatabaseService(settings_service=self.settings_service)
         self.thumbnail_service = ThumbnailService(self.database_service)
         self.clipboard_service = ClipboardService(self.database_service, self.thumbnail_service)
-        self.websocket_service = WebSocketService(
+        self.ipc_service = IPCService(
             self.database_service,
             self.settings_service,
             self.clipboard_service
@@ -54,46 +59,55 @@ class TFCBMServer:
 
         logging.info("All services initialized successfully")
 
-    async def start_websocket_server(self):
-        """Start WebSocket server for UI"""
-        logging.info("Starting WebSocket server on ws://localhost:8765")
-        configured_max_size = 5 * 1024 * 1024
-        logging.info(f"WebSocket server configured with max_size: {configured_max_size} bytes")
-        async with websockets.serve(
-            self.websocket_service.websocket_handler,
-            "localhost",
-            8765,
-            max_size=configured_max_size
-        ):
-            await asyncio.Future()  # Run forever
+    async def start_ipc_server(self):
+        """Start UNIX domain socket IPC server for UI"""
+        socket_path = self.ipc_service.socket_path
+
+        # Remove existing socket if it exists
+        try:
+            os.unlink(socket_path)
+        except FileNotFoundError:
+            pass
+
+        logging.info(f"Starting IPC server on {socket_path}")
+        server = await asyncio.start_unix_server(
+            self.ipc_service.client_handler,
+            socket_path
+        )
+
+        # Set socket permissions to allow only user access
+        os.chmod(socket_path, 0o600)
+
+        async with server:
+            await server.serve_forever()
 
     def watch_for_new_items(self, loop):
-        """Background thread to watch for new database items and broadcast to WebSocket clients"""
-        logging.info("Starting database watcher for WebSocket broadcasts...")
+        """Background thread to watch for new database items and broadcast to IPC clients"""
+        logging.info("Starting database watcher for IPC broadcasts...")
 
         while True:
             try:
                 latest_id = self.database_service.get_latest_id()
 
-                if latest_id and latest_id > self.websocket_service.last_known_id:
+                if latest_id and latest_id > self.ipc_service.last_known_id:
                     # New items detected
-                    logging.info(f"📢 Broadcasting new items {self.websocket_service.last_known_id + 1} to {latest_id}")
-                    for item_id in range(self.websocket_service.last_known_id + 1, latest_id + 1):
+                    logging.info(f"📢 Broadcasting new items {self.ipc_service.last_known_id + 1} to {latest_id}")
+                    for item_id in range(self.ipc_service.last_known_id + 1, latest_id + 1):
                         item = self.database_service.get_item(item_id)
                         if item:
-                            ui_item = self.websocket_service.prepare_item_for_ui(item)
+                            ui_item = self.ipc_service.prepare_item_for_ui(item)
 
                             # Broadcast to all clients
                             message = {"type": "new_item", "item": ui_item}
 
                             # Schedule broadcast in async loop
                             asyncio.run_coroutine_threadsafe(
-                                self.websocket_service.broadcast(message),
+                                self.ipc_service.broadcast(message),
                                 loop
                             )
-                            logging.info(f"  → Broadcast item {item_id} ({item['type']}) to {len(self.websocket_service.clients)} clients")
+                            logging.info(f"  → Broadcast item {item_id} ({item['type']}) to {len(self.ipc_service.clients)} clients")
 
-                    self.websocket_service.last_known_id = latest_id
+                    self.ipc_service.last_known_id = latest_id
 
             except Exception as e:
                 logging.error(f"Error in database watcher: {e}")
@@ -105,10 +119,10 @@ class TFCBMServer:
         logging.info(f"\nReceived signal {signum}, shutting down...")
 
         # Kill UI process if it's running
-        if self.websocket_service.ui_pid:
+        if self.ipc_service.ui_pid:
             try:
-                logging.info(f"Killing UI process (PID: {self.websocket_service.ui_pid})...")
-                os.kill(self.websocket_service.ui_pid, signal.SIGTERM)
+                logging.info(f"Killing UI process (PID: {self.ipc_service.ui_pid})...")
+                os.kill(self.ipc_service.ui_pid, signal.SIGTERM)
                 logging.info("UI process terminated")
             except ProcessLookupError:
                 logging.info("UI process already terminated")
@@ -121,16 +135,17 @@ class TFCBMServer:
         except Exception as e:
             logging.error(f"Error shutting down thumbnail service: {e}")
 
+        # Clean up IPC socket
+        try:
+            os.unlink(self.ipc_service.socket_path)
+            logging.info("IPC socket removed")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logging.error(f"Error removing IPC socket: {e}")
+
         logging.info("Server shutdown complete")
         sys.exit(0)
-
-    def _is_autostart_enabled(self) -> bool:
-        """Check if autostart is enabled by checking for autostart desktop file."""
-        from pathlib import Path
-        autostart_dir = Path.home() / ".config" / "autostart"
-        # Check both old and new filenames
-        return (autostart_dir / "org.tfcbm.ClipboardManager.desktop").exists() or \
-               (autostart_dir / "tfcbm.desktop").exists()
 
     def start(self):
         """Start the TFCBM server"""
@@ -138,39 +153,16 @@ class TFCBMServer:
         signal.signal(signal.SIGTERM, self.signal_handler)
         signal.signal(signal.SIGINT, self.signal_handler)
 
-        # Only enable GNOME extension if autostart is enabled
-        # This prevents the tray icon from appearing when autostart is disabled
-        if self._is_autostart_enabled():
-            try:
-                import gi
-                gi.require_version('Gio', '2.0')
-                from gi.repository import Gio, GLib
-
-                logging.info("Autostart is enabled - ensuring GNOME extension is enabled...")
-                # Use DBus to enable extension (works from Flatpak sandbox)
-                connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-                result = connection.call_sync(
-                    'org.gnome.Shell.Extensions',
-                    '/org/gnome/Shell/Extensions',
-                    'org.gnome.Shell.Extensions',
-                    'EnableExtension',
-                    GLib.Variant('(s)', ('tfcbm-clipboard-monitor@github.com',)),
-                    None,
-                    Gio.DBusCallFlags.NONE,
-                    -1,
-                    None
-                )
-                logging.info("✓ GNOME extension enabled via DBus")
-            except Exception as e:
-                logging.warning(f"Failed to enable GNOME extension via DBus: {e}")
-        else:
-            logging.info("Autostart is disabled - skipping GNOME extension auto-enable")
+        # Note: GNOME Shell extension is optional and must be enabled manually
+        # To enable: gnome-extensions enable tfcbm-clipboard-monitor@github.com
+        # Or use the GNOME Extensions app
+        logging.info("TFCBM server starting. Optional GNOME extension can be enabled with: gnome-extensions enable tfcbm-clipboard-monitor@github.com")
 
         # Start screenshot service if enabled
         self.screenshot_service.start()
 
-        # Start WebSocket server in separate thread with its own event loop
-        def run_websocket_server():
+        # Start IPC server in separate thread with its own event loop
+        def run_ipc_server():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
@@ -182,28 +174,12 @@ class TFCBMServer:
             )
             watcher_thread.start()
 
-            # Start WebSocket server
-            loop.run_until_complete(self.start_websocket_server())
+            # Start IPC server
+            loop.run_until_complete(self.start_ipc_server())
 
-        websocket_thread = threading.Thread(target=run_websocket_server, daemon=True)
-        websocket_thread.start()
-        logging.info("WebSocket server started\n")
-
-        logging.info("Listening for legacy events on /run/user/1000/tfcbm.sock")
-
-        # Legacy UNIX socket server (kept for backward compatibility)
-        # Note: Most new code uses WebSocket, but old extension might still use this
-        socket_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "tfcbm.sock")
-
-        # Remove existing socket if it exists
-        try:
-            os.unlink(socket_path)
-        except FileNotFoundError:
-            pass
-
-        # Note: For simplicity, I'm not implementing the full UNIX socket server here
-        # since the extension now uses DBus -> UI -> WebSocket path
-        # The original tfcbm_server.py had this, but it's legacy code
+        ipc_thread = threading.Thread(target=run_ipc_server, daemon=True)
+        ipc_thread.start()
+        logging.info("IPC server started\n")
 
         try:
             while True:

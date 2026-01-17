@@ -1,5 +1,6 @@
 """Tests for retention policy and cleanup operations."""
 
+import json
 import pytest
 
 from database import ClipboardDB
@@ -81,8 +82,6 @@ class TestRetentionAndCleanup:
 
     def test_file_extensions_extraction(self, temp_db: ClipboardDB):
         """Test extracting file extensions from file items."""
-        import json
-
         # Add file items with different extensions
         extensions = [".pdf", ".zip", ".txt", ".jpg", ".docx"]
         for ext in extensions:

@@ -1,21 +1,11 @@
-# TFCBM - The * Clipboard Manager
-# Minimal requirements for the actual project
+# TFCBM - The Friendly Clipboard Manager
+# Runtime dependencies for development environment
 
-# GTK4 and Libadwaita (UI dependencies)
+# GTK4 and Libadwaita (UI dependencies) - includes GdkPixbuf for image processing
 PyGObject>=3.42.0
 
-# WebSocket support
-websockets>=12.0
-
-# Image processing (for thumbnails)
-Pillow>=10.0.0
-
-# Configuration and validation
-pydantic>=2.0.0
-pyyaml>=6.0.0
-
-# Testing (optional, only needed for running tests)
-pytest==8.4.2
+# Testing (development only)
+pytest>=8.4.2
 
 # System Dependencies (not Python packages, install via system package manager)
 # These are required for full functionality but are NOT installed via pip

@@ -1,40 +1,71 @@
-
-<h1 align="center">
-  <strong>TFCBM - The * Clipboard Manager</strong>
-</h1>
+# TFCBM - The * Clipboard Manager
 
 <p align="center">
-  <img src="resouces/org.tfcbm.ClipboardManager.logo.png" alt="TFCBM Logo" width="36" height="36">
+  <img src="resouces/io.github.dyslechtchitect.tfcbm.logo.png" alt="TFCBM Logo" width="128" height="128">
 </p>
 
 <p align="center">
-  <strong>A powerful, lightweight clipboard manager for GNOME</strong>
+  <strong>A powerful clipboard manager for GNOME</strong>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/GNOME-45+-blue.svg" alt="GNOME 45+">
-  <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/GNOME-49-blue.svg" alt="GNOME 49">
+  <a href="https://flathub.org/apps/io.github.dyslechtchitect.tfcbm"><img src="https://img.shields.io/flathub/v/io.github.dyslechtchitect.tfcbm" alt="Flathub"></a>
 </p>
+
+---
+
+## About
+
+TFCBM is a modern clipboard manager that enhances your GNOME desktop experience. Never lose track of what you copy - TFCBM keeps a complete history of your clipboard, making it easy to find and reuse content whenever you need it.
+
+Built with GTK4 and Libadwaita, TFCBM seamlessly integrates with your GNOME desktop, providing quick access through keyboard shortcuts and a system tray icon.
 
 ## Features
 
-- **📋 Complete Clipboard History** - Never lose copied content again
-- **🔍 Powerful Search** - Find anything in your clipboard history instantly
-- **🏷️ Tags & Organization** - Organize clips with custom tags and colors
-- **🖼️ Rich Media Support** - Images, files, URLs, and formatted text
-- **🔒 Secret Management** - Mark sensitive items as secrets with password protection
-- **⌨️ Keyboard Navigation** - Fast workflow with keyboard shortcuts
-- **🎨 Modern UI** - Beautiful Adwaita-based interface
-- **🔄 Real-time Sync** - Instant clipboard monitoring via GNOME extension
-- **💾 Persistent Storage** - SQLite database with automatic retention management
+✨ **Complete Clipboard History** - Track everything you copy, never lose content again
+🔍 **Powerful Search** - Find anything in your clipboard history instantly
+🏷️ **Tags & Organization** - Organize clips with custom tags and colors
+🖼️ **Rich Media Support** - Handle text, images, files, and URLs
+🔐 **Secret Items** - Mark sensitive items as secrets with password protection
+⌨️ **Keyboard Shortcuts** - Fast workflow with configurable shortcuts
+🎨 **Modern Interface** - Beautiful Adwaita-based UI that follows GNOME HIG
+🔄 **Real-time Monitoring** - Instant clipboard detection via GNOME Shell extension
+💾 **Persistent Storage** - SQLite database with automatic retention management
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/general.png" alt="Main window" width="600">
+  <br>
+  <em>Main window showing clipboard history</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/search.png" alt="Search functionality" width="600">
+  <br>
+  <em>Search through your clipboard history</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/settings.png" alt="Settings" width="600">
+  <br>
+  <em>Configure shortcuts and preferences</em>
+</p>
 
 ## Installation
 
 ### From Flathub (Recommended)
 
+<a href="https://flathub.org/apps/io.github.dyslechtchitect.tfcbm">
+  <img src="https://flathub.org/api/badge?locale=en" alt="Download on Flathub" width="200">
+</a>
+
+Or via command line:
+
 ```bash
-flatpak install flathub org.tfcbm.ClipboardManager
+flatpak install flathub io.github.dyslechtchitect.tfcbm
 ```
 
 ### From Source
@@ -54,69 +85,96 @@ flatpak install flathub org.tfcbm.ClipboardManager
    ```bash
    git clone https://github.com/dyslechtchitect/tfcbm.git
    cd tfcbm
-   flatpak-builder --user --install --force-clean build-dir org.tfcbm.ClipboardManager.yml
+   flatpak-builder --user --install --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
    ```
 
 4. Run:
    ```bash
-   flatpak run org.tfcbm.ClipboardManager
+   flatpak run io.github.dyslechtchitect.tfcbm
    ```
 
 ## Usage
 
 ### First Run
 
-On first launch, TFCBM will install and enable the GNOME Shell extension for clipboard monitoring.
+On first launch, TFCBM will install and enable a GNOME Shell extension for clipboard monitoring. This extension provides:
 
-The extension provides:
 - System tray icon for quick access
 - Real-time clipboard monitoring
-- Global keyboard shortcut (`Super+V`)
+- Global keyboard shortcut (default: `Ctrl+Escape`, configurable in settings)
+
+You may need to restart GNOME Shell (log out and back in) after first installation for the extension to activate.
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Super+V` | Toggle TFCBM window |
-| `Ctrl+F` | Focus search |
-| `Enter` | Paste selected item and close |
-| `Shift+Enter` | Paste selected item (keep window open) |
-| `Delete` | Delete selected item |
-| `↑/↓` | Navigate clipboard history |
-| `Esc` | Close window |
+| `Ctrl+Escape` | Toggle TFCBM window (configurable) |
+| Type to search | Auto-focus search and start typing |
+| `Enter` or `Space` | Paste selected item |
+| Click tray icon | Toggle TFCBM window |
 
-### Tray Icon Menu
+### Quick Tips
 
-- **TFCBM Settings**: Open settings page
-- **Quit TFCBM App**: Quit application and disable extension
+- **Search**: Just start typing to search your clipboard history
+- **Tags**: Right-click items to add tags and organize your clips
+- **Secrets**: Mark sensitive items as secrets to protect them with a password
+- **Favorite Items**: Keep important items from being auto-deleted by pinning them
 
-## Architecture
+## Privacy & Permissions
 
-TFCBM consists of three components:
+TFCBM takes your privacy seriously:
 
-1. **UI Application** - GTK4/Adwaita frontend
-2. **Backend Server** - WebSocket server with SQLite database
-3. **GNOME Extension** - Clipboard monitoring and tray integration
+- **Local Only**: All clipboard data is stored locally on your computer in a SQLite database
+- **No Network Access**: TFCBM never connects to the internet or sends data anywhere
+- **Open Source**: All code is available for review on GitHub
+
+### Required Permissions
+
+- **Display Access**: To show the application window
+- **D-Bus**: For communication with the GNOME Shell extension
+- **XDG Data/Config**: To store clipboard history and settings
+
+All data is stored in your home directory under `.var/app/io.github.dyslechtchitect.tfcbm/` (Flatpak) or `.local/share/tfcbm/` (local install).
+
+## How It Works
+
+TFCBM consists of three components that work together:
+
+1. **GNOME Shell Extension**: Monitors clipboard changes in real-time using GNOME's native clipboard API
+2. **Backend Server**: Manages the clipboard database and handles all clipboard operations
+3. **UI Application**: Provides the interface for viewing and managing your clipboard history
+
+These components communicate via Unix domain sockets for fast, secure local communication.
 
 ## Development
 
 ### Prerequisites
 
 - Python 3.11+
-- GNOME 45+
-- Flatpak SDK
+- GNOME 49
+- Flatpak SDK (for packaging)
 
 ### Setup
 
 ```bash
+# Clone the repository
+git clone https://github.com/dyslechtchitect/tfcbm.git
+cd tfcbm
+
+# Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Run server
+### Running from Source
+
+```bash
+# Terminal 1: Run the backend server
 python3 main.py
 
-# Run UI (in another terminal)
+# Terminal 2: Run the UI
 python3 ui/main.py
 ```
 
@@ -128,45 +186,62 @@ cd server
 ../.venv/bin/pytest test/integration -v
 
 # Extension tests
-cd gnome-extension/tests
-node --test
+cd gnome-extension
+npm test
 ```
 
-## Configuration
+### Building Flatpak
 
-- Clipboard database: `~/.local/share/tfcbm/clipboard.db`
-- Extension settings: `dconf /org/gnome/shell/extensions/tfcbm-clipboard-monitor/`
-
-## Uninstalling
-
-1. Click "Quit TFCBM App" from the tray icon
-2. Uninstall from GNOME Software
-
-Or via command line:
 ```bash
-flatpak uninstall org.tfcbm.ClipboardManager
+flatpak-builder --user --install --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
+```
+
+### Via GNOME Software
+
+Simply uninstall TFCBM from GNOME Software or App Center.
+
+### Via Command Line
+
+```bash
+# Quit the app first (from tray icon menu)
+flatpak uninstall io.github.dyslechtchitect.tfcbm
+
+# Remove the GNOME Shell extension
 gnome-extensions uninstall tfcbm-clipboard-monitor@github.com
 ```
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome! Here's how you can help:
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with clear commit messages
-4. Add tests for new functionality
-5. Submit a pull request
+- 🐛 **Report bugs**: Open an issue on GitHub
+- 💡 **Suggest features**: Start a discussion
+- 🔧 **Submit pull requests**: Fix bugs or add features
+- 📖 **Improve documentation**: Help others understand TFCBM
+- 🌍 **Translate**: Help translate TFCBM to your language
 
-## License
+Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting pull requests.
 
-TFCBM is licensed under the GNU General Public License v3.0 or later.
-See [LICENSE](LICENSE) for details.
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/dyslechtchitect/tfcbm/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/dyslechtchitect/tfcbm/discussions)
+- **Email**: dyslechtchitect@gmail.com
+
+## License
+
+TFCBM is free and open source software licensed under the [GNU General Public License v3.0 or later](LICENSE).
+
+## Acknowledgments
+
+Built with:
+- [GTK4](https://www.gtk.org/) - UI toolkit
+- [Libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/) - GNOME design system
+- [Python](https://www.python.org/) - Programming language
+- [GNOME Shell](https://www.gnome.org/) - Desktop environment
+
+Special thanks to the GNOME community for creating amazing tools and libraries.
 
 ---
 

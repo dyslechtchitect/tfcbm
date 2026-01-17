@@ -3,8 +3,6 @@
   "name": "TFCBM Clipboard Monitor",
   "description": "Monitors clipboard changes and provides integration with the TFCBM application. This extension accesses clipboard content to monitor text, images, and files. Clipboard data is only sent to the TFCBM application running on your local system via DBus.",
   "shell-version": [
-    "43",
-    "44",
     "45",
     "46",
     "47",
@@ -12,5 +10,5 @@
     "49"
   ],
   "url": "https://github.com/dyslechtchitect/tfcbm",
-  "settings-schema": "org.gnome.shell.extensions.simple-clipboard"
+  "settings-schema": "org.gnome.shell.extensions.tfcbm-clipboard-monitor"
 }

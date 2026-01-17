@@ -7,6 +7,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
+from ui.utils.color_utils import sanitize_color, hex_to_rgba
+
 
 class ItemTags:
     def __init__(
@@ -22,8 +24,8 @@ class ItemTags:
         tags_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         tags_box.set_halign(Gtk.Align.START)
         tags_box.set_valign(Gtk.Align.END)
-        tags_box.set_margin_start(24)
-        tags_box.set_margin_bottom(16)
+        tags_box.set_margin_start(8)
+        tags_box.set_margin_bottom(2)
 
         if self.on_click:
             tags_gesture = Gtk.GestureClick.new()
@@ -49,24 +51,13 @@ class ItemTags:
 
     def _create_tag_label(self, tag: dict) -> Gtk.Label:
         tag_name = tag.get("name", "")
-        tag_color = tag.get("color", "#9a9996")
+        tag_color = sanitize_color(tag.get("color", "#9a9996"))
 
         label = Gtk.Label(label=tag_name)
         label.add_css_class("tag-label")
 
         # Convert hex color to rgba with 20% opacity
-        # Parse hex color (supports #RGB and #RRGGBB)
-        color_hex = tag_color.lstrip("#")
-        if len(color_hex) == 3:
-            r = int(color_hex[0] * 2, 16)
-            g = int(color_hex[1] * 2, 16)
-            b = int(color_hex[2] * 2, 16)
-        else:
-            r = int(color_hex[0:2], 16)
-            g = int(color_hex[2:4], 16)
-            b = int(color_hex[4:6], 16)
-
-        bg_color = f"rgba({r}, {g}, {b}, 0.2)"
+        bg_color = hex_to_rgba(tag_color, 0.2)
 
         css_provider = Gtk.CssProvider()
         css_data = (
@@ -79,7 +70,13 @@ class ItemTags:
             f"font-weight: 600; "
             f"}}"
         )
-        css_provider.load_from_data(css_data.encode())
+        try:
+            css_provider.load_from_string(css_data)
+        except Exception as e:
+            print(f"ERROR loading CSS for tag label: {e}")
+            print(f"  CSS data: {repr(css_data)}")
+            print(f"  Tag color: {repr(tag_color)}")
+            print(f"  BG color: {repr(bg_color)}")
         label.get_style_context().add_provider(
             css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )

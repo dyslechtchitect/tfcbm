@@ -16,12 +16,26 @@ gi.require_version("Adw", "1")
 
 import logging
 import signal
+import os # Ensure os is imported
+from gi.repository import GLib # GLib for get_user_data_dir
 
+# Get Flatpak's user data directory for logs
+log_dir = Path(GLib.get_user_data_dir()) / "tfcbm" # Create a subdirectory for logs
+log_dir.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+log_file_path = log_dir / "tfcbm_ui_debug.log"
+
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file_path, mode='a', delay=False), # Append mode, no delay
+        logging.StreamHandler(sys.stdout) # Keep console output as well
+    ]
 )
 logger = logging.getLogger("TFCBM.UI")
+logger.info(f"Logging to file: {log_file_path}")
+
 
 
 def main():
@@ -30,14 +44,10 @@ def main():
 
     logger.info("TFCBM UI starting...")
 
-    def signal_handler(sig, frame):
-        print("Shutting down UI...")
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-
+    # app_main() already runs the app and returns exit code
     return app_main()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)
+

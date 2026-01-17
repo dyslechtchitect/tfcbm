@@ -1,85 +1,57 @@
 #!/usr/bin/env python3
 """
 TFCBM Settings Management
-Loads and validates settings from settings.yml using Pydantic
+Loads and validates settings from settings.json using dataclasses
 """
 
-import yaml
+import json
+import os
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator
+from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 
-class DisplaySettings(BaseModel):
+@dataclass
+class DisplaySettings:
     """Display-related settings"""
-    max_page_length: int = Field(
-        default=20,
-        ge=1,
-        le=100,
-        description="Maximum number of items to load per page (1-100)"
-    )
-    item_width: int = Field(
-        default=200,
-        ge=50,
-        le=1000,
-        description="Width of clipboard item cards in pixels (50-1000)"
-    )
-    item_height: int = Field(
-        default=200,
-        ge=50,
-        le=1000,
-        description="Height of clipboard item cards in pixels (50-1000)"
-    )
+    max_page_length: int = 20
+    item_width: int = 200
+    item_height: int = 200
 
-    @field_validator('max_page_length')
-    @classmethod
-    def validate_page_length(cls, v: int) -> int:
-        """Ensure page length is reasonable"""
-        if v < 1:
-            raise ValueError("max_page_length must be at least 1")
-        if v > 100:
-            raise ValueError("max_page_length cannot exceed 100")
-        return v
-
-    @field_validator('item_width', 'item_height')
-    @classmethod
-    def validate_item_size(cls, v: int) -> int:
-        """Ensure item size is at least 50x50"""
-        if v < 50:
-            return 50
-        if v > 1000:
-            raise ValueError("item dimensions cannot exceed 1000")
-        return v
+    def __post_init__(self):
+        """Validate settings"""
+        if not 1 <= self.max_page_length <= 100:
+            raise ValueError("max_page_length must be between 1 and 100")
+        if not 50 <= self.item_width <= 1000:
+            raise ValueError("item_width must be between 50 and 1000")
+        if not 50 <= self.item_height <= 1000:
+            raise ValueError("item_height must be between 50 and 1000")
 
 
-class RetentionSettings(BaseModel):
+@dataclass
+class RetentionSettings:
     """Retention policy settings"""
-    enabled: bool = Field(
-        default=True,
-        description="Enable automatic cleanup of old items"
-    )
-    max_items: int = Field(
-        default=250,
-        ge=10,
-        le=10000,
-        description="Maximum number of items to retain (10-10000)"
-    )
+    enabled: bool = True
+    max_items: int = 250
 
-    @field_validator('max_items')
-    @classmethod
-    def validate_max_items(cls, v: int) -> int:
-        """Ensure max_items is reasonable"""
-        if v < 10:
-            raise ValueError("max_items must be at least 10")
-        if v > 10000:
-            raise ValueError("max_items cannot exceed 10000")
-        return v
+    def __post_init__(self):
+        """Validate settings"""
+        if not 10 <= self.max_items <= 10000:
+            raise ValueError("max_items must be between 10 and 10000")
 
 
-class Settings(BaseModel):
+@dataclass
+class ClipboardSettings:
+    """Clipboard behavior settings"""
+    refocus_on_copy: bool = True
+
+
+@dataclass
+class Settings:
     """Main settings model"""
-    display: DisplaySettings = Field(default_factory=DisplaySettings)
-    retention: RetentionSettings = Field(default_factory=RetentionSettings)
+    display: DisplaySettings = field(default_factory=DisplaySettings)
+    retention: RetentionSettings = field(default_factory=RetentionSettings)
+    clipboard: ClipboardSettings = field(default_factory=ClipboardSettings)
 
 
 class SettingsManager:
@@ -90,36 +62,46 @@ class SettingsManager:
         Initialize settings manager
 
         Args:
-            config_path: Path to settings.yml file. Defaults to ./settings.yml
+            config_path: Path to settings.json file. Defaults to ~/.config/tfcbm/settings.json
         """
         if config_path is None:
-            config_path = Path(__file__).parent / "settings.yml"
+            # Use XDG_CONFIG_HOME for user settings (writable in Flatpak)
+            xdg_config_home = os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')
+            config_dir = Path(xdg_config_home) / 'tfcbm'
+            config_path = config_dir / 'settings.json'
+
+            # Ensure config directory exists
+            config_dir.mkdir(parents=True, exist_ok=True)
 
         self.config_path = config_path
         self.settings = self._load_settings()
 
     def _load_settings(self) -> Settings:
-        """Load and validate settings from YAML file"""
+        """Load and validate settings from JSON file"""
         try:
             if not self.config_path.exists():
                 print(f"Settings file not found at {self.config_path}, using defaults")
                 return Settings()
 
             with open(self.config_path, 'r') as f:
-                config_data = yaml.safe_load(f)
+                config_data = json.load(f)
 
             if config_data is None:
                 print("Settings file is empty, using defaults")
                 return Settings()
 
             # Validate and create settings object
-            settings = Settings(**config_data)
+            settings = Settings(
+                display=DisplaySettings(**config_data.get('display', {})),
+                retention=RetentionSettings(**config_data.get('retention', {})),
+                clipboard=ClipboardSettings(**config_data.get('clipboard', {}))
+            )
             print(f"Loaded settings from {self.config_path}")
             print(f"  - Max page length: {settings.display.max_page_length}")
             return settings
 
-        except yaml.YAMLError as e:
-            print(f"Error parsing settings YAML: {e}")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"Error loading or validating settings: {e}")
             print("Using default settings")
             return Settings()
         except Exception as e:
@@ -156,6 +138,11 @@ class SettingsManager:
         """Get the retention max items setting"""
         return self.settings.retention.max_items
 
+    @property
+    def refocus_on_copy(self) -> bool:
+        """Get the refocus on copy setting"""
+        return self.settings.clipboard.refocus_on_copy
+
     def update_settings(self, **kwargs):
         """Update settings and save to file"""
         # Update the settings object
@@ -174,11 +161,10 @@ class SettingsManager:
         self._save_settings()
 
     def _save_settings(self):
-        """Save current settings to YAML file"""
-        import yaml
-        config_data = self.settings.model_dump()
+        """Save current settings to JSON file"""
+        config_data = asdict(self.settings)
         with open(self.config_path, 'w') as f:
-            yaml.dump(config_data, f, default_flow_style=False)
+            json.dump(config_data, f, indent=2)
 
 
 # Global settings instance

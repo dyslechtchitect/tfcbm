@@ -21,7 +21,7 @@ class ItemContent:
 
     def build(self) -> Gtk.Widget:
         content_clamp = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        content_clamp.set_vexpand(False)
+        content_clamp.set_vexpand(True)  # LET CONTENT DETERMINE HEIGHT!
         content_clamp.set_hexpand(True)
         content_clamp.set_overflow(Gtk.Overflow.HIDDEN)
 
@@ -81,7 +81,7 @@ class ItemContent:
 
     def _build_text_content(self) -> Gtk.Widget:
         container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        container.set_vexpand(False)
+        container.set_vexpand(True)  # LET TEXT WRAP AND DETERMINE HEIGHT!
         container.set_hexpand(True)
         container.set_overflow(Gtk.Overflow.HIDDEN)
         container.set_margin_bottom(40)  # Space for tags overlay

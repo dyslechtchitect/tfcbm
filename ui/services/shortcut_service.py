@@ -1,10 +1,13 @@
 """Shortcut recording and management service."""
 
+import logging
 from typing import Optional, Protocol
 
 from ui.domain.keyboard import KeyboardShortcut
 from ui.interfaces.keyboard_input import KeyEvent
 from ui.interfaces.settings import ISettingsStore
+
+logger = logging.getLogger("TFCBM.ShortcutService")
 
 
 class ShortcutObserver(Protocol):
@@ -90,18 +93,46 @@ class ShortcutService:
 
         return shortcut
 
+    def _check_extension_ready(self) -> bool:
+        """
+        Check if the GNOME extension is ready for shortcut operations.
+
+        Returns:
+            True if extension is ready, False otherwise
+        """
+        try:
+            from ui.utils.extension_check import get_extension_status
+            status = get_extension_status()
+            if not status['ready']:
+                logger.error(
+                    f"Extension not ready: installed={status['installed']}, "
+                    f"enabled={status['enabled']}, ready={status['ready']}"
+                )
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Error checking extension status: {e}")
+            return False
+
     def get_current_shortcut(self) -> Optional[KeyboardShortcut]:
         """
         Get the current configured shortcut.
+        Returns default shortcut if extension is not ready.
 
         Returns:
-            Current shortcut or None
+            Current shortcut, default shortcut if extension not ready, or None
         """
+        if not self._check_extension_ready():
+            # Return default shortcut instead of None to avoid UI errors
+            logger.warning("Extension not ready, returning default shortcut")
+            return KeyboardShortcut(modifiers=["Ctrl"], key="Escape")
+
         return self.settings_store.get_shortcut()
 
     def apply_shortcut(self, shortcut: KeyboardShortcut) -> bool:
         """
         Apply a shortcut to the extension.
+        Checks extension readiness before attempting to apply.
 
         Args:
             shortcut: Shortcut to apply
@@ -109,6 +140,13 @@ class ShortcutService:
         Returns:
             True if successful, False otherwise
         """
+        if not self._check_extension_ready():
+            logger.error("Cannot apply shortcut: extension not ready")
+            # Notify observers of failure
+            for observer in self._observers:
+                observer.on_shortcut_applied(shortcut, False)
+            return False
+
         success = self.settings_store.set_shortcut(shortcut)
 
         # Notify observers

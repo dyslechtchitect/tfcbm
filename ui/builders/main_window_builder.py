@@ -121,12 +121,12 @@ class MainWindowBuilder:
         tag_frame.set_margin_start(8)
         tag_frame.set_margin_end(8)
         tag_frame.set_margin_top(4)
-        tag_frame.set_margin_bottom(4)
+        tag_frame.set_margin_bottom(0)
         tag_frame.add_css_class("view")
 
         tag_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        tag_container.set_margin_top(4)
-        tag_container.set_margin_bottom(4)
+        tag_container.set_margin_top(2)
+        tag_container.set_margin_bottom(2)
         tag_container.set_margin_start(8)
         tag_container.set_margin_end(8)
 
@@ -216,6 +216,9 @@ class MainWindowBuilder:
         copied_listbox = Gtk.ListBox()
         copied_listbox.add_css_class("boxed-list")
         copied_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+
+        # Rows size based on content - don't force min-height to 0
+        # This was causing rows to compress when many items were present
         copied_box.append(copied_listbox)
 
         copied_loader = self._create_loader()
@@ -256,6 +259,9 @@ class MainWindowBuilder:
         pasted_listbox = Gtk.ListBox()
         pasted_listbox.add_css_class("boxed-list")
         pasted_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+
+        # Rows size based on content - don't force min-height to 0
+        # This was causing rows to compress when many items were present
         pasted_box.append(pasted_listbox)
 
         pasted_loader = self._create_loader()
@@ -289,20 +295,7 @@ class MainWindowBuilder:
 
         main_box.append(tag_frame)
 
-        notification_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        notification_box.set_vexpand(False)
-        notification_box.set_hexpand(True)
-        notification_box.set_halign(Gtk.Align.FILL)
-        notification_box.set_valign(Gtk.Align.END)
-        notification_box.set_size_request(-1, 30)
-        notification_box.add_css_class("notification-area")
-        notification_label = Gtk.Label(label="")
-        notification_label.set_hexpand(True)
-        notification_label.set_halign(Gtk.Align.CENTER)
-        notification_label.set_valign(Gtk.Align.CENTER)
-        notification_label.add_css_class("marquee-text")
-        notification_box.append(notification_label)
-        main_box.append(notification_box)
+        # DELETED - NotificationManager creates this now
 
         return MainWindowWidgets(
             main_box=main_box,
@@ -324,8 +317,8 @@ class MainWindowBuilder:
             pasted_loader=pasted_loader,
             pasted_status_label=pasted_status_label,
             user_tags_group=user_tags_group,
-            notification_box=notification_box,
-            notification_label=notification_label,
+            notification_box=None,  # Created by NotificationManager
+            notification_label=None,  # Created by NotificationManager
             filter_bar=self.filter_bar,
             filter_toggle_btn=self.filter_toggle_btn,
             filter_sort_btn=self.filter_sort_btn,
@@ -498,7 +491,8 @@ class MainWindowBuilder:
 
         settings_page_obj = SettingsPage(
             settings=self.window.settings,
-            on_notification=self.window.show_notification
+            on_notification=self.window.show_notification,
+            window=self.window  # Pass window reference for direct communication
         )
         settings_page = settings_page_obj.build()
 

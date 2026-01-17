@@ -41,13 +41,13 @@ class ItemDialogHandler:
             item: The clipboard item data dictionary
             window: The window instance for notifications
             password_service: PasswordService for authentication
-            ws_service: ItemWebSocketService for fetching secret content
+            ipc_service: ItemIPCService for fetching secret content
             get_root: Callback to get the root window for dialog presentation
         """
         self.item = item
         self.window = window
         self.password_service = password_service
-        self.ws_service = ws_service
+        self.ipc_service = ws_service
         self.get_root = get_root
 
     def _is_text_file(self, mime_type: str) -> bool:
@@ -110,7 +110,7 @@ class ItemDialogHandler:
 
             # Fetch real content for viewing
             logger.info(f"Fetching real content for secret item {item_id} for view")
-            real_content = self.ws_service.fetch_secret_content(item_id)
+            real_content = self.ipc_service.fetch_secret_content(item_id)
             if not real_content:
                 self.window.show_notification("Failed to retrieve secret content")
                 # Consume authentication even on failure
@@ -159,7 +159,7 @@ class ItemDialogHandler:
 
             # Fetch real content for saving
             logger.info(f"Fetching real content for secret item {item_id} for save")
-            real_content = self.ws_service.fetch_secret_content(item_id)
+            real_content = self.ipc_service.fetch_secret_content(item_id)
             if not real_content:
                 self.window.show_notification("Failed to retrieve secret content")
                 # Consume authentication even on failure
@@ -198,7 +198,7 @@ class ItemDialogHandler:
 
         def on_response(dialog, response):
             if response == "delete":
-                self.ws_service.delete_item_from_server(self.item["id"])
+                self.ipc_service.delete_item_from_server(self.item["id"])
 
         dialog.connect("response", on_response)
         dialog.present(window)
@@ -266,19 +266,17 @@ class ItemDialogHandler:
                         # Need to fetch full image from server
                         import asyncio
                         import json
-                        import websockets
+                        from ui.services.ipc_helpers import connect as ipc_connect
 
                         item_id = self.item.get("id")
 
                         def fetch_and_save():
                             try:
                                 async def get_full_image():
-                                    uri = "ws://localhost:8765"
-                                    max_size = 50 * 1024 * 1024
-                                    async with websockets.connect(uri, max_size=max_size) as websocket:
+                                    async with ipc_connect() as conn:
                                         request = {"action": "get_full_image", "id": item_id}
-                                        await websocket.send(json.dumps(request))
-                                        response = await websocket.recv()
+                                        await conn.send(json.dumps(request))
+                                        response = await conn.recv()
                                         data = json.loads(response)
 
                                         if data.get("type") == "full_image" and data.get("id") == item_id:
@@ -456,7 +454,7 @@ class ItemDialogHandler:
             # Need to fetch full image from server
             import asyncio
             import json
-            import websockets
+            from ui.services.ipc_helpers import connect as ipc_connect
 
             item_id = self.item.get("id")
             loading_label = Gtk.Label(label="Loading full image...")
@@ -465,12 +463,10 @@ class ItemDialogHandler:
             def fetch_and_display():
                 try:
                     async def get_full_image():
-                        uri = "ws://localhost:8765"
-                        max_size = 50 * 1024 * 1024  # 50MB max
-                        async with websockets.connect(uri, max_size=max_size) as websocket:
+                        async with ipc_connect() as conn:
                             request = {"action": "get_full_image", "id": item_id}
-                            await websocket.send(json.dumps(request))
-                            response = await websocket.recv()
+                            await conn.send(json.dumps(request))
+                            response = await conn.recv()
                             data = json.loads(response)
 
                             if data.get("type") == "full_image" and data.get("id") == item_id:

@@ -3,7 +3,7 @@
 import logging
 import sys
 from pathlib import Path
-
+from ui.windows.license_window import LicenseWindow
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -24,7 +24,7 @@ class ClipboardApp(Adw.Application):
 
     def __init__(self, server_pid=None):
         super().__init__(
-            application_id="org.tfcbm.ClipboardManager",
+            application_id="io.github.dyslechtchitect.tfcbm",
             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self.server_pid = server_pid
@@ -55,7 +55,7 @@ class ClipboardApp(Adw.Application):
 
         # Set the default icon name for the application
         # This tells GNOME Shell which icon to use from the icon theme
-        Gtk.Window.set_default_icon_name("org.tfcbm.ClipboardManager")
+        Gtk.Window.set_default_icon_name("io.github.dyslechtchitect.tfcbm")
 
         try:
             css_path = Path(__file__).parent.parent / "style.css"
@@ -74,7 +74,8 @@ class ClipboardApp(Adw.Application):
         # Register D-Bus service for extension integration
         # The UI handles Activate/ShowSettings/Quit commands AND forwards clipboard events to server
         self.dbus_service = TFCBMDBusService(self, clipboard_handler=self._handle_clipboard_event)
-        self.dbus_service.start()
+        if not self.dbus_service.start():
+            logger.error("Failed to start DBus service - extension integration may not work")
 
         # Register actions for tray icon integration
         activate_action = Gio.SimpleAction.new("show-window", None)
@@ -94,13 +95,13 @@ class ClipboardApp(Adw.Application):
     def _handle_clipboard_event(self, event_data):
         """Forward clipboard events from GNOME extension to the server"""
         import asyncio
-        import websockets
+        from ui.services.ipc_helpers import connect as ipc_connect
         import json
 
         async def send_to_server():
             try:
-                async with websockets.connect('ws://localhost:8765') as websocket:
-                    await websocket.send(json.dumps({
+                async with ipc_connect() as conn:
+                    await conn.send(json.dumps({
                         'action': 'clipboard_event',
                         'data': event_data
                     }))
@@ -144,55 +145,178 @@ class ClipboardApp(Adw.Application):
     def _on_quit_action(self, action, parameter):
         """Handle quit action"""
         logger.info("quit action triggered")
+        self._cleanup_server()
+        logging.shutdown() # Ensure logs are flushed
         self.quit()
+
+    def do_shutdown(self):
+        """Called when application is shutting down - cleanup server"""
+        logger.info("Application shutting down")
+        self._cleanup_server()
+        Adw.Application.do_shutdown(self)
+
+    def _cleanup_server(self):
+        """Request graceful shutdown of server via IPC"""
+        print(f"[CLEANUP] _cleanup_server called")
+        logger.info("Requesting server shutdown via IPC")
+
+        try:
+            import asyncio
+            import json
+            from ui.services.ipc_helpers import connect as ipc_connect
+
+            async def send_shutdown():
+                try:
+                    print(f"[CLEANUP] Connecting to IPC server to send shutdown")
+                    async with ipc_connect() as conn:
+                        print(f"[CLEANUP] Sending shutdown request")
+                        request = {"action": "shutdown"}
+                        await conn.send(json.dumps(request))
+
+                        print(f"[CLEANUP] Waiting for acknowledgment (timeout: 1s)")
+                        # Use wait_for with timeout to avoid hanging if server already died
+                        response = await asyncio.wait_for(conn.recv(), timeout=1.0)
+                        data = json.loads(response)
+
+                        if data.get("type") == "shutdown_acknowledged":
+                            print(f"[CLEANUP] Server acknowledged shutdown")
+                            logger.info("Server acknowledged shutdown request")
+                        else:
+                            print(f"[CLEANUP] Unexpected response: {data}")
+                except asyncio.TimeoutError:
+                    print(f"[CLEANUP] Timeout waiting for acknowledgment (server may have already exited)")
+                except Exception as e:
+                    print(f"[CLEANUP] Error sending shutdown via IPC: {e}")
+                    logger.error(f"Error sending shutdown via IPC: {e}")
+
+            # Run the shutdown request
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(send_shutdown())
+            finally:
+                loop.close()
+                print(f"[CLEANUP] Shutdown request completed")
+
+        except Exception as e:
+            print(f"[CLEANUP] Error during cleanup: {e}")
+            logger.error(f"Error during cleanup: {e}")
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""
         options = command_line.get_options_dict()
         options = options.end().unpack()
+        logger.info(f"do_command_line received options: {options}") # <-- Retain this one
+        # Removed: logger.info(f"command_line arguments: {[arg.get_string() for arg in command_line.get_arguments()]}")
 
         if "server-pid" in options:
             self.server_pid = options["server-pid"]
-            logger.info(f"Monitoring server PID: {self.server_pid}")
 
+        # Only activate (show window) if explicitly requested via --activate flag
+        # Otherwise, just run in background with DBus service + tray icon
         if "activate" in options:
+            logger.info("--activate flag detected, showing window")
             self.activate()
         else:
-            self.activate()
+            logger.info("Starting in background mode (no --activate flag)")
+            # Keep the application running but don't show window
+            # The DBus service and tray icon will handle window activation
+            self.hold()
 
         return 0
 
     def do_activate(self):
         """Activate the application - toggle window visibility"""
-        # Use stored main_window reference (works even when hidden)
-        win = self.main_window if self.main_window else self.props.active_window
+
+        # Check if license has already been accepted
+        import json
+        from pathlib import Path
+
+        settings_path = Path.home() / ".var/app/io.github.dyslechtchitect.tfcbm/config/settings.json"
+        license_accepted = False
+
+        try:
+            if settings_path.exists():
+                with open(settings_path, 'r') as f:
+                    settings = json.load(f)
+                    license_accepted = settings.get('license_accepted', False)
+        except Exception as e:
+            logger.error(f"Error loading license status: {e}")
+
+        if license_accepted:
+            # License already accepted, proceed directly
+            logger.info("License already accepted, proceeding with activation")
+            self._proceed_with_activation()
+        else:
+            # Show license window for first-time users
+            logger.info("Showing license window for first-time acceptance")
+            license_win = LicenseWindow(callback=self._on_license_response)
+            license_win.set_application(self)
+            license_win.present()
+
+    def _on_license_response(self, accepted):
+        """Handle license window response"""
+        logger.info(f"License response: accepted={accepted}")
+        if accepted:
+            # Save license acceptance to settings
+            self._save_license_acceptance()
+            self._proceed_with_activation()
+        else:
+            logger.info("License not accepted. Quitting application.")
+            self.quit()
+
+    def _save_license_acceptance(self):
+        """Save license acceptance status to settings.json"""
+        import json
+        from pathlib import Path
+
+        settings_path = Path.home() / ".var/app/io.github.dyslechtchitect.tfcbm/config/settings.json"
+
+        try:
+            # Load existing settings or create new
+            settings = {}
+            if settings_path.exists():
+                with open(settings_path, 'r') as f:
+                    settings = json.load(f)
+
+            # Update license acceptance
+            settings['license_accepted'] = True
+
+            # Ensure parent directory exists
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Save settings
+            with open(settings_path, 'w') as f:
+                json.dump(settings, f, indent=2)
+
+            logger.info(f"License acceptance saved to {settings_path}")
+        except Exception as e:
+            logger.error(f"Error saving license acceptance: {e}")
+
+    def _proceed_with_activation(self):
+        logger.info("DEBUG: _proceed_with_activation called")
+        # Only use stored main_window reference (don't use active_window as it might be the license window)
+        win = self.main_window
+        logger.info(f"DEBUG: main_window={self.main_window}")
 
         if not win:
+            logger.info("DEBUG: No main window exists, creating new one")
             # Show splash screen first
             self._show_splash()
 
             # Load main window in background
             GLib.timeout_add(100, self._load_main_window)
         else:
-            # Toggle window visibility instead of always showing
-            logger.info("Toggling window visibility...")
-            if win.is_visible():
-                logger.info("Hiding window")
-                win.hide()
-                if hasattr(win, 'keyboard_handler'):
-                    win.keyboard_handler.activated_via_keyboard = False
-            else:
-                logger.info("Showing window")
-                win.show()
-                win.unminimize()
-                win.present()
-                if hasattr(win, 'keyboard_handler'):
-                    win.keyboard_handler.activated_via_keyboard = True
-                    # Focus first item
-                    GLib.idle_add(win.keyboard_handler.focus_first_item)
+            logger.info("DEBUG: Main window exists, showing it")
+            # Window already exists, just show it
+            win.show()
+            win.unminimize()
+            win.present()
+
 
     def _show_splash(self):
         """Show splash screen"""
+        logger.info("DEBUG: Entering _show_splash")
         from ui.splash import SplashWindow
 
         if not self.splash_window:
@@ -200,18 +324,30 @@ class ClipboardApp(Adw.Application):
             self.splash_window.set_application(self)
             self.splash_window.present()
             logger.info("Splash screen displayed")
+            logger.info("DEBUG: Splash screen presented.")
 
-    def _load_main_window(self):
+    def _load_main_window(self, skip_extension_check=False):
         """Load main window (called after splash is shown)"""
+        logger.info("DEBUG: Entering _load_main_window")
         try:
             # Check if GNOME extension is ready (installed AND enabled)
             from ui.utils.extension_check import get_extension_status, enable_extension
 
-            ext_status = get_extension_status()
+            if not skip_extension_check:
+                logger.info("Checking GNOME extension status...")
+                ext_status = get_extension_status()
+                logger.info(f"Extension status: {ext_status}")
+            else:
+                logger.info("Skipping extension check (already verified)")
+                ext_status = {'installed': True, 'ready': True}
 
-            # Only show setup screen if extension is NOT installed
-            if not ext_status['installed']:
-                logger.warning("GNOME extension not installed - showing setup window")
+            # Show setup screen if extension is not installed OR not ready (needs enabling)
+            if not ext_status['installed'] or not ext_status['ready']:
+                if not ext_status['installed']:
+                    logger.warning("GNOME extension not installed - showing setup window")
+                else:
+                    logger.warning("GNOME extension installed but not ready (needs enabling) - showing setup window")
+
                 from ui.windows.extension_error_window import ExtensionErrorWindow
 
                 # Close splash
@@ -219,18 +355,12 @@ class ClipboardApp(Adw.Application):
 
                 error_win = ExtensionErrorWindow(self, ext_status)
                 error_win.present()
+                logger.info("ExtensionErrorWindow displayed.")
+                logger.info("DEBUG: Error window presented.")
                 return False
 
-            # If extension is installed but not enabled, auto-enable it
-            if ext_status['installed'] and not ext_status['enabled']:
-                logger.info("Extension installed but not enabled - auto-enabling...")
-                success, message = enable_extension()
-                if success:
-                    logger.info("Extension auto-enabled successfully")
-                else:
-                    logger.warning(f"Failed to auto-enable extension: {message}")
-
-            # Extension is installed (and now enabled or will be), proceed with normal window
+            # Extension is installed, proceed with normal window
+            logger.info("Extension is ready. Proceeding to load main window.")
             from ui.windows.clipboard_window import ClipboardWindow
 
             win = ClipboardWindow(self, self.server_pid)
@@ -238,6 +368,7 @@ class ClipboardApp(Adw.Application):
 
             # Show window on first launch
             win.present()
+            logger.info("DEBUG: Main window presented.")
 
             # Close splash once main window is ready
             self._close_splash()
@@ -248,6 +379,7 @@ class ClipboardApp(Adw.Application):
             self._close_splash()
 
         return False  # Don't repeat timeout
+
 
     def _close_splash(self):
         """Close splash screen"""

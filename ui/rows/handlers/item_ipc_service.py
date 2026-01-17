@@ -1,4 +1,4 @@
-"""ItemWebSocketService - Handles all WebSocket communication with the server.
+"""ItemIPCService - Handles all IPC communication with the server.
 
 This service manages:
 - Secret content fetching
@@ -16,14 +16,14 @@ import threading
 import time
 from typing import Callable, Optional
 
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
 from gi.repository import GLib
 
 logger = logging.getLogger("TFCBM.UI")
 
 
-class ItemWebSocketService:
-    """Handles WebSocket communication for clipboard item operations."""
+class ItemIPCService:
+    """Handles IPC communication for clipboard item operations."""
 
     def __init__(
         self,
@@ -34,7 +34,7 @@ class ItemWebSocketService:
         on_display_tags: Callable[[list], None],
         on_update_header_name: Callable[[], None] = None,
     ):
-        """Initialize the WebSocket service.
+        """Initialize the IPC service.
 
         Args:
             item: The clipboard item data dictionary
@@ -51,7 +51,6 @@ class ItemWebSocketService:
         self.on_display_tags = on_display_tags
         self.on_update_header_name = on_update_header_name
         self._last_paste_time = 0
-        self.ws_uri = "ws://localhost:8765"
 
     def fetch_secret_content(self, item_id: int) -> Optional[str]:
         """Fetch the actual content of a secret item from the server.
@@ -68,10 +67,10 @@ class ItemWebSocketService:
             try:
 
                 async def get_content():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    async with ipc_connect() as conn:
                         request = {"action": "get_item", "item_id": item_id}
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "item" and data.get("item"):
@@ -114,15 +113,15 @@ class ItemWebSocketService:
             try:
 
                 async def toggle_secret():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    async with ipc_connect() as conn:
                         request = {
                             "action": "toggle_secret",
                             "item_id": item_id,
                             "is_secret": is_secret,
                             "name": name,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
                         logger.info(f"Received response: {data}")
 
@@ -194,6 +193,58 @@ class ItemWebSocketService:
 
         threading.Thread(target=send_toggle, daemon=True).start()
 
+    def toggle_favorite(self, item_id: int, is_favorite: bool) -> None:
+        """Send request to server to toggle favorite status.
+
+        Args:
+            item_id: ID of the item
+            is_favorite: Whether to mark as favorite (True) or unmark (False)
+        """
+        logger.info(f"toggle_favorite called: item_id={item_id}, is_favorite={is_favorite}")
+
+        def send_toggle():
+            try:
+
+                async def toggle_fav():
+                    async with ipc_connect() as conn:
+                        request = {
+                            "action": "toggle_favorite",
+                            "item_id": item_id,
+                            "is_favorite": is_favorite,
+                        }
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
+                        data = json.loads(response)
+                        logger.info(f"Received response: {data}")
+
+                        if data.get("type") == "favorite_toggled":
+                            if data.get("success"):
+                                # Update local item data
+                                self.item["is_favorite"] = bool(is_favorite)
+                                logger.info(f"Item {item_id} favorite status updated: is_favorite={is_favorite}")
+                            else:
+                                error_msg = data.get("error", "Unknown error")
+                                logger.error(f"Failed to toggle favorite status: {error_msg}")
+                                GLib.idle_add(
+                                    self.window.show_notification,
+                                    f"Failed to update favorite: {error_msg}",
+                                )
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(toggle_fav())
+                finally:
+                    loop.close()
+            except Exception as e:
+                logger.error(f"Error toggling favorite status: {e}")
+                GLib.idle_add(
+                    self.window.show_notification,
+                    f"Error: {str(e)}",
+                )
+
+        threading.Thread(target=send_toggle, daemon=True).start()
+
     def load_item_tags(self) -> None:
         """Load and display tags for this item asynchronously."""
 
@@ -201,17 +252,23 @@ class ItemWebSocketService:
             try:
 
                 async def fetch_tags():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    async with ipc_connect() as conn:
                         request = {
                             "action": "get_item_tags",
                             "item_id": self.item.get("id"),
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "item_tags":
                             tags = data.get("tags", [])
+
+                            # Filter out deleted tags by checking against window.all_tags
+                            if hasattr(self.window, 'all_tags'):
+                                valid_tag_ids = {tag.get('id') for tag in self.window.all_tags}
+                                tags = [tag for tag in tags if tag.get('id') in valid_tag_ids]
+
                             # Store tags in item for filtering
                             self.item["tags"] = tags
                             # Update UI on main thread
@@ -244,10 +301,10 @@ class ItemWebSocketService:
             try:
 
                 async def send_record():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    async with ipc_connect() as conn:
                         request = {"action": "record_paste", "id": item_id}
-                        await websocket.send(json.dumps(request))
-                        await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        await conn.recv()
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -274,14 +331,14 @@ class ItemWebSocketService:
             try:
 
                 async def send_update():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    async with ipc_connect() as conn:
                         request = {
                             "action": "update_item_name",
                             "item_id": item_id,
                             "name": name,
                         }
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "item_name_updated":
@@ -306,7 +363,7 @@ class ItemWebSocketService:
         threading.Thread(target=update, daemon=True).start()
 
     def delete_item_from_server(self, item_id: int) -> None:
-        """Send delete request to server via WebSocket.
+        """Send delete request to server via IPC.
 
         Args:
             item_id: ID of the item to delete
@@ -316,10 +373,10 @@ class ItemWebSocketService:
             try:
 
                 async def delete_item():
-                    async with websockets.connect(self.ws_uri) as websocket:
+                    async with ipc_connect() as conn:
                         request = {"action": "delete_item", "id": item_id}
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("status") == "success":

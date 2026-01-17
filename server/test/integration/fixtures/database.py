@@ -1,5 +1,6 @@
 """Database fixtures for tests."""
 
+import json
 import pytest
 import tempfile
 from pathlib import Path
@@ -43,7 +44,6 @@ def populated_db(temp_db: ClipboardDB) -> ClipboardDB:
     temp_db.add_item("image/jpeg", b"fake_jpeg_data", thumbnail=b"thumbnail", timestamp="2025-01-02T11:00:00")
 
     # Add file item
-    import json
     file_metadata = json.dumps({"name": "document.pdf", "extension": ".pdf", "size": 1024})
     file_data = file_metadata.encode() + b"\n---FILE_CONTENT---\n" + b"fake_pdf_content"
     temp_db.add_item("file", file_data, timestamp="2025-01-03T10:00:00", name="document.pdf")

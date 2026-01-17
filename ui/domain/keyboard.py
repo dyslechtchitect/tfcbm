@@ -26,26 +26,22 @@ class KeyboardShortcut:
         Convert to GSettings-compatible string.
 
         Returns:
-            String with proper casing for GSettings
+            String with proper casing for GSettings (e.g., "<Control><Shift>k")
         """
-        gtk_string = self.to_gtk_string()
-        # GSettings expects specific casing
-        replacements = {
-            "ctrl": "Control",
-            "alt": "Alt",
-            "shift": "Shift",
-            "super": "Super",
-        }
-        result = gtk_string
-        for old, new in replacements.items():
-            result = result.replace(old, new)
-        return (
-            result.lower()
-            .replace("control", "Control")
-            .replace("alt", "Alt")
-            .replace("shift", "Shift")
-            .replace("super", "Super")
-        )
+        gsettings_modifiers = []
+        for mod in self.modifiers:
+            if mod == "Ctrl":
+                gsettings_modifiers.append("<Control>")
+            elif mod == "Alt":
+                gsettings_modifiers.append("<Alt>")
+            elif mod == "Shift":
+                gsettings_modifiers.append("<Shift>")
+            elif mod == "Super":
+                gsettings_modifiers.append("<Super>")
+            else:
+                gsettings_modifiers.append(f"<{mod}>") # For other potential modifiers
+
+        return "".join(gsettings_modifiers) + self.key
 
     def to_display_string(self) -> str:
         """

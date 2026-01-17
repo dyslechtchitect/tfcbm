@@ -7,7 +7,7 @@ import threading
 from typing import Callable, Set
 
 import gi
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -41,6 +41,9 @@ class FilterBarManager:
         self.filter_sort_btn = None
         self.system_filter_chips = []
 
+        # Store signal handler IDs for each chip
+        self.chip_signal_handlers = {}
+
         self._create_filter_bar()
 
     def build(self) -> Gtk.Box:
@@ -72,8 +75,12 @@ class FilterBarManager:
         self.active_filters.clear()
         for flow_child in list(self.filter_box):
             chip = flow_child.get_child()
-            if isinstance(chip, Gtk.ToggleButton):
+            if isinstance(chip, Gtk.ToggleButton) and chip in self.chip_signal_handlers:
+                # Block signal handler to prevent recursion
+                handler_id = self.chip_signal_handlers[chip]
+                chip.handler_block(handler_id)
                 chip.set_active(False)
+                chip.handler_unblock(handler_id)
 
     def _create_filter_bar(self):
         """Create the filter bar with system content types, file extensions, and controls."""
@@ -130,11 +137,21 @@ class FilterBarManager:
         self.filter_scroll.set_child(self.filter_box)
         self.filter_bar.append(self.filter_scroll)
 
-        # Clear filters button
+        # Clear filters button (small x icon like tags)
         clear_btn = Gtk.Button()
-        clear_btn.set_icon_name("edit-clear-symbolic")
+        clear_btn.set_icon_name("window-close-symbolic")
         clear_btn.set_tooltip_text("Clear all filters")
         clear_btn.add_css_class("flat")
+        clear_btn.set_size_request(24, 24)
+
+        # Make it compact like the tag clear button
+        css_provider = Gtk.CssProvider()
+        css_data = "button { padding: 2px; min-height: 20px; min-width: 20px; }"
+        css_provider.load_from_data(css_data.encode())
+        clear_btn.get_style_context().add_provider(
+            css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
         clear_btn.connect("clicked", self._on_clear_filters)
         self.filter_bar.append(clear_btn)
 
@@ -190,6 +207,7 @@ class FilterBarManager:
         """Add system content type filter buttons."""
         self.system_filter_chips = []
         system_filters = [
+            ("favorite", "Favorites", "starred-symbolic"),
             ("text", "Text", "text-x-generic-symbolic"),
             ("image", "Images", "image-x-generic-symbolic"),
             ("url", "URLs", "web-browser-symbolic"),
@@ -220,7 +238,7 @@ class FilterBarManager:
         chip.set_has_frame(False)
         chip.add_css_class("pill")
 
-        chip_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        chip_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
 
         if icon_name:
             icon = Gtk.Image.new_from_icon_name(icon_name)
@@ -232,7 +250,21 @@ class FilterBarManager:
         chip_box.append(chip_label)
 
         chip.set_child(chip_box)
-        chip.connect("toggled", lambda btn: self._on_filter_toggled(filter_id, btn))
+
+        # Apply compact styling for system filters (similar to tags)
+        if is_system:
+            css_provider = Gtk.CssProvider()
+            css_data = "button.pill { padding: 2px 7px; min-height: 20px; }"
+            css_provider.load_from_data(css_data.encode())
+            chip.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+
+        # Connect toggle signal
+        handler_id = chip.connect("toggled", lambda btn: self._on_filter_toggled(filter_id, btn))
+
+        # Store the signal handler ID so we can block/unblock it later
+        self.chip_signal_handlers[chip] = handler_id
 
         # Wrap in FlowBoxChild
         flow_child = Gtk.FlowBoxChild()
@@ -251,14 +283,11 @@ class FilterBarManager:
 
         async def fetch_extensions():
             try:
-                uri = "ws://localhost:8765"
-                async with websockets.connect(
-                    uri, max_size=5 * 1024 * 1024
-                ) as websocket:
+                async with ipc_connect() as conn:
                     request = {"action": "get_file_extensions"}
-                    await websocket.send(json.dumps(request))
+                    await conn.send(json.dumps(request))
 
-                    response = await websocket.recv()
+                    response = await conn.recv()
                     data = json.loads(response)
 
                     if data.get("type") == "file_extensions":
@@ -346,8 +375,12 @@ class FilterBarManager:
         # Uncheck all filter chips
         for flow_child in list(self.filter_box):
             chip = flow_child.get_child()
-            if isinstance(chip, Gtk.ToggleButton):
+            if isinstance(chip, Gtk.ToggleButton) and chip in self.chip_signal_handlers:
+                # Block signal handler to prevent recursion
+                handler_id = self.chip_signal_handlers[chip]
+                chip.handler_block(handler_id)
                 chip.set_active(False)
+                chip.handler_unblock(handler_id)
 
         # Notify caller that filters changed
         self.on_filter_changed()

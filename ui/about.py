@@ -1,82 +1,78 @@
 #!/usr/bin/env python3
 """
-TFCBM About Dialog - Shows logo, title, and subtitle
+TFCBM About Dialog - Shows app information using Adw.AboutDialog
 """
 
-from pathlib import Path
-
+import random
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GdkPixbuf, Gtk
+gi.require_version("Adw", "1")
+from gi.repository import Adw
+from ui.windows.license_window import LicenseWindow
 
 
-class AboutWindow(Gtk.Window):
-    """About dialog showing logo, title, and subtitle"""
+# Funny taglines for about dialog - clean and family-friendly
+FUNNY_TAGLINES = [
+    "Because Ctrl+C deserves better",
+    "Making copy-paste great again",
+    "The clipboard manager you didn't know you needed",
+    "Your clipboard, but actually organized",
+    "Remembering what you forgot you copied",
+    "Clipboard management without the chaos",
+    "Finally, a clipboard that works for you",
+    "Copy once, paste forever",
+    "Your digital memory keeper",
+    "The friendly neighborhood clipboard manager",
+    "Turning clipboard chaos into clipboard zen",
+    "Where your copies feel at home",
+    "Making clipboard history accessible",
+    "Copy-paste, but make it better",
+    "Your clipboard's new best friend",
+]
 
-    def __init__(self):
-        super().__init__()
-        self.set_title("About TFCBM")
-        self.set_default_size(500, 600)
-        self.set_decorated(True)
-        self.set_resizable(False)
 
-        # Create main box with some padding
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+def show_about_dialog(parent_window):
+    """Show the about dialog.
 
-        # Content box with padding
-        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        content_box.set_halign(Gtk.Align.CENTER)
-        content_box.set_valign(Gtk.Align.CENTER)
-        content_box.set_margin_top(30)
-        content_box.set_margin_bottom(30)
-        content_box.set_margin_start(40)
-        content_box.set_margin_end(40)
+    Args:
+        parent_window: Parent window to present the dialog on
+    """
+    about = Adw.AboutDialog()
 
-        # Try to load TFCBM logo (try SVG first, then PNG)
-        try:
-            svg_path = Path(__file__).parent.parent / "icons" / "hicolor" / "scalable" / "apps" / "org.tfcbm.ClipboardManager.svg"
+    # Pick a random funny tagline for developer name subtitle
+    random_tagline = random.choice(FUNNY_TAGLINES)
 
-            icon_path = (
-                svg_path
-                if svg_path.exists()
-                else None
-            )
+    about.set_application_name("TFCBM")
+    about.set_application_icon("io.github.dyslechtchitect.tfcbm")
+    about.set_version("1.0.0")
+    about.set_developer_name(random_tagline)
+    # about.set_license_type(Adw.License.GPL_3_0) # Removed as Adw.License is not available
+    about.set_comments("A clipboard manager for GNOME that keeps your copy-paste history organized and accessible.")
+    about.set_website("https://github.com/dyslechtchitect/tfcbm")
+    about.set_issue_url("https://github.com/dyslechtchitect/tfcbm/issues")
 
-            if icon_path:
-                texture = Gdk.Texture.new_from_file(Gio.File.new_for_path(str(icon_path)))
-                logo = Gtk.Picture.new_for_paintable(texture)
-                logo.set_size_request(20, 20)
-                content_box.append(logo)
-            else:
-                print("TFCBM logo not found")
-        except Exception as e:
-            print(f"Could not load about logo: {e}")
+    # Add link to README
+    about.add_link("Documentation", "https://github.com/dyslechtchitect/tfcbm#readme")
+    about.add_link("View License", "view-license")
 
-        # App title
-        title = Gtk.Label(label="TFCBM")
-        title.add_css_class("title-1")
-        content_box.append(title)
+    def on_activate_link(dialog, uri):
+        if uri == "view-license":
+            license_win = LicenseWindow(parent=parent_window)
+            license_win.present()
+            return True  # We handled this custom URI
+        return False  # Let default handler open external URLs
 
-        # Subtitle
-        subtitle = Gtk.Label(label="A clipboard manager that just works.")
-        subtitle.add_css_class("title-4")
-        subtitle.add_css_class("dim-label")
-        content_box.append(subtitle)
+    about.connect("activate-link", on_activate_link)
 
-        main_box.append(content_box)
 
-        # Close button at the bottom
-        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        button_box.set_halign(Gtk.Align.CENTER)
-        button_box.set_margin_bottom(20)
+    # Add developers
+    about.set_developers([
+        "TFCBM Developers"
+    ])
 
-        close_button = Gtk.Button(label="Close")
-        close_button.add_css_class("suggested-action")
-        close_button.set_size_request(100, -1)
-        close_button.connect("clicked", lambda btn: self.close())
-        button_box.append(close_button)
+    # Add copyright
+    about.set_copyright("© 2025 TFCBM Developers")
 
-        main_box.append(button_box)
-
-        self.set_child(main_box)
+    # Present the dialog with parent window
+    about.present(parent_window)

@@ -12,12 +12,11 @@ import base64
 import json
 import logging
 import shutil
-import subprocess
 import tempfile
 import threading
 from pathlib import Path
 
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib
 
 logger = logging.getLogger("TFCBM.UI")
@@ -39,59 +38,15 @@ class ClipboardOperationsHandler:
         Args:
             item: The clipboard item data dictionary
             window: The window instance for notifications
-            ws_service: ItemWebSocketService for server communication
+            ipc_service: ItemIPCService for server communication
             password_service: PasswordService for authentication
             clipboard_service: ClipboardService for clipboard operations
         """
         self.item = item
         self.window = window
-        self.ws_service = ws_service
+        self.ipc_service = ws_service
         self.password_service = password_service
         self.clipboard_service = clipboard_service
-
-    def simulate_paste(self):
-        """Simulate Ctrl+V paste after window is hidden."""
-        # Try xdotool first (X11)
-        if shutil.which("xdotool"):
-            try:
-                subprocess.run(
-                    ["xdotool", "key", "ctrl+v"],
-                    check=False,
-                    timeout=2,
-                )
-                logger.info("[KEYBOARD] Simulated Ctrl+V paste with xdotool")
-                return False
-            except Exception as e:
-                logger.error(f"[KEYBOARD] xdotool failed: {e}")
-
-        # Try ydotool (Wayland)
-        if shutil.which("ydotool"):
-            try:
-                # ydotool uses different key codes: 29=Ctrl, 47=v
-                subprocess.run(
-                    [
-                        "ydotool",
-                        "key",
-                        "29:1",
-                        "47:1",
-                        "47:0",
-                        "29:0",
-                    ],
-                    check=False,
-                    timeout=2,
-                )
-                logger.info("[KEYBOARD] Simulated Ctrl+V paste with ydotool")
-                return False
-            except Exception as e:
-                logger.error(f"[KEYBOARD] ydotool failed: {e}")
-
-        # No tool available
-        logger.warning(
-            "[KEYBOARD] Neither xdotool nor ydotool found. "
-            "Auto-paste disabled."
-        )
-        return False
-
     def handle_copy_action(self):
         """Handle copy button click."""
         self.perform_copy_to_clipboard(
@@ -105,6 +60,9 @@ class ClipboardOperationsHandler:
             item_type: Type of the item (text, url, image, file)
             item_id: ID of the item
             content: Content to copy (optional, fetched if secret)
+
+        Returns:
+            bool: True if copy was successful, False otherwise
         """
         # Check if item is secret and require authentication
         is_secret = self.item.get("is_secret", False)
@@ -115,10 +73,10 @@ class ClipboardOperationsHandler:
                 logger.info("Not authenticated for copy operation, prompting for password")
                 # Prompt for authentication for THIS operation on THIS item
                 # Note: we need the root widget, which we'll get from a callback
-                if not self.password_service.authenticate_for("copy", item_id, None):
+                if not self.password_service.authenticate_for("copy", item_id, self.window):
                     logger.info("Authentication failed or cancelled")
                     self.window.show_notification("Authentication required to copy secret")
-                    return
+                    return False
                 else:
                     logger.info("Authentication successful for copy operation")
             else:
@@ -127,12 +85,12 @@ class ClipboardOperationsHandler:
             # For secrets, we need to fetch the actual content from the server
             # (not the "-secret-" placeholder)
             logger.info(f"Fetching real content for secret item {item_id}")
-            content = self.ws_service.fetch_secret_content(item_id)
+            content = self.ipc_service.fetch_secret_content(item_id)
             if not content:
                 self.window.show_notification("Failed to retrieve secret content")
                 # Consume authentication even on failure
                 self.password_service.consume_authentication("copy", item_id)
-                return
+                return False
             logger.info(f"Retrieved secret content (length: {len(str(content))})")
 
         clipboard = Gdk.Display.get_default().get_clipboard()
@@ -141,7 +99,7 @@ class ClipboardOperationsHandler:
             # Consume authentication even on error
             if is_secret:
                 self.password_service.consume_authentication("copy", item_id)
-            return
+            return False
 
         try:
             if item_type == "text" or item_type == "url":
@@ -164,10 +122,11 @@ class ClipboardOperationsHandler:
                         self.window.show_notification(
                             f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
                         )
-                    self.ws_service.record_paste(item_id)
+                    self.ipc_service.record_paste(item_id)
                     # Consume authentication after successful copy
                     if is_secret:
                         self.password_service.consume_authentication("copy", item_id)
+                    return True
                 else:
                     self.window.show_notification(
                         "Error copying: content is empty."
@@ -175,23 +134,30 @@ class ClipboardOperationsHandler:
                     # Consume authentication even on error
                     if is_secret:
                         self.password_service.consume_authentication("copy", item_id)
+                    return False
             elif item_type == "file":
                 self.window.show_notification("Loading file...")
                 self._copy_file_to_clipboard(item_id, content, clipboard)
+                return True  # Async operation started successfully
             elif item_type.startswith("image/") or item_type == "screenshot":
                 self.window.show_notification("Loading full image...")
-                self._copy_full_image_to_clipboard(item_id, clipboard)
+                self._copy_full_image_to_clipboard(item_id, item_type, clipboard)
+                return True  # Async operation started successfully
         except Exception as e:
             self.window.show_notification(f"Error copying: {str(e)}")
             # Consume authentication even on error
             if is_secret:
                 self.password_service.consume_authentication("copy", item_id)
+            return False
 
-    def _copy_full_image_to_clipboard(self, item_id, clipboard):
+        return True  # Default success
+
+    def _copy_full_image_to_clipboard(self, item_id, item_type, clipboard):
         """Fetch and copy full image to clipboard.
 
         Args:
             item_id: ID of the image item
+            item_type: MIME type of the image (e.g., "image/png", "screenshot")
             clipboard: Clipboard instance
         """
 
@@ -199,15 +165,11 @@ class ClipboardOperationsHandler:
             try:
 
                 async def get_full_image():
-                    uri = "ws://localhost:8765"
-                    max_size = 5 * 1024 * 1024
-                    async with websockets.connect(
-                        uri, max_size=max_size
-                    ) as websocket:
+                    async with ipc_connect() as conn:
                         request = {"action": "get_full_image", "id": item_id}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if (
@@ -217,34 +179,26 @@ class ClipboardOperationsHandler:
                             image_b64 = data.get("content")
                             image_data = base64.b64decode(image_b64)
 
-                            loader = GdkPixbuf.PixbufLoader()
-                            loader.write(image_data)
-                            loader.close()
-                            pixbuf = loader.get_pixbuf()
-
                             def copy_to_clipboard():
                                 try:
-                                    success, png_bytes = (
-                                        pixbuf.save_to_bufferv("png", [], [])
-                                    )
-                                    if not success:
-                                        raise Exception(
-                                            "Failed to convert image to PNG"
-                                        )
+                                    # Copy original bytes directly without re-encoding
+                                    # This preserves the hash so duplicates are detected
+                                    mime_type = item_type if item_type.startswith("image/") else "image/png"
 
-                                    gbytes = GLib.Bytes.new(png_bytes)
+                                    gbytes = GLib.Bytes.new(image_data)
                                     content = (
                                         Gdk.ContentProvider.new_for_bytes(
-                                            "image/png", gbytes
+                                            mime_type, gbytes
                                         )
                                     )
                                     clipboard.set_content(content)
 
+                                    # Calculate size in KB
+                                    size_kb = len(image_data) / 1024
                                     self.window.show_notification(
-                                        f"📷 Full image copied "
-                                        f"({pixbuf.get_width()}x{pixbuf.get_height()})"
+                                        f"📷 Image copied ({size_kb:.1f} KB)"
                                     )
-                                    self.ws_service.record_paste(item_id)
+                                    self.ipc_service.record_paste(item_id)
                                     # Consume authentication after successful copy
                                     if self.item.get("is_secret", False):
                                         self.password_service.consume_authentication("copy", item_id)
@@ -316,7 +270,7 @@ class ClipboardOperationsHandler:
                             self.window.show_notification(
                                 f"📁 Folder copied: {folder_name}"
                             )
-                            self.ws_service.record_paste(item_id)
+                            self.ipc_service.record_paste(item_id)
                             # Consume authentication after successful copy
                             if self.item.get("is_secret", False):
                                 self.password_service.consume_authentication("copy", item_id)
@@ -359,15 +313,11 @@ class ClipboardOperationsHandler:
             try:
 
                 async def get_full_file():
-                    uri = "ws://localhost:8765"
-                    max_size = 100 * 1024 * 1024
-                    async with websockets.connect(
-                        uri, max_size=max_size
-                    ) as websocket:
+                    async with ipc_connect() as conn:
                         request = {"action": "get_full_image", "id": item_id}
-                        await websocket.send(json.dumps(request))
+                        await conn.send(json.dumps(request))
 
-                        response = await websocket.recv()
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if (
@@ -408,7 +358,7 @@ class ClipboardOperationsHandler:
                                     self.window.show_notification(
                                         f"📄 File copied: {file_name}"
                                     )
-                                    self.ws_service.record_paste(item_id)
+                                    self.ipc_service.record_paste(item_id)
                                     # Consume authentication after successful copy
                                     if self.item.get("is_secret", False):
                                         self.password_service.consume_authentication("copy", item_id)

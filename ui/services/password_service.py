@@ -1,19 +1,23 @@
 """Password authentication service for secrets with one-time operation model."""
 
+import logging
 import subprocess
 import time
 from typing import Optional
+
+logger = logging.getLogger("TFCBM.PasswordService")
 
 
 class PasswordService:
     """Service for authenticating user to view secrets with one-time operation model."""
 
-    def __init__(self):
+    def __init__(self, on_notification=None):
         self.authenticated_until = 0  # Timestamp when authentication expires (5 seconds)
         self.auth_duration = 5  # ONE-TIME operation: 5 seconds timeout
         self.pending_operation = None  # Type of operation pending (copy, view, save, etc.)
         self.pending_item_id = None  # Item ID this auth is for
         self._timeout_id = None  # GLib timeout ID for auto-clear
+        self.on_notification = on_notification  # Optional callback for notifications (unused but kept for compatibility)
 
     def is_authenticated_for(self, operation: str, item_id: int) -> bool:
         """
@@ -36,7 +40,7 @@ class PasswordService:
                   self.pending_item_id == item_id)
 
         if not is_auth:
-            print(f"[AUTH] Auth mismatch: pending={self.pending_operation}/{self.pending_item_id}, requested={operation}/{item_id}")
+            logger.info(f"[AUTH] Auth mismatch: pending={self.pending_operation}/{self.pending_item_id}, requested={operation}/{item_id}")
 
         return is_auth
 
@@ -52,23 +56,51 @@ class PasswordService:
         Returns:
             True if authentication successful, False otherwise
         """
-        print(f"[AUTH] Requesting authentication for {operation} on item {item_id}")
+        logger.info(f"[AUTH] Requesting authentication for {operation} on item {item_id}")
 
         # Clear any existing authentication first
         self._clear_pending()
 
         # Use pkexec for native PolicyKit authentication dialog
+        # When running in Flatpak, use flatpak-spawn to access host pkexec
         try:
+            # Check if we're running in Flatpak
+            import os
+            in_flatpak = os.path.exists('/.flatpak-info')
+            logger.info(f"[AUTH] Running in Flatpak: {in_flatpak}")
+
+            # Get current username
+            if in_flatpak:
+                whoami_cmd = ['flatpak-spawn', '--host', '--directory=/', 'whoami']
+            else:
+                whoami_cmd = ['whoami']
+            logger.info(f"[AUTH] Getting username with: {' '.join(whoami_cmd)}")
+            username_result = subprocess.run(whoami_cmd, capture_output=True, text=True)
+            if username_result.returncode != 0:
+                logger.error(f"[AUTH] Failed to get username. stderr: {username_result.stderr}")
+                return False
+            username = username_result.stdout.strip()
+            logger.info(f"[AUTH] Username: {username}")
+
+            # Build pkexec command
+            if in_flatpak:
+                cmd = ['flatpak-spawn', '--host', '--directory=/', 'pkexec', '--user', username, '/bin/true']
+            else:
+                cmd = ['pkexec', '--user', username, '/bin/true']
+
+            logger.info(f"[AUTH] Running command: {' '.join(cmd)}")
             result = subprocess.run(
-                [
-                    'pkexec',
-                    '--user', subprocess.run(['whoami'], capture_output=True, text=True).stdout.strip(),
-                    '/bin/true'
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=60
             )
+
+            logger.info(f"[AUTH] Command completed with return code: {result.returncode}")
+            if result.stderr:
+                logger.info(f"[AUTH] stderr: {result.stderr}")
+            if result.stdout:
+                logger.info(f"[AUTH] stdout: {result.stdout}")
 
             if result.returncode == 0:
                 # Authentication successful - set up one-time operation
@@ -79,15 +111,24 @@ class PasswordService:
                 # Set up auto-clear after 5 seconds
                 self._schedule_auto_clear()
 
-                print(f"[AUTH] Authentication successful for {operation} on item {item_id}, expires in {self.auth_duration}s")
+                logger.info(f"[AUTH] Authentication successful for {operation} on item {item_id}, expires in {self.auth_duration}s")
                 return True
             else:
                 # Authentication failed or cancelled
-                print(f"[AUTH] Authentication failed")
+                logger.info(f"[AUTH] Authentication failed or cancelled")
                 return False
 
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
-            print(f"[AUTH] Password prompt failed: {e}")
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"[AUTH] Password prompt timed out: {e}")
+            return False
+        except FileNotFoundError as e:
+            logger.error(f"[AUTH] Command not found: {e}")
+            logger.error(f"[AUTH] This likely means pkexec or flatpak-spawn is not available")
+            return False
+        except Exception as e:
+            logger.error(f"[AUTH] Unexpected error: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def consume_authentication(self, operation: str, item_id: int) -> bool:
@@ -103,14 +144,14 @@ class PasswordService:
             True if authentication was valid and consumed, False otherwise
         """
         if self.is_authenticated_for(operation, item_id):
-            print(f"[AUTH] Consuming authentication for {operation} on item {item_id}")
+            logger.info(f"[AUTH] Consuming authentication for {operation} on item {item_id}")
             self._clear_pending()
             return True
         return False
 
     def clear_authentication(self):
         """Clear authentication state immediately (e.g., when clicking elsewhere or window loses focus)."""
-        print(f"[AUTH] Clearing authentication (focus lost or user clicked elsewhere)")
+        logger.info(f"[AUTH] Clearing authentication (focus lost or user clicked elsewhere)")
         self._clear_pending()
 
     def _clear_pending(self):
@@ -141,6 +182,6 @@ class PasswordService:
 
     def _on_timeout(self):
         """Called when authentication times out."""
-        print(f"[AUTH] Authentication timed out after {self.auth_duration} seconds")
+        logger.info(f"[AUTH] Authentication timed out after {self.auth_duration} seconds")
         self._clear_pending()
         return False  # Don't repeat

@@ -1,4 +1,15 @@
-"""Tests for extension enable/disable behavior on quit and launch."""
+"""Tests for extension enable/disable behavior on quit and launch.
+
+TFCBM Extension/App Integration:
+- Extension provides clipboard monitoring and tray icon when enabled
+- Tray icon is ONLY visible when app is running (checks DBus owner)
+- App auto-enables extension on launch
+- App auto-disables extension on quit
+- "Start on Login" controls app launch (extension follows app lifecycle)
+
+This creates an integrated user experience where the tray icon clearly
+indicates when TFCBM is active.
+"""
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch

@@ -8,7 +8,7 @@ import traceback
 from typing import Callable, Dict, List, Optional, Set
 
 import gi
-import websockets
+from ui.services.ipc_helpers import connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
@@ -31,7 +31,7 @@ class SearchManager:
         jump_to_top: Callable[[str], None],
         window,  # Reference to ClipboardWindow for ClipboardItemRow
         on_notification: Callable[[str], None],
-        websocket_uri: str = "ws://localhost:8765",
+        socket_path: str = "",
         search_limit: int = 100,
         debounce_ms: int = 200,
     ):
@@ -46,7 +46,7 @@ class SearchManager:
             jump_to_top: Callback to scroll to top
             window: Reference to ClipboardWindow for ClipboardItemRow
             on_notification: Callback to show notifications
-            websocket_uri: WebSocket server URI
+            socket_path: IPC socket path
             search_limit: Maximum number of search results
             debounce_ms: Debounce delay in milliseconds (default 200ms)
         """
@@ -58,7 +58,7 @@ class SearchManager:
         self.jump_to_top = jump_to_top
         self.window = window
         self.on_notification = on_notification
-        self.websocket_uri = websocket_uri
+        self.socket_path = socket_path
         self.search_limit = search_limit
         self.debounce_ms = debounce_ms
 
@@ -111,7 +111,7 @@ class SearchManager:
             self._perform_search(query, get_active_filters)
 
     def _perform_search(self, query: str, get_active_filters: Callable[[], Set[str]]) -> bool:
-        """Perform the actual search via WebSocket.
+        """Perform the actual search via IPC.
 
         Args:
             query: Search query string
@@ -131,9 +131,7 @@ class SearchManager:
             try:
 
                 async def search():
-                    async with websockets.connect(
-                        self.websocket_uri, max_size=5 * 1024 * 1024
-                    ) as websocket:
+                    async with ipc_connect(self.socket_path) as conn:
                         request = {
                             "action": "search",
                             "query": query,
@@ -144,8 +142,8 @@ class SearchManager:
                             request["filters"] = list(active_filters)
                             logger.info(f"Searching with filters: {list(active_filters)}")
 
-                        await websocket.send(json.dumps(request))
-                        response = await websocket.recv()
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
                         data = json.loads(response)
 
                         if data.get("type") == "search_results":
