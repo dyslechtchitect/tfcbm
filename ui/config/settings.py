@@ -1,9 +1,11 @@
-"""Application settings configuration."""
+"""Application settings configuration.
+
+NOTE: This module contains dead code - settings are actually loaded from JSON
+via server/src/settings.py. This is kept for backward compatibility but not used.
+"""
 
 from dataclasses import dataclass
 from typing import Optional
-
-import yaml
 
 
 @dataclass(frozen=True)
@@ -27,29 +29,10 @@ class AppSettings:
 
     @classmethod
     def load(cls, path: Optional[str] = None) -> "AppSettings":
-        if path is None:
-            path = "settings.yml"
-
-        config = cls._load_yaml(path)
+        """Load settings - currently returns defaults (dead code)."""
+        # This is dead code - actual settings are loaded from JSON
+        # via server/src/settings.py
         return cls(
-            display=DisplaySettings(
-                item_width=config.get("item_width", 300),
-                item_height=config.get("item_height", 150),
-                max_page_length=config.get("max_page_length", 50),
-            ),
-            window=WindowSettings(
-                default_width=config.get("default_width", 350),
-                default_height=config.get("default_height", 800),
-                position=config.get("position", "left"),
-            ),
+            display=DisplaySettings(),
+            window=WindowSettings(),
         )
-
-    @staticmethod
-    def _load_yaml(path: str) -> dict:
-        try:
-            with open(path, "r") as f:
-                return yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            return {}
-        except yaml.YAMLError:
-            return {}

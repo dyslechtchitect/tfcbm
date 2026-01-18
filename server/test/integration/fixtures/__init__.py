@@ -3,4 +3,3 @@
 from .database import *
 from .settings import *
 from .test_data import *
-from .websocket import *

@@ -38,17 +38,6 @@ finish-args:
                                                      # it copies file content into its own database in xdg-data
 
 modules:
-  - name: python3-pyyaml
-    buildsystem: simple
-    build-commands:
-      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} "PyYAML==6.0.2" --no-build-isolation
-    post-install:
-      - install -Dm0644 ${FLATPAK_DEST}/lib/python3.*/site-packages/PyYAML-*.dist-info/LICENSE -t ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/python3-pyyaml
-    sources:
-      - type: file
-        url: https://files.pythonhosted.org/packages/04/24/b7721e4845c2f162d26f50521b825fb061bc0a5afcf9a386840f23ea19fa/PyYAML-6.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-        sha256: 70b189594dbe54f75ab3a1acec5f1e3faa7e8cf2f1e08d9b561cb41b845f69d5
-
   - name: tfcbm
     buildsystem: meson
     sources:

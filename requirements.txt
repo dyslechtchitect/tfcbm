@@ -1,16 +1,15 @@
 # TFCBM - The Friendly Clipboard Manager
-# Runtime dependencies for development environment
+# Python dependencies for local development
 
-# GTK4 and Libadwaita (UI dependencies) - includes GdkPixbuf for image processing
+# Production dependencies
+# GTK4 and Libadwaita (UI framework) - includes GdkPixbuf for image processing
 PyGObject>=3.42.0
 
-# Testing (development only)
+# Development dependencies
 pytest>=8.4.2
 
-# System Dependencies (not Python packages, install via system package manager)
-# These are required for full functionality but are NOT installed via pip
-#
+# System dependencies (install via system package manager, not pip)
 # xdotool - Required for keyboard shortcut auto-paste feature
 #   Fedora: sudo dnf install xdotool
 #   Debian/Ubuntu: sudo apt install xdotool
-#   Alternative (Wayland): sudo dnf install ydotool
+#   Alternative (Wayland): ydotool

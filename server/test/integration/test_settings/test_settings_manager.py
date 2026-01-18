@@ -2,7 +2,7 @@
 
 import pytest
 import tempfile
-import yaml
+import json
 from pathlib import Path
 
 from settings import SettingsManager, Settings
@@ -21,8 +21,8 @@ class TestSettingsManager:
 
     def test_load_from_custom_path(self, custom_settings_data: dict):
         """Test loading from custom path."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
-            yaml.dump(custom_settings_data, f)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(custom_settings_data, f, indent=2)
             custom_path = Path(f.name)
 
         try:
@@ -37,7 +37,7 @@ class TestSettingsManager:
 
     def test_load_missing_file_uses_defaults(self, tmp_path: Path):
         """Test that missing file results in default settings."""
-        nonexistent_path = tmp_path / "nonexistent.yml"
+        nonexistent_path = tmp_path / "nonexistent.json"
 
         manager = SettingsManager(config_path=nonexistent_path)
 
@@ -51,7 +51,7 @@ class TestSettingsManager:
 
         # Read file and verify
         with open(temp_settings_file, 'r') as f:
-            data = yaml.safe_load(f)
+            data = json.load(f)
 
         assert data["retention"]["max_items"] == 500
 
@@ -74,10 +74,11 @@ class TestSettingsManager:
         # Modify file directly
         new_data = {
             'display': {'max_page_length': 75, 'item_width': 200, 'item_height': 200},
-            'retention': {'enabled': True, 'max_items': 1000}
+            'retention': {'enabled': True, 'max_items': 1000},
+            'clipboard': {'refocus_on_copy': True}
         }
         with open(temp_settings_file, 'w') as f:
-            yaml.dump(new_data, f)
+            json.dump(new_data, f, indent=2)
 
         # Reload
         settings_manager.reload()
@@ -85,20 +86,20 @@ class TestSettingsManager:
         assert settings_manager.max_page_length == 75
         assert settings_manager.retention_max_items == 1000
 
-    def test_handle_corrupted_yaml(self, tmp_path: Path):
-        """Test handling of corrupted YAML file."""
-        corrupted_path = tmp_path / "corrupted.yml"
+    def test_handle_corrupted_json(self, tmp_path: Path):
+        """Test handling of corrupted JSON file."""
+        corrupted_path = tmp_path / "corrupted.json"
         with open(corrupted_path, 'w') as f:
-            f.write("invalid: yaml: content: [[[")
+            f.write("{invalid json content [[[")
 
         manager = SettingsManager(config_path=corrupted_path)
 
         # Should fall back to defaults
         assert manager.max_page_length == 20
 
-    def test_handle_empty_yaml_file(self, tmp_path: Path):
-        """Test handling of empty YAML file."""
-        empty_path = tmp_path / "empty.yml"
+    def test_handle_empty_json_file(self, tmp_path: Path):
+        """Test handling of empty JSON file."""
+        empty_path = tmp_path / "empty.json"
         empty_path.touch()
 
         manager = SettingsManager(config_path=empty_path)

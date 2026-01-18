@@ -15,9 +15,9 @@ datadir = prefix / get_option('datadir')
 pkgdatadir = datadir / meson.project_name()
 pkglibdir = prefix / 'lib' / meson.project_name()
 
-# Install Python source files
-install_subdir('ui', install_dir: pkglibdir)
-install_subdir('server', install_dir: pkglibdir)
+# Install Python source files (excluding test files)
+install_subdir('ui', install_dir: pkglibdir, exclude_files: ['test_*.py'])
+install_subdir('server', install_dir: pkglibdir, exclude_directories: ['test'])
 install_data('main.py', install_dir: pkglibdir)
 install_data('settings.json', install_dir: pkglibdir)
 

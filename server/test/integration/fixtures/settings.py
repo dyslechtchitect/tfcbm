@@ -2,7 +2,7 @@
 
 import pytest
 import tempfile
-import yaml
+import json
 from pathlib import Path
 from typing import Generator
 
@@ -18,7 +18,7 @@ def default_settings() -> Settings:
 @pytest.fixture
 def temp_settings_file() -> Generator[Path, None, None]:
     """Create a temporary settings file."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         config_data = {
             'display': {
                 'max_page_length': 20,
@@ -28,9 +28,12 @@ def temp_settings_file() -> Generator[Path, None, None]:
             'retention': {
                 'enabled': True,
                 'max_items': 250
+            },
+            'clipboard': {
+                'refocus_on_copy': True
             }
         }
-        yaml.dump(config_data, f)
+        json.dump(config_data, f, indent=2)
         settings_path = Path(f.name)
 
     yield settings_path
@@ -57,5 +60,8 @@ def custom_settings_data() -> dict:
         'retention': {
             'enabled': False,
             'max_items': 500
+        },
+        'clipboard': {
+            'refocus_on_copy': True
         }
     }
