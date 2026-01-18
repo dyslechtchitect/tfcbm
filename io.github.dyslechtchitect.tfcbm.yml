@@ -52,6 +52,8 @@ modules:
   - name: tfcbm
     buildsystem: meson
     sources:
-      - type: dir
-        path: .
+      - type: git
+        url: https://github.com/dyslechtchitect/tfcbm.git
+        tag: v1.0.0
+        commit: 9b84e04e56c8cf9dff7cb334667228df7146dd1b
 
