@@ -17,13 +17,13 @@ import { GnomeClipboardAdapter } from './src/adapters/GnomeClipboardAdapter.js';
 import { DBusNotifier } from './src/adapters/DBusNotifier.js';
 import { PollingScheduler } from './src/PollingScheduler.js';
 
-const DBUS_NAME = 'org.tfcbm.ClipboardService';
-const DBUS_PATH = '/org/tfcbm/ClipboardService';
-const DBUS_IFACE = 'org.tfcbm.ClipboardService';
+const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm.ClipboardService';
+const DBUS_PATH = '/io/github/dyslechtchitect/tfcbm/ClipboardService';
+const DBUS_IFACE = 'io.github.dyslechtchitect.tfcbm.ClipboardService';
 
 // D-Bus constants for the extension's OWN service (to be consumed by the Flatpak app)
-const EXTENSION_DBUS_NAME = 'org.gnome.Shell.Extensions.TfcbmClipboardMonitor';
-const EXTENSION_DBUS_PATH = '/org/gnome/Shell/Extensions/TfcbmClipboardMonitor';
+const EXTENSION_DBUS_NAME = 'io.github.dyslechtchitect.tfcbm.Extension';
+const EXTENSION_DBUS_PATH = '/io/github/dyslechtchitect/tfcbm/Extension';
 const EXTENSION_DBUS_IFACE_XML = `
 <node>
     <interface name="${EXTENSION_DBUS_NAME}">
@@ -47,7 +47,7 @@ const EXTENSION_DBUS_IFACE_XML = `
 
 const DBusInterface = `
 <node>
-    <interface name="org.tfcbm.ClipboardService">
+    <interface name="io.github.dyslechtchitect.tfcbm.ClipboardService">
         <method name="Activate">
             <arg type="u" name="timestamp" direction="in"/>
         </method>

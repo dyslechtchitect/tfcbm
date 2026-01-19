@@ -18,7 +18,7 @@ DBUS_XML = """
 <!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
 "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
-    <interface name="org.tfcbm.ClipboardService">
+    <interface name="io.github.dyslechtchitect.tfcbm.ClipboardService">
         <method name="Activate">
             <arg type="u" name="timestamp" direction="in"/>
         </method>
@@ -71,26 +71,26 @@ class TFCBMDBusService:
             node_info = Gio.DBusNodeInfo.new_for_xml(DBUS_XML)
             interface_info = node_info.interfaces[0]
 
-            # Register object at /org/tfcbm/ClipboardService
+            # Register object at /io/github/dyslechtchitect/tfcbm/ClipboardService
             self.registration_id = self.connection.register_object(
-                "/org/tfcbm/ClipboardService",
+                "/io/github/dyslechtchitect/tfcbm/ClipboardService",
                 interface_info,
                 self._handle_method_call,
                 None,  # get_property
                 None,  # set_property
             )
-            logger.info("✓ DBus object registered at /org/tfcbm/ClipboardService")
+            logger.info("✓ DBus object registered at /io/github/dyslechtchitect/tfcbm/ClipboardService")
 
-            # Own the bus name org.tfcbm.ClipboardService
+            # Own the bus name io.github.dyslechtchitect.tfcbm.ClipboardService
             # This makes the service available to the GNOME extension
             self.bus_name_id = Gio.bus_own_name_on_connection(
                 self.connection,
-                "org.tfcbm.ClipboardService",
+                "io.github.dyslechtchitect.tfcbm.ClipboardService",
                 Gio.BusNameOwnerFlags.NONE,
                 None,  # name_acquired_closure
                 None,  # name_lost_closure
             )
-            logger.info("✓ Owned D-Bus name org.tfcbm.ClipboardService")
+            logger.info("✓ Owned D-Bus name io.github.dyslechtchitect.tfcbm.ClipboardService")
 
             return True
 

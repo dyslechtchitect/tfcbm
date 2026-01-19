@@ -23,9 +23,9 @@ class TestableDBusNotifier {
 
             return new Promise((resolve) => {
                 this.Gio.DBus.session.call(
-                    'io.github.dyslechtchitect.tfcbm',
-                    '/org/tfcbm/ClipboardService',
-                    'org.tfcbm.ClipboardService',
+                    'io.github.dyslechtchitect.tfcbm.ClipboardService',
+                    '/io/github/dyslechtchitect/tfcbm/ClipboardService',
+                    'io.github.dyslechtchitect.tfcbm.ClipboardService',
                     'OnClipboardChange',
                     new this.GLibVariant('(s)', [eventData]),
                     null,
@@ -75,9 +75,9 @@ describe('DBusNotifier', () => {
             assert.strictEqual(dbus.getCalls().length, 1);
 
             const call = dbus.getLastCall();
-            assert.strictEqual(call.busName, 'io.github.dyslechtchitect.tfcbm');
-            assert.strictEqual(call.objectPath, '/org/tfcbm/ClipboardService');
-            assert.strictEqual(call.interfaceName, 'org.tfcbm.ClipboardService');
+            assert.strictEqual(call.busName, 'io.github.dyslechtchitect.tfcbm.ClipboardService');
+            assert.strictEqual(call.objectPath, '/io/github/dyslechtchitect/tfcbm/ClipboardService');
+            assert.strictEqual(call.interfaceName, 'io.github.dyslechtchitect.tfcbm.ClipboardService');
             assert.strictEqual(call.methodName, 'OnClipboardChange');
         });
 
