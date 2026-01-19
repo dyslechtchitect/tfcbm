@@ -15,6 +15,7 @@
 </p>
 
 ---
+➡️ Download the latest release: https://github.com/dyslechtchitect/tfcbm/releases/latest
 
 ## About
 
