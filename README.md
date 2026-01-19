@@ -15,8 +15,16 @@
 </p>
 
 ---
-➡️ Download the latest release: https://github.com/dyslechtchitect/tfcbm/releases/latest
+![Download](https://github.com/dyslechtchitect/tfcbm/releases/download/v1.0.0/io.github.dyslechtchitect.tfcbm.flatpak)
 
+Install with:
+```bash
+flatpak install io.github.dyslechtchitect.tfcbm.flatpak
+```
+After installation, launch it via your applications menu or:
+```bash
+flatpak run io.github.dyslechtchitect.tfcbm
+```
 ## About
 
 TFCBM is a modern clipboard manager that enhances your GNOME desktop experience. Never lose track of what you copy - TFCBM keeps a complete history of your clipboard, making it easy to find and reuse content whenever you need it.
