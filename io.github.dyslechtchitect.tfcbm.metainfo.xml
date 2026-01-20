@@ -21,7 +21,7 @@
             <li>Secret Items for sensitive data</li>
             <li>Keyboard shortcuts for quick access</li>
             <li>Beautiful GTK4/Libadwaita interface</li>
-            <li>GNOME Shell extension Tray Icon</li>
+            <li>GNOME Shell extension</li>
         </ul>
         <p>
             The optional GNOME Shell extension provides system-wide clipboard monitoring

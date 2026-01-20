@@ -48,21 +48,14 @@ install_data(
   install_dir: datadir / 'dbus-1/services'
 )
 
-# Create GNOME Shell extension zip package
-gnome_extension_zip = custom_target('gnome-extension-zip',
-  output: 'tfcbm-clipboard-monitor@github.com.zip',
-  command: [
-    python,
-    files('build-extension-zip.py'),
-    meson.project_source_root(),
-    '@OUTPUT@'
-  ],
-  install: true,
-  install_dir: pkgdatadir
+# Install LICENSE file (required by Flathub)
+install_data(
+  'LICENSE',
+  install_dir: datadir / 'licenses' / meson.project_name()
 )
 
-# Install GNOME Shell extension files for Flatpak
-# This allows the Flatpak app to install the extension on first run
+# Bundle GNOME Shell extension files for user installation
+# Users can install via: flatpak run io.github.dyslechtchitect.tfcbm tfcbm-install-extension
 install_subdir('gnome-extension',
   install_dir: datadir / 'gnome-shell/extensions/tfcbm-clipboard-monitor@github.com',
   strip_directory: true,

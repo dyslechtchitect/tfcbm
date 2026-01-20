@@ -282,7 +282,7 @@ def get_extension_install_command() -> str:
         str: User-friendly instruction or command string.
     """
     if is_flatpak():
-        return f"Please install the TFCBM GNOME Shell Extension from extensions.gnome.org or by running 'gnome-extensions install --force tfcbm-clipboard-monitor@github.com.zip' after downloading the zip manually. Also ensure you have 'gnome-extensions' tool installed on your host system."
+        return f"Please run 'tfcbm-install-extension' from your terminal to install the GNOME Shell Extension, or install it from extensions.gnome.org. Ensure you have 'gnome-extensions' tool installed on your host system."
     else:
         project_root = Path(__file__).parent.parent.parent
         extension_dir = project_root / "gnome-extension"
