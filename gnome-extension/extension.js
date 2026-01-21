@@ -41,6 +41,8 @@ const EXTENSION_DBUS_IFACE_XML = `
         <method name="SimulatePaste"/>
         <method name="DisableKeybinding"/>
         <method name="EnableKeybinding"/>
+        <method name="StartMonitoring"/>
+        <method name="StopMonitoring"/>
     </interface>
 </node>
 `;
@@ -80,6 +82,7 @@ export default class ClipboardMonitorExtension extends Extension {
         this._dbusOwner = null;
         this._dbusOwnerWatchId = null;
         this._exportedDBusId = null; // Registration ID for our exported D-Bus object
+        this._appWatchId = null; // Watcher for app's D-Bus service
         this._busNameOwnerId = null; // Bus name ownership ID
         this._keybindingDisabled = false; // Track if keybinding is temporarily disabled
     }
@@ -346,6 +349,45 @@ export default class ClipboardMonitorExtension extends Extension {
         }
     }
 
+    _StartMonitoring() {
+        try {
+            log('[TFCBM Extension] Received request to start clipboard monitoring');
+            if (!this._scheduler && this._clipboardService) {
+                log('[TFCBM Extension] Starting clipboard polling scheduler');
+                this._scheduler = new PollingScheduler(() => {
+                    this._clipboardService.checkClipboard();
+                }, 500);
+                this._scheduler.start();
+                log('[TFCBM Extension] ✓ Clipboard monitoring started');
+            } else if (this._scheduler) {
+                log('[TFCBM Extension] Clipboard monitoring already running');
+            } else {
+                log('[TFCBM Extension] Cannot start monitoring: clipboard service not initialized');
+                throw new Error('Clipboard service not initialized');
+            }
+        } catch (e) {
+            logError(e, '[TFCBM Extension] Error starting monitoring');
+            throw new Error(`Failed to start monitoring: ${e.message}`);
+        }
+    }
+
+    _StopMonitoring() {
+        try {
+            log('[TFCBM Extension] Received request to stop clipboard monitoring');
+            if (this._scheduler) {
+                log('[TFCBM Extension] Stopping clipboard polling scheduler');
+                this._scheduler.stop();
+                this._scheduler = null;
+                log('[TFCBM Extension] ✓ Clipboard monitoring stopped');
+            } else {
+                log('[TFCBM Extension] Clipboard monitoring already stopped');
+            }
+        } catch (e) {
+            logError(e, '[TFCBM Extension] Error stopping monitoring');
+            throw new Error(`Failed to stop monitoring: ${e.message}`);
+        }
+    }
+
 
     _registerKeybinding() {
         try {
@@ -452,6 +494,12 @@ export default class ClipboardMonitorExtension extends Extension {
                         } else if (methodName === 'EnableKeybinding') {
                             this._EnableKeybinding();
                             invocation.return_value(null);
+                        } else if (methodName === 'StartMonitoring') {
+                            this._StartMonitoring();
+                            invocation.return_value(null);
+                        } else if (methodName === 'StopMonitoring') {
+                            this._StopMonitoring();
+                            invocation.return_value(null);
                         } else {
                             invocation.return_dbus_error('org.freedesktop.DBus.Error.UnknownMethod', 'Unknown method');
                         }
@@ -485,6 +533,36 @@ export default class ClipboardMonitorExtension extends Extension {
             logError(e, 'TFCBM: Error exporting extension D-Bus service');
         }
 
+        // Watch for the app's D-Bus service to detect when it crashes/exits
+        // If the app dies without calling StopMonitoring, we'll clean up automatically
+        this._appWatchId = Gio.bus_watch_name(
+            Gio.BusType.SESSION,
+            'io.github.dyslechtchitect.tfcbm.ClipboardService',
+            Gio.BusNameWatcherFlags.NONE,
+            (connection, name, owner) => {
+                log(`[TFCBM Extension] App D-Bus service appeared: ${name}`);
+            },
+            (connection, name) => {
+                log(`[TFCBM Extension] App D-Bus service disappeared: ${name} - cleaning up`);
+                // App died/crashed/exited - stop monitoring and disable keybinding
+                if (this._scheduler) {
+                    log('[TFCBM Extension] Auto-stopping monitoring due to app exit');
+                    this._scheduler.stop();
+                    this._scheduler = null;
+                }
+                if (!this._keybindingDisabled) {
+                    try {
+                        log('[TFCBM Extension] Auto-disabling keybinding due to app exit');
+                        Main.wm.removeKeybinding('toggle-tfcbm-ui');
+                        this._keybindingDisabled = true;
+                    } catch (e) {
+                        logError(e, '[TFCBM Extension] Error auto-disabling keybinding');
+                    }
+                }
+            }
+        );
+        log('[TFCBM Extension] Started watching app D-Bus service for crashes/exits');
+
         this._reconnect();
 
         log('[TFCBM] Extension enable() complete - extension is now active');
@@ -492,6 +570,13 @@ export default class ClipboardMonitorExtension extends Extension {
 
     disable() {
         log('[TFCBM] Extension disable() called - shutting down...');
+
+        // Stop watching app D-Bus service
+        if (this._appWatchId) {
+            Gio.bus_unwatch_name(this._appWatchId);
+            this._appWatchId = null;
+            log('[TFCBM Extension] Stopped watching app D-Bus service');
+        }
 
         // Stop clipboard monitoring
         if (this._scheduler) {

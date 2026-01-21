@@ -51,9 +51,9 @@ class GSettingsStore(ISettingsStore):
                     Gio.BusType.SESSION,
                     Gio.DBusProxyFlags.NONE,
                     None,
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
-                    "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor",
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
+                    "/io/github/dyslechtchitect/tfcbm/Extension",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
                     None
                 )
 
@@ -143,9 +143,9 @@ class GSettingsStore(ISettingsStore):
                     Gio.BusType.SESSION,
                     Gio.DBusProxyFlags.NONE,
                     None,
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
-                    "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor",
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
+                    "/io/github/dyslechtchitect/tfcbm/Extension",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
                     None
                 )
 
@@ -241,9 +241,9 @@ class GSettingsStore(ISettingsStore):
                     Gio.BusType.SESSION,
                     Gio.DBusProxyFlags.NONE,
                     None,
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
-                    "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor",
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
+                    "/io/github/dyslechtchitect/tfcbm/Extension",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
                     None
                 )
 
@@ -278,6 +278,100 @@ class GSettingsStore(ISettingsStore):
 
         return False
 
+    def start_monitoring(self) -> bool:
+        """
+        Tell the extension to start clipboard monitoring.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                # Connect to extension's D-Bus service
+                proxy = Gio.DBusProxy.new_for_bus_sync(
+                    Gio.BusType.SESSION,
+                    Gio.DBusProxyFlags.NONE,
+                    None,
+                    "io.github.dyslechtchitect.tfcbm.Extension",
+                    "/io/github/dyslechtchitect/tfcbm/Extension",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
+                    None
+                )
+
+                # CRITICAL: Check if service is actually running
+                name_owner = proxy.get_name_owner()
+                if not name_owner:
+                    logger.warning(f"Extension D-Bus service not available for start monitoring (attempt {attempt+1}/{max_attempts})")
+                    if attempt < max_attempts - 1:
+                        import time
+                        time.sleep(0.3)
+                        continue
+                    return False
+
+                # Call StartMonitoring method
+                proxy.call_sync(
+                    "StartMonitoring",
+                    None,
+                    Gio.DBusCallFlags.NONE,
+                    2000,
+                    None
+                )
+                logger.info("✓ Monitoring started successfully")
+                return True
+
+            except GLib.Error as e:
+                logger.error(f"Error starting monitoring via D-Bus (attempt {attempt+1}/{max_attempts}): {e.message}")
+                if attempt < max_attempts - 1:
+                    import time
+                    time.sleep(0.3)
+                continue
+
+            except Exception as e:
+                logger.error(f"Unexpected error starting monitoring: {e}")
+                return False
+
+        logger.error("Failed to start monitoring after all attempts")
+        return False
+
+    def stop_monitoring(self) -> bool:
+        """
+        Tell the extension to stop clipboard monitoring.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Connect to extension's D-Bus service
+            proxy = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SESSION,
+                Gio.DBusProxyFlags.NONE,
+                None,
+                "io.github.dyslechtchitect.tfcbm.Extension",
+                "/io/github/dyslechtchitect/tfcbm/Extension",
+                "io.github.dyslechtchitect.tfcbm.Extension",
+                None
+            )
+
+            # Call StopMonitoring method
+            proxy.call_sync(
+                "StopMonitoring",
+                None,
+                Gio.DBusCallFlags.NONE,
+                2000,
+                None
+            )
+            logger.info("✓ Monitoring stopped successfully")
+            return True
+
+        except GLib.Error as e:
+            logger.error(f"Error stopping monitoring via D-Bus: {e.message}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Unexpected error stopping monitoring: {e}")
+            return False
+
     def enable_keybinding(self) -> bool:
         """
         Re-enable the global keybinding via the extension's D-Bus.
@@ -294,9 +388,9 @@ class GSettingsStore(ISettingsStore):
                     Gio.BusType.SESSION,
                     Gio.DBusProxyFlags.NONE,
                     None,
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
-                    "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor",
-                    "org.gnome.Shell.Extensions.TfcbmClipboardMonitor",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
+                    "/io/github/dyslechtchitect/tfcbm/Extension",
+                    "io.github.dyslechtchitect.tfcbm.Extension",
                     None
                 )
 

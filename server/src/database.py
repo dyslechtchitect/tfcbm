@@ -48,22 +48,37 @@ class ClipboardDB:
         "file": "#c061cb",  # Purple
     }
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
-            # Use XDG_DATA_HOME for Flatpak compatibility
-            xdg_data_home = os.environ.get('XDG_DATA_HOME', Path.home() / '.local' / 'share')
-            db_dir = Path(xdg_data_home) / "tfcbm"
+            # Flatpak / XDG-compliant data directory
+            xdg_data_home = Path(
+                os.environ.get(
+                    "XDG_DATA_HOME",
+                    Path.home() / ".local" / "share"
+                )
+            )
+
+            app_id = "io.github.dyslechtchitect.tfcbm"
+            db_dir = xdg_data_home / app_id
             db_dir.mkdir(parents=True, exist_ok=True)
+
             db_path = db_dir / "clipboard.db"
+        else:
+            db_path = Path(db_path)
 
         self.db_path = str(db_path)
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+
+        self.conn = sqlite3.connect(
+            self.db_path,
+            check_same_thread=False,
+        )
         self.conn.row_factory = sqlite3.Row
 
-        # Enable foreign key constraints (required for CASCADE delete to work)
+        # Required for ON DELETE CASCADE
         self.conn.execute("PRAGMA foreign_keys = ON")
 
         self._init_db()
+
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",

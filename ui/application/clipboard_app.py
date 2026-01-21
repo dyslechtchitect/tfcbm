@@ -152,6 +152,25 @@ class ClipboardApp(Adw.Application):
     def do_shutdown(self):
         """Called when application is shutting down - cleanup server"""
         logger.info("Application shutting down")
+
+        # Stop clipboard monitoring and disable keybinding in the extension
+        logger.info("Stopping clipboard monitoring and disabling keybinding in extension...")
+        try:
+            from ui.infrastructure.gsettings_store import ExtensionSettingsStore
+            settings_store = ExtensionSettingsStore()
+
+            monitoring_stopped = settings_store.stop_monitoring()
+            keybinding_disabled = settings_store.disable_keybinding()
+
+            if monitoring_stopped and keybinding_disabled:
+                logger.info("✓ Clipboard monitoring stopped and keybinding disabled")
+            elif monitoring_stopped:
+                logger.warning("Monitoring stopped but keybinding failed to disable")
+            else:
+                logger.warning("Failed to stop clipboard monitoring")
+        except Exception as e:
+            logger.warning(f"Error stopping monitoring/keybinding: {e}")
+
         self._cleanup_server()
         Adw.Application.do_shutdown(self)
 
@@ -372,6 +391,21 @@ class ClipboardApp(Adw.Application):
 
             # Close splash once main window is ready
             self._close_splash()
+
+            # Start clipboard monitoring and enable keybinding in the extension
+            logger.info("Starting clipboard monitoring and enabling keybinding in extension...")
+            from ui.infrastructure.gsettings_store import ExtensionSettingsStore
+            settings_store = ExtensionSettingsStore()
+
+            monitoring_started = settings_store.start_monitoring()
+            keybinding_enabled = settings_store.enable_keybinding()
+
+            if monitoring_started and keybinding_enabled:
+                logger.info("✓ Clipboard monitoring started and keybinding enabled")
+            elif monitoring_started:
+                logger.warning("Monitoring started but keybinding failed to enable")
+            else:
+                logger.warning("Failed to start clipboard monitoring - extension may not be ready")
 
             logger.info("Main window loaded and presented")
         except Exception as e:

@@ -605,100 +605,105 @@ class SettingsPage:
         return False  # Don't repeat idle_add
 
     def _is_autostart_enabled(self) -> bool:
-        """Check if autostart is enabled for the application using Gio.DesktopAppInfo."""
-        app_id = self._get_installed_app_id()
+        """Check if autostart is enabled via Background Portal."""
         try:
-            # Use DesktopAppInfo.new() instead of AppInfo.create_from_id()
-            app_info = Gio.DesktopAppInfo.new(app_id + ".desktop")
-            if app_info:
-                # Check if the app has autostart enabled
-                # For desktop files, we'd need to check the autostart directory
-                autostart_file = Path.home() / ".config" / "autostart" / f"{app_id}.desktop"
-                return autostart_file.exists()
-        except GLib.Error as e:
-            print(f"Error checking autostart status for {app_id}: {e.message}")
-        return False
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            proxy = Gio.DBusProxy.new_sync(
+                bus,
+                Gio.DBusProxyFlags.NONE,
+                None,
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.Background",
+                None
+            )
 
-    def _set_autostart_via_desktop_file(self, enable: bool):
-        """Set autostart by directly creating/removing autostart desktop file."""
-        import os
-        import shutil
+            # Get the current autostart status
+            # The portal stores this in GSettings, check if enabled
+            app_id = self._get_installed_app_id()
 
+            # Try to read the autostart status from portal settings
+            # If RequestBackground was called with autostart=true, it should be enabled
+            # For now, we'll fall back to checking the old autostart file
+            # until we've set it via portal at least once
+            autostart_file = Path.home() / ".config" / "autostart" / f"{app_id}.desktop"
+            return autostart_file.exists()
+        except Exception as e:
+            logger.error(f"Error checking autostart status: {e}")
+            return False
+
+    def _set_autostart_via_portal(self, enable: bool):
+        """Set autostart using Background Portal API."""
         try:
-            autostart_dir = Path.home() / ".config" / "autostart"
-            autostart_file = autostart_dir / f"{self._get_installed_app_id()}.desktop"
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            proxy = Gio.DBusProxy.new_sync(
+                bus,
+                Gio.DBusProxyFlags.NONE,
+                None,
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.Background",
+                None
+            )
 
             if enable:
-                # Create autostart directory if it doesn't exist
-                autostart_dir.mkdir(parents=True, exist_ok=True)
-
-                # Autostart files are executed by the host system, not from inside Flatpak
-                # So we always need to use the flatpak run command
-                # Check if app is installed as Flatpak by checking if the flatpak exists
-                try:
-                    import subprocess
-                    result = subprocess.run(
-                        ['flatpak', 'list', '--app', '--columns=application'],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    is_flatpak = 'io.github.dyslechtchitect.tfcbm' in result.stdout
-                except Exception:
-                    # If we can't determine, assume flatpak since that's the primary distribution method
-                    is_flatpak = True
-
-                # Create desktop file with correct Exec line
-                if is_flatpak:
-                    exec_line = "flatpak run io.github.dyslechtchitect.tfcbm --activate"
-                else:
-                    exec_line = "tfcbm --activate"
-
-                desktop_content = f"""[Desktop Entry]
-Type=Application
-Name=TFCBM
-GenericName=Clipboard Manager
-Comment=The * Clipboard Manager - Track and manage your clipboard history
-Icon=io.github.dyslechtchitect.tfcbm
-Exec={exec_line}
-Terminal=false
-Categories=Utility;GNOME;GTK;
-Keywords=clipboard;manager;history;copy;paste;
-StartupNotify=true
-X-GNOME-UsesNotifications=true
-X-GNOME-Autostart-enabled=true
-"""
-
-                autostart_file.write_text(desktop_content)
-                self.on_notification(
-                    "Autostart enabled successfully. "
-                    "TFCBM will start automatically on your next login."
+                # Build options for RequestBackground
+                options = GLib.Variant(
+                    "a{sv}",
+                    {
+                        "reason": GLib.Variant("s", "TFCBM needs to run in the background to track clipboard history"),
+                        "autostart": GLib.Variant("b", True),
+                        "commandline": GLib.Variant("as", ["tfcbm", "--activate"]),
+                        "dbus-activatable": GLib.Variant("b", False),
+                    }
                 )
-                print(f"Created autostart file: {autostart_file}")
+
+                # Call RequestBackground
+                # parent_window: empty string (no parent window handle)
+                result = proxy.call_sync(
+                    "RequestBackground",
+                    GLib.Variant("(sa{sv})", ("", options)),
+                    Gio.DBusCallFlags.NONE,
+                    -1,  # timeout
+                    None
+                )
+
+                logger.info(f"Background portal RequestBackground result: {result}")
+                self.on_notification(
+                    "Autostart enabled. TFCBM will start automatically on your next login."
+                )
             else:
-                # Remove autostart file
+                # To disable autostart, we need to remove the autostart file
+                # The portal doesn't provide a "disable" method, so we manually remove it
+                app_id = self._get_installed_app_id()
+                autostart_file = Path.home() / ".config" / "autostart" / f"{app_id}.desktop"
                 if autostart_file.exists():
                     autostart_file.unlink()
                     self.on_notification("Autostart disabled successfully.")
-                    print(f"Removed autostart file: {autostart_file}")
+                    logger.info(f"Removed autostart file: {autostart_file}")
                 else:
                     self.on_notification("Autostart already disabled.")
 
+        except GLib.Error as e:
+            error_message = f"Error toggling autostart via portal: {e.message}"
+            self.on_notification(f"Error: {error_message}")
+            logger.error(error_message)
+            raise
         except Exception as e:
             error_message = f"Error toggling autostart: {e}"
             self.on_notification(f"Error: {error_message}")
-            print(error_message)
+            logger.error(error_message)
             raise
 
     def _on_autostart_toggled(self, switch_row, _param):
-        """Handle autostart toggle - directly creates/removes desktop file."""
+        """Handle autostart toggle using Background Portal API."""
         is_enabled = switch_row.get_active()
         try:
-            self._set_autostart_via_desktop_file(is_enabled)
+            self._set_autostart_via_portal(is_enabled)
         except Exception:
             # If setting autostart fails, revert the switch state
             switch_row.set_active(not is_enabled)
-            # Error message already handled by _set_autostart_via_desktop_file
+            # Error message already handled by _set_autostart_via_portal
 
     def _build_extension_group(self) -> Adw.PreferencesGroup:
         """Build the extension management section."""
