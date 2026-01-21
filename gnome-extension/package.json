@@ -1,6 +1,6 @@
 {
   "name": "tfcbm-gnome-extension",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TFCBM GNOME Shell Extension - Clipboard Monitor",
   "type": "module",
   "scripts": {

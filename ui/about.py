@@ -45,7 +45,7 @@ def show_about_dialog(parent_window):
 
     about.set_application_name("TFCBM")
     about.set_application_icon("io.github.dyslechtchitect.tfcbm")
-    about.set_version("1.0.0")
+    about.set_version("1.0.1")
     about.set_developer_name(random_tagline)
     # about.set_license_type(Adw.License.GPL_3_0) # Removed as Adw.License is not available
     about.set_comments("A clipboard manager for GNOME that keeps your copy-paste history organized and accessible.")
