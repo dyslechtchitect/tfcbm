@@ -19,7 +19,6 @@ finish-args:
   - --device=dri                                     # Required: Hardware acceleration for GTK/EGL rendering
 
   # D-Bus services - Required for GNOME Shell extension communication
-  - --talk-name=org.freedesktop.secrets              # Required: Secure storage for "Secret Items" feature
   - --own-name=io.github.dyslechtchitect.tfcbm.ClipboardService  # Required: D-Bus service for extension IPC
   - --talk-name=io.github.dyslechtchitect.tfcbm.Extension # Required: Communication with our extension
   - --talk-name=org.gnome.Shell                      # Required: Register global keyboard shortcuts

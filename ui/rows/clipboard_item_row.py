@@ -325,7 +325,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _show_auth_required_notification(self):
         """Show notification that authentication is required."""
-        self.window.show_notification("Authentication required to drag secret item")
+        self.window.show_notification("Authentication required to drag protected item")
         return False  # For GLib.idle_add
 
     def _show_fetch_error_notification(self):

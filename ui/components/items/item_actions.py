@@ -141,10 +141,10 @@ class ItemActions:
         is_secret = self.item.get("is_secret", False)
         if is_secret:
             button.set_icon_name("changes-prevent-symbolic")  # Locked
-            button.set_tooltip_text("Unmark as secret")
+            button.set_tooltip_text("Unmark as protected")
         else:
             button.set_icon_name("changes-allow-symbolic")  # Unlocked
-            button.set_tooltip_text("Mark as secret")
+            button.set_tooltip_text("Mark as protected")
 
         button.add_css_class("flat")
 
@@ -185,10 +185,10 @@ class ItemActions:
         # Update icon
         if is_secret:
             self.secret_button.set_icon_name("changes-prevent-symbolic")  # Locked
-            self.secret_button.set_tooltip_text("Unmark as secret")
+            self.secret_button.set_tooltip_text("Unmark as protected")
         else:
             self.secret_button.set_icon_name("changes-allow-symbolic")  # Unlocked
-            self.secret_button.set_tooltip_text("Mark as secret")
+            self.secret_button.set_tooltip_text("Mark as protected")
 
         # Update styling
         if is_secret:

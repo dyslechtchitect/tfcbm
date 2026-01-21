@@ -27,7 +27,7 @@ class SecretNamingDialog:
         """Show the naming dialog."""
         dialog = Adw.AlertDialog.new(
             "Name Required",
-            "Secrets must be named. Please enter a name for this item.",
+            "Protected items must be named. Please enter a name for this item.",
         )
 
         dialog.add_response("cancel", "Cancel")
@@ -45,7 +45,7 @@ class SecretNamingDialog:
 
         # Name entry
         name_entry = Gtk.Entry()
-        name_entry.set_placeholder_text("Enter a name for this secret...")
+        name_entry.set_placeholder_text("Enter a name for this protected item...")
         name_entry.set_hexpand(True)
 
         # Focus the entry when dialog shows
@@ -70,7 +70,7 @@ class SecretNamingDialog:
                     print("[SecretNamingDialog] Name is empty, showing error")
                     error_dialog = Adw.AlertDialog.new(
                         "Name Required",
-                        "Please enter a non-empty name for this secret.",
+                        "Please enter a non-empty name for this protected item.",
                     )
                     error_dialog.add_response("ok", "OK")
                     error_dialog.set_default_response("ok")

@@ -100,7 +100,7 @@ class ItemDialogHandler:
                 ):
                     logger.info("Authentication failed or cancelled for view")
                     self.window.show_notification(
-                        "Authentication required to view secret"
+                        "Authentication required to view protected item"
                     )
                     return
                 else:
@@ -149,7 +149,7 @@ class ItemDialogHandler:
                 ):
                     logger.info("Authentication failed or cancelled for save")
                     self.window.show_notification(
-                        "Authentication required to save secret"
+                        "Authentication required to save protected item"
                     )
                     return
                 else:

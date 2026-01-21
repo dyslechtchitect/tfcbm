@@ -75,7 +75,7 @@ class ClipboardOperationsHandler:
                 # Note: we need the root widget, which we'll get from a callback
                 if not self.password_service.authenticate_for("copy", item_id, self.window):
                     logger.info("Authentication failed or cancelled")
-                    self.window.show_notification("Authentication required to copy secret")
+                    self.window.show_notification("Authentication required to copy protected item")
                     return False
                 else:
                     logger.info("Authentication successful for copy operation")

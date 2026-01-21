@@ -63,12 +63,12 @@ class ItemContent:
         lock_icon.set_halign(Gtk.Align.CENTER)
         container.append(lock_icon)
 
-        # "SECRET" label
-        secret_label = Gtk.Label(label="SECRET")
-        secret_label.add_css_class("title-2")
-        secret_label.add_css_class("error")  # Red color
-        secret_label.set_halign(Gtk.Align.CENTER)
-        container.append(secret_label)
+        # "PROTECTED" label
+        protected_label = Gtk.Label(label="PROTECTED")
+        protected_label.add_css_class("title-2")
+        protected_label.add_css_class("error")  # Red color
+        protected_label.set_halign(Gtk.Align.CENTER)
+        container.append(protected_label)
 
         # Subtle hint text
         hint_label = Gtk.Label(label="Authentication required to view")

@@ -68,7 +68,7 @@ class ItemSecretManager:
                 ):
                     logger.info("Authentication failed or cancelled for unmark")
                     self.window.show_notification(
-                        "Authentication required to unmark secret"
+                        "Authentication required to unmark protected item"
                     )
                     return
                 else:
@@ -78,11 +78,11 @@ class ItemSecretManager:
 
             # Show confirmation dialog after authentication
             dialog = Adw.AlertDialog.new(
-                "Unmark as Secret?",
-                "Are you sure you want to remove secret protection from this item? The content will become visible.",
+                "Unmark as Protected?",
+                "Are you sure you want to remove protection from this item? The content will become visible.",
             )
             dialog.add_response("cancel", "Cancel")
-            dialog.add_response("confirm", "Unmark as Secret")
+            dialog.add_response("confirm", "Unmark as Protected")
             dialog.set_response_appearance("confirm", Adw.ResponseAppearance.DESTRUCTIVE)
             dialog.set_default_response("cancel")
             dialog.set_close_response("cancel")
