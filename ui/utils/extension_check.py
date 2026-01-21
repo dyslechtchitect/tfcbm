@@ -56,9 +56,9 @@ def get_extension_status() -> dict:
                 Gio.BusType.SESSION,
                 Gio.DBusProxyFlags.NONE,
                 None, # GDBusInterfaceInfo
-                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Host extension's D-Bus service name
-                "/org/gnome/Shell/Extensions/TfcbmClipboardMonitor", # Host extension's D-Bus object path
-                "org.gnome.Shell.Extensions.TfcbmClipboardMonitor", # Interface name
+                "io.github.dyslechtchitect.tfcbm.Extension", # Host extension's D-Bus service name
+                "/io/github/dyslechtchitect/tfcbm/Extension", # Host extension's D-Bus object path
+                "io.github.dyslechtchitect.tfcbm.Extension", # Interface name
                 None # GCancellable
             )
 
@@ -69,7 +69,7 @@ def get_extension_status() -> dict:
                 status['installed'] = True
                 status['enabled'] = True
                 status['ready'] = True
-                logger.info(f"Host extension D-Bus service 'org.gnome.Shell.Extensions.TfcbmClipboardMonitor' found (owner: {name_owner}).")
+                logger.info(f"Host extension D-Bus service 'io.github.dyslechtchitect.tfcbm.Extension' found (owner: {name_owner}).")
             else:
                 logger.info("Host extension D-Bus service not found (no name owner).")
                 # Check if extension files exist on disk (installed but not running)

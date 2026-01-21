@@ -2,9 +2,9 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { NotificationPort } from '../domain/NotificationPort.js';
 
-const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm';
-const DBUS_PATH = '/org/tfcbm/ClipboardService';
-const DBUS_IFACE = 'org.tfcbm.ClipboardService';
+const DBUS_NAME = 'io.github.dyslechtchitect.tfcbm.ClipboardService';
+const DBUS_PATH = '/io/github/dyslechtchitect/tfcbm/ClipboardService';
+const DBUS_IFACE = 'io.github.dyslechtchitect.tfcbm.ClipboardService';
 
 /**
  * DBus-based notifier that sends clipboard events to TFCBM application

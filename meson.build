@@ -44,7 +44,7 @@ install_data(
 
 # Install D-Bus service file
 install_data(
-  application_id + '.service',
+  application_id + '.ClipboardService.service',
   install_dir: datadir / 'dbus-1/services'
 )
 
