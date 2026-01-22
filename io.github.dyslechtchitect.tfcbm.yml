@@ -5,18 +5,13 @@ sdk: org.gnome.Sdk
 command: tfcbm
 
 finish-args:
-  # Display and IPC - Required for GTK4 applications
-  - --share=ipc                                      # Required: Inter-process communication for GTK
-  - --socket=wayland                                 # Required: Wayland display server support
-  - --socket=fallback-x11                            # Required: X11 fallback for systems without Wayland
-  - --device=dri                                     # Required: Hardware acceleration for GTK/EGL rendering
-
-  # D-Bus services - Required for GNOME Shell extension communication
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
   - --talk-name=io.github.dyslechtchitect.tfcbm.Extension # Required: Communication with our extension
-
-  # Filesystem access - Read files copied to clipboard
   - --filesystem=home:ro                             # Required: Read file contents when files are copied
-  - --filesystem=xdg-config/autostart                # Required: Check and remove autostart file (portal creates it)
+  - --filesystem=xdg-config/autostart                # Required: Check and remove autostart file
 
 modules:
   - name: tfcbm
