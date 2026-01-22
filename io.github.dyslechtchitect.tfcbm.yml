@@ -10,8 +10,8 @@ finish-args:
   - --socket=fallback-x11
   - --device=dri
   - --talk-name=io.github.dyslechtchitect.tfcbm.Extension # Required: Communication with our extension
-  - --filesystem=home:ro                             # Required: Read file contents when files are copied
-  - --filesystem=xdg-config/autostart                # Required: Check and remove autostart file
+  - --filesystem=home:ro                                  # Required: Read file contents when files are copied
+  - --filesystem=xdg-config/autostart                     # Required: Check and remove autostart file
 
 modules:
   - name: tfcbm
