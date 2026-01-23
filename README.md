@@ -15,7 +15,7 @@
 </p>
 
 ---
-![Download](https://github.com/dyslechtchitect/tfcbm/releases/download/v1.0.1/io.github.dyslechtchitect.tfcbm.flatpak)
+![Download](https://github.com/dyslechtchitect/tfcbm/releases/download/v1.0.0/io.github.dyslechtchitect.tfcbm.flatpak)
 
 Install with:
 ```bash
