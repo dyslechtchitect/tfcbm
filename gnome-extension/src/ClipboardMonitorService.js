@@ -7,6 +7,7 @@ export class ClipboardMonitorService {
         this.clipboardPort = clipboardPort;
         this.notificationPort = notificationPort;
         this.lastEvent = null;
+        this.skipNextEvent = false; // Flag to skip the next clipboard event
     }
 
     async checkAndNotify() {
@@ -20,6 +21,16 @@ export class ClipboardMonitorService {
             if (this.isDuplicate(event)) {
                 return;
             }
+
+            // CRITICAL: Skip this event if skipNextEvent flag is set
+            // This prevents sending the current clipboard content as a "new" event when monitoring starts
+            if (this.skipNextEvent) {
+                this.skipNextEvent = false;
+                this.lastEvent = event;
+                log(`[TFCBM] Skipped clipboard event (priming): ${type}`);
+                return;
+            }
+
             // Log clipboard event (type and size only, no content)
             const size = typeof data === 'string' ? data.length : 0;
             const formatInfo = formatType ? ` [${formatType}]` : '';

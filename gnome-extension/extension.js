@@ -145,6 +145,12 @@ export default class ClipboardMonitorExtension extends Extension {
             // Start clipboard monitoring when app is running
             if (!this._scheduler && this._clipboardService) {
                 log('[TFCBM] Starting clipboard monitoring (app is running)');
+
+                // CRITICAL: Skip the first clipboard event to prevent buffering
+                // Whatever is currently in the clipboard should NOT be sent as a "new" event
+                this._clipboardService.skipNextEvent = true;
+                log('[TFCBM] Set skipNextEvent flag to ignore current clipboard state');
+
                 this._scheduler = new PollingScheduler(() => {
                     this._clipboardService.checkAndNotify();
                 }, 250);
@@ -156,6 +162,13 @@ export default class ClipboardMonitorExtension extends Extension {
                 log('[TFCBM] Stopping clipboard monitoring (app is not running)');
                 this._scheduler.stop();
                 this._scheduler = null;
+
+                // CRITICAL: Clear the last event so we don't send clipboard content
+                // that was copied while the app was closed when monitoring resumes
+                if (this._clipboardService) {
+                    this._clipboardService.lastEvent = null;
+                    log('[TFCBM] Cleared last clipboard event to prevent buffering');
+                }
             }
         }
     }
@@ -354,9 +367,14 @@ export default class ClipboardMonitorExtension extends Extension {
             log('[TFCBM Extension] Received request to start clipboard monitoring');
             if (!this._scheduler && this._clipboardService) {
                 log('[TFCBM Extension] Starting clipboard polling scheduler');
+
+                // CRITICAL: Skip the first clipboard event to prevent buffering
+                this._clipboardService.skipNextEvent = true;
+                log('[TFCBM Extension] Set skipNextEvent flag to ignore current clipboard state');
+
                 this._scheduler = new PollingScheduler(() => {
-                    this._clipboardService.checkClipboard();
-                }, 500);
+                    this._clipboardService.checkAndNotify();
+                }, 250);
                 this._scheduler.start();
                 log('[TFCBM Extension] ✓ Clipboard monitoring started');
             } else if (this._scheduler) {
@@ -378,6 +396,13 @@ export default class ClipboardMonitorExtension extends Extension {
                 log('[TFCBM Extension] Stopping clipboard polling scheduler');
                 this._scheduler.stop();
                 this._scheduler = null;
+
+                // Clear the last event to prevent buffering
+                if (this._clipboardService) {
+                    this._clipboardService.lastEvent = null;
+                    log('[TFCBM Extension] Cleared last clipboard event');
+                }
+
                 log('[TFCBM Extension] ✓ Clipboard monitoring stopped');
             } else {
                 log('[TFCBM Extension] Clipboard monitoring already stopped');
@@ -549,6 +574,12 @@ export default class ClipboardMonitorExtension extends Extension {
                     log('[TFCBM Extension] Auto-stopping monitoring due to app exit');
                     this._scheduler.stop();
                     this._scheduler = null;
+
+                    // Clear the last event to prevent buffering
+                    if (this._clipboardService) {
+                        this._clipboardService.lastEvent = null;
+                        log('[TFCBM Extension] Cleared last clipboard event');
+                    }
                 }
                 if (!this._keybindingDisabled) {
                     try {
