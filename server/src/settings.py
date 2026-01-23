@@ -47,11 +47,18 @@ class ClipboardSettings:
 
 
 @dataclass
+class ApplicationSettings:
+    """Application behavior settings"""
+    autostart_enabled: bool = False
+
+
+@dataclass
 class Settings:
     """Main settings model"""
     display: DisplaySettings = field(default_factory=DisplaySettings)
     retention: RetentionSettings = field(default_factory=RetentionSettings)
     clipboard: ClipboardSettings = field(default_factory=ClipboardSettings)
+    application: ApplicationSettings = field(default_factory=ApplicationSettings)
 
 
 class SettingsManager:
@@ -94,7 +101,8 @@ class SettingsManager:
             settings = Settings(
                 display=DisplaySettings(**config_data.get('display', {})),
                 retention=RetentionSettings(**config_data.get('retention', {})),
-                clipboard=ClipboardSettings(**config_data.get('clipboard', {}))
+                clipboard=ClipboardSettings(**config_data.get('clipboard', {})),
+                application=ApplicationSettings(**config_data.get('application', {}))
             )
             print(f"Loaded settings from {self.config_path}")
             print(f"  - Max page length: {settings.display.max_page_length}")
@@ -142,6 +150,11 @@ class SettingsManager:
     def refocus_on_copy(self) -> bool:
         """Get the refocus on copy setting"""
         return self.settings.clipboard.refocus_on_copy
+
+    @property
+    def autostart_enabled(self) -> bool:
+        """Get the autostart enabled setting"""
+        return self.settings.application.autostart_enabled
 
     def update_settings(self, **kwargs):
         """Update settings and save to file"""

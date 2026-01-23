@@ -11,7 +11,6 @@ finish-args:
   - --device=dri
   - --talk-name=io.github.dyslechtchitect.tfcbm.Extension # Required: Communication with our extension
   - --filesystem=home:ro                                  # Required: Read file contents when files are copied
-  - --filesystem=xdg-config/autostart                     # Required: Check and remove autostart file
 
 modules:
   - name: tfcbm

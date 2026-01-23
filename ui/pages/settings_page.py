@@ -605,37 +605,18 @@ class SettingsPage:
         return False  # Don't repeat idle_add
 
     def _is_autostart_enabled(self) -> bool:
-        """Check if autostart is enabled via Background Portal."""
-        try:
-            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            proxy = Gio.DBusProxy.new_sync(
-                bus,
-                Gio.DBusProxyFlags.NONE,
-                None,
-                "org.freedesktop.portal.Desktop",
-                "/org/freedesktop/portal/desktop",
-                "org.freedesktop.portal.Background",
-                None
-            )
-
-            # Get the current autostart status
-            # The portal stores this in GSettings, check if enabled
-            app_id = self._get_installed_app_id()
-
-            # Try to read the autostart status from portal settings
-            # If RequestBackground was called with autostart=true, it should be enabled
-            # For now, we'll fall back to checking the old autostart file
-            # until we've set it via portal at least once
-            autostart_file = Path.home() / ".config" / "autostart" / f"{app_id}.desktop"
-            return autostart_file.exists()
-        except Exception as e:
-            logger.error(f"Error checking autostart status: {e}")
-            return False
+        """Check if autostart is enabled from app settings."""
+        return self.settings.autostart_enabled
 
     def _set_autostart_via_portal(self, enable: bool):
         """Set autostart using Background Portal API."""
+        logger.info(f"Starting autostart portal call: enable={enable}")
+
         try:
+            logger.debug("Getting session bus")
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+            logger.debug("Creating D-Bus proxy")
             proxy = Gio.DBusProxy.new_sync(
                 bus,
                 Gio.DBusProxyFlags.NONE,
@@ -646,64 +627,81 @@ class SettingsPage:
                 None
             )
 
-            if enable:
-                # Build options for RequestBackground
-                options = GLib.Variant(
-                    "a{sv}",
-                    {
-                        "reason": GLib.Variant("s", "TFCBM needs to run in the background to track clipboard history"),
-                        "autostart": GLib.Variant("b", True),
-                        "commandline": GLib.Variant("as", ["tfcbm", "--activate"]),
-                        "dbus-activatable": GLib.Variant("b", False),
-                    }
-                )
+            logger.debug(f"Building portal options with autostart={enable}")
 
-                # Call RequestBackground
-                # parent_window: empty string (no parent window handle)
-                result = proxy.call_sync(
-                    "RequestBackground",
-                    GLib.Variant("(sa{sv})", ("", options)),
-                    Gio.DBusCallFlags.NONE,
-                    -1,  # timeout
-                    None
-                )
-
-                logger.info(f"Background portal RequestBackground result: {result}")
-                self.on_notification(
-                    "Autostart enabled. TFCBM will start automatically on your next login."
-                )
-            else:
-                # To disable autostart, we need to remove the autostart file
-                # The portal doesn't provide a "disable" method, so we manually remove it
+            try:
+                # Determine the command to use
+                # When running in Flatpak, use the flatpak run command
                 app_id = self._get_installed_app_id()
-                autostart_file = Path.home() / ".config" / "autostart" / f"{app_id}.desktop"
-                if autostart_file.exists():
-                    autostart_file.unlink()
-                    self.on_notification("Autostart disabled successfully.")
-                    logger.info(f"Removed autostart file: {autostart_file}")
-                else:
-                    self.on_notification("Autostart already disabled.")
+                commandline = ["flatpak", "run", app_id]
+
+                logger.debug(f"Using commandline: {commandline}")
+
+                # Build options dictionary
+                logger.debug("Creating options dictionary")
+                options = {
+                    "reason": GLib.Variant("s", "TFCBM clipboard history manager"),
+                    "autostart": GLib.Variant("b", enable),
+                    "commandline": GLib.Variant("as", commandline),
+                    "dbus-activatable": GLib.Variant("b", False),
+                }
+                logger.debug(f"Options dict created: {options}")
+
+                # Build the full request variant
+                logger.debug("Creating request Variant tuple")
+                request_variant = GLib.Variant("(sa{sv})", ("", options))
+                logger.debug(f"Request Variant created: {request_variant}")
+
+            except Exception as variant_error:
+                logger.error(f"Error building Variant: {variant_error}")
+                raise
+
+            logger.debug("Calling RequestBackground portal method")
+            # Call RequestBackground - portal handles creating/removing autostart file
+            result = proxy.call_sync(
+                "RequestBackground",
+                request_variant,
+                Gio.DBusCallFlags.NONE,
+                -1,  # timeout
+                None
+            )
+
+            logger.info(f"Portal call completed, result type: {type(result)}, result: {result}")
+
+            # For now, just assume success if no exception was raised
+            # The portal might return a handle or empty result
+            logger.info("Portal call succeeded, saving setting")
+
+            try:
+                logger.debug(f"Updating settings with application.autostart_enabled={enable}")
+                self.settings.update_settings(**{"application.autostart_enabled": enable})
+                logger.debug("Settings updated successfully")
+            except Exception as settings_error:
+                logger.error(f"Error updating settings: {settings_error}")
+                raise
+
+            if enable:
+                self.on_notification("Autostart enabled successfully.")
+            else:
+                self.on_notification("Autostart disabled successfully.")
+            return True
 
         except GLib.Error as e:
-            error_message = f"Error toggling autostart via portal: {e.message}"
-            self.on_notification(f"Error: {error_message}")
-            logger.error(error_message)
-            raise
+            logger.error(f"GLib.Error calling portal: code={e.code if hasattr(e, 'code') else 'N/A'}, message={e.message if hasattr(e, 'message') else str(e)}")
+            self.on_notification("Error: Failed to change autostart setting.")
+            return False
         except Exception as e:
-            error_message = f"Error toggling autostart: {e}"
-            self.on_notification(f"Error: {error_message}")
-            logger.error(error_message)
-            raise
+            logger.error(f"Exception calling portal: type={type(e).__name__}, value={e}, repr={repr(e)}")
+            self.on_notification("Error: Failed to change autostart setting.")
+            return False
 
     def _on_autostart_toggled(self, switch_row, _param):
         """Handle autostart toggle using Background Portal API."""
         is_enabled = switch_row.get_active()
-        try:
-            self._set_autostart_via_portal(is_enabled)
-        except Exception:
+        success = self._set_autostart_via_portal(is_enabled)
+        if not success:
             # If setting autostart fails, revert the switch state
             switch_row.set_active(not is_enabled)
-            # Error message already handled by _set_autostart_via_portal
 
     def _build_extension_group(self) -> Adw.PreferencesGroup:
         """Build the extension management section."""
