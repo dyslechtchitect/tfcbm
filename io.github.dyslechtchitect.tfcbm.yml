@@ -9,7 +9,6 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-  - --talk-name=io.github.dyslechtchitect.tfcbm.Extension # Required: Communication with our extension
   - --filesystem=home:ro                                  # Required: Read file contents when files are copied
 
 modules:
