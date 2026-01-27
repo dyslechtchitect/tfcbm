@@ -84,11 +84,25 @@ class SettingsPage:
         db_size_row = Adw.ActionRow()
         db_size_row.set_title("Database Size")
 
-        db_path = Path.home() / ".local" / "share" / "tfcbm" / "clipboard.db"
+        # Use AppPaths to get correct database location (handles flatpak)
+        from ui.config import AppPaths
+        db_path = AppPaths.default().db_path
         if db_path.exists():
             size_bytes = os.path.getsize(db_path)
-            size_mb = size_bytes / (1024 * 1024)
-            db_size_row.set_subtitle(f"{size_mb:.2f} MB")
+
+            # Format size with appropriate units
+            if size_bytes == 0:
+                size_str = "Empty (0 bytes)"
+            elif size_bytes < 1024:
+                size_str = f"{size_bytes} bytes"
+            elif size_bytes < 1024 * 1024:
+                size_kb = size_bytes / 1024
+                size_str = f"{size_kb:.2f} KB"
+            else:
+                size_mb = size_bytes / (1024 * 1024)
+                size_str = f"{size_mb:.2f} MB"
+
+            db_size_row.set_subtitle(size_str)
         else:
             db_size_row.set_subtitle("Database not found")
 
@@ -723,73 +737,7 @@ class SettingsPage:
             status_row.set_subtitle("Not installed")
         group.add(status_row)
 
-        # Uninstall extension row
-        uninstall_row = Adw.ActionRow()
-        uninstall_row.set_title("Uninstall Extension")
-        uninstall_row.set_subtitle("Remove the GNOME Shell extension before uninstalling the app")
-
-        uninstall_button = Gtk.Button()
-        uninstall_button.set_label("Uninstall")
-        uninstall_button.add_css_class("destructive-action")
-        uninstall_button.set_valign(Gtk.Align.CENTER)
-        uninstall_button.connect("clicked", self._on_uninstall_extension_clicked)
-        uninstall_button.set_sensitive(status['installed'])  # Only enable if installed
-        uninstall_row.add_suffix(uninstall_button)
-
-        group.add(uninstall_row)
-
         return group
-
-    def _on_uninstall_extension_clicked(self, button: Gtk.Button):
-        """Handle uninstall extension button click."""
-        # Show confirmation dialog
-        dialog = Adw.MessageDialog.new(
-            None,
-            "Uninstall GNOME Extension?",
-            "This will disable and remove the TFCBM GNOME Shell extension. "
-            "You should do this before uninstalling the app to ensure clean removal."
-        )
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("uninstall", "Uninstall Extension")
-        dialog.set_response_appearance("uninstall", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
-
-        def on_response(dialog, response):
-            if response == "uninstall":
-                self._perform_extension_uninstall(button)
-            dialog.close()
-
-        dialog.connect("response", on_response)
-        dialog.present()
-
-    def _perform_extension_uninstall(self, button: Gtk.Button):
-        """Actually perform the extension uninstall."""
-        button.set_sensitive(False)
-        button.set_label("Uninstalling...")
-
-        import threading
-
-        def uninstall_in_thread():
-            from ui.utils.extension_check import uninstall_extension
-            success, message = uninstall_extension()
-            GLib.idle_add(self._handle_uninstall_result, success, message, button)
-
-        thread = threading.Thread(target=uninstall_in_thread, daemon=True)
-        thread.start()
-
-    def _handle_uninstall_result(self, success: bool, message: str, button: Gtk.Button):
-        """Handle extension uninstall result in GTK main thread."""
-        if success:
-            self.on_notification(f"✓ {message}")
-            button.set_label("Uninstalled")
-            # Keep button disabled since extension is now gone
-        else:
-            self.on_notification(f"Error: {message}")
-            button.set_label("Uninstall")
-            button.set_sensitive(True)
-
-        return False  # Don't repeat idle_add
 
     def _get_installed_app_id(self):
         """Get the app ID."""
