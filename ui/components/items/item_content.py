@@ -96,6 +96,11 @@ class ItemContent:
 
         text_content = self.item["content"]
 
+        # Check if content was truncated and add indicator
+        content_truncated = self.item.get("content_truncated", False)
+        if content_truncated and not text_content.endswith("..."):
+            text_content = text_content + "..."
+
         # Add quotes inline with the text content
         open_quote = (
             '<span font_family="serif" font_weight="heavy" '

@@ -104,6 +104,21 @@ class ClipboardOperationsHandler:
         try:
             if item_type == "text" or item_type == "url":
                 if content:
+                    # Check if content was truncated and fetch full text if needed
+                    content_truncated = self.item.get("content_truncated", False)
+                    if content_truncated:
+                        logger.info(f"Content truncated for item {item_id}, fetching full text...")
+                        full_content = self.ipc_service.fetch_full_text(item_id)
+                        if full_content:
+                            content = full_content
+                            # Update item with full content for future use
+                            self.item["content"] = full_content
+                            self.item["content_truncated"] = False
+                            logger.info(f"Retrieved full text ({len(content)} chars)")
+                        else:
+                            logger.warning(f"Failed to fetch full text for item {item_id}")
+                            # Continue with truncated content as fallback
+
                     # Check if item has formatted content
                     format_type = self.item.get("format_type")
                     formatted_content = self.item.get("formatted_content")

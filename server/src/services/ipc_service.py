@@ -100,12 +100,22 @@ class IPCService:
 
     def prepare_item_for_ui(self, item: dict) -> dict:
         """Convert database item to UI-renderable format"""
+        # Max preview length for text content (only send preview to UI for performance)
+        MAX_PREVIEW_LENGTH = 500
+
         item_type = item["type"]
         data = item["data"]
         thumbnail = item.get("thumbnail")
+        content_truncated = False
 
         if item_type == "text" or item_type == "url":
-            content = data.decode("utf-8") if isinstance(data, bytes) else data
+            full_content = data.decode("utf-8") if isinstance(data, bytes) else data
+            # Only send preview for list display to avoid performance issues with large text
+            if len(full_content) > MAX_PREVIEW_LENGTH:
+                content = full_content[:MAX_PREVIEW_LENGTH]
+                content_truncated = True
+            else:
+                content = full_content
             thumbnail_b64 = None
         elif item_type == "file":
             try:
@@ -155,6 +165,7 @@ class IPCService:
             "formatted_content": base64.b64encode(item["formatted_content"]).decode("utf-8") if item.get("formatted_content") else None,
             "is_secret": item.get("is_secret", False),
             "is_favorite": item.get("is_favorite", False),
+            "content_truncated": content_truncated,
         }
 
     async def client_handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -195,6 +206,8 @@ class IPCService:
             await self._handle_register_ui_pid(connection, data)
         elif action == "get_full_image":
             await self._handle_get_full_image(connection, data)
+        elif action == "get_full_text":
+            await self._handle_get_full_text(connection, data)
         elif action == "delete_item":
             await self._handle_delete_item(connection, data)
         elif action == "get_recently_pasted":
@@ -290,6 +303,20 @@ class IPCService:
                 else:
                     response = {"type": "error", "message": "Invalid file data format"}
                     await connection.send_json(response)
+
+    async def _handle_get_full_text(self, connection: IPCConnection, data):
+        """Handle get_full_text action - fetch full text content for truncated items"""
+        item_id = data.get("id")
+        if item_id:
+            item = self.db_service.get_item(item_id)
+            if item and (item["type"] == "text" or item["type"] == "url"):
+                full_content = item["data"].decode("utf-8") if isinstance(item["data"], bytes) else item["data"]
+                response = {"type": "full_text", "id": item_id, "content": full_content}
+                await connection.send_json(response)
+                logger.info(f"Sent full text content for item {item_id} ({len(full_content)} chars)")
+            else:
+                response = {"type": "error", "message": "Item not found or not a text item"}
+                await connection.send_json(response)
 
     async def _handle_delete_item(self, connection: IPCConnection, data):
         """Handle delete_item action"""

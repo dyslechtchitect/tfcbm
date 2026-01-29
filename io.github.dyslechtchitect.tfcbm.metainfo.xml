@@ -34,15 +34,15 @@
     <screenshots>
         <screenshot type="default">
             <caption>Main window showing clipboard history</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0/screenshots/general.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0.1/screenshots/general.png</image>
         </screenshot>
         <screenshot>
             <caption>Search through clipboard history</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0/screenshots/search.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0.1/screenshots/search.png</image>
         </screenshot>
         <screenshot>
             <caption>Configure keyboard shortcuts in the settings</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0/screenshots/settings.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0.1/screenshots/settings.png</image>
         </screenshot>
     </screenshots>
 
@@ -53,6 +53,17 @@
     <content_rating type="oars-1.1"/>
 
     <releases>
+        <release version="1.0.1" date="2026-01-29">
+            <description>
+                <p>Performance improvements and bug fixes</p>
+                <ul>
+                    <li>Fixed performance issue with large text files</li>
+                    <li>Improved database size reporting for Flatpak installations</li>
+                    <li>Removed unsupported uninstall extension button in Flatpak</li>
+                    <li>Optimized text content loading and display</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.0" date="2026-01-23">
             <description>
                 <p>Initial release</p>

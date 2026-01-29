@@ -95,6 +95,48 @@ class ItemIPCService:
 
         return content[0]
 
+    def fetch_full_text(self, item_id: int) -> Optional[str]:
+        """Fetch the full text content for a truncated text item.
+
+        Args:
+            item_id: ID of the text item
+
+        Returns:
+            The full text content string, or None if fetch failed
+        """
+        content = [None]  # Use list to allow modification in nested function
+
+        def fetch_content():
+            try:
+
+                async def get_content():
+                    async with ipc_connect() as conn:
+                        request = {"action": "get_full_text", "id": item_id}
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "full_text" and data.get("content"):
+                            content[0] = data["content"]
+                            logger.info(f"Fetched full text for item {item_id} ({len(content[0])} chars)")
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(get_content())
+                finally:
+                    loop.close()
+
+            except Exception as e:
+                logger.error(f"Error fetching full text content: {e}")
+
+        # Run synchronously in a thread and wait
+        thread = threading.Thread(target=fetch_content)
+        thread.start()
+        thread.join(timeout=5)  # Wait up to 5 seconds
+
+        return content[0]
+
     def toggle_secret_status(
         self, item_id: int, is_secret: bool, name: Optional[str] = None
     ) -> None:
