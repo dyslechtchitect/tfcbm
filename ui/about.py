@@ -1,18 +1,14 @@
-#!/usr/bin/env python3
-"""
-TFCBM About Dialog - Shows app information using Adw.AboutDialog
-"""
+"""TFCBM About Dialog - DE-agnostic version using Gtk.AboutDialog"""
 
 import random
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw
+from gi.repository import Gtk
 from ui.windows.license_window import LicenseWindow
 
 
-# Funny taglines for about dialog - clean and family-friendly
+# Funny taglines for about dialog
 FUNNY_TAGLINES = [
     "Because Ctrl+C deserves better",
     "Making copy-paste great again",
@@ -38,41 +34,21 @@ def show_about_dialog(parent_window):
     Args:
         parent_window: Parent window to present the dialog on
     """
-    about = Adw.AboutDialog()
+    about = Gtk.AboutDialog()
+    about.set_transient_for(parent_window)
+    about.set_modal(True)
 
-    # Pick a random funny tagline for developer name subtitle
+    # Pick a random funny tagline
     random_tagline = random.choice(FUNNY_TAGLINES)
 
-    about.set_application_name("TFCBM")
-    about.set_application_icon("io.github.dyslechtchitect.tfcbm")
+    about.set_program_name("TFCBM")
+    about.set_logo_icon_name("io.github.dyslechtchitect.tfcbm")
     about.set_version("1.0.1")
-    about.set_developer_name(random_tagline)
-    # about.set_license_type(Adw.License.GPL_3_0) # Removed as Adw.License is not available
-    about.set_comments("A clipboard manager for GNOME that keeps your copy-paste history organized and accessible.")
+    about.set_comments(f"{random_tagline}\n\nA clipboard manager that keeps your copy-paste history organized and accessible.")
     about.set_website("https://github.com/dyslechtchitect/tfcbm")
-    about.set_issue_url("https://github.com/dyslechtchitect/tfcbm/issues")
+    about.set_website_label("GitHub")
+    about.set_authors(["TFCBM Developers"])
+    about.set_copyright("\u00a9 2025 TFCBM Developers")
+    about.set_license_type(Gtk.License.GPL_3_0)
 
-    # Add link to README
-    about.add_link("Documentation", "https://github.com/dyslechtchitect/tfcbm#readme")
-    about.add_link("View License", "view-license")
-
-    def on_activate_link(dialog, uri):
-        if uri == "view-license":
-            license_win = LicenseWindow(parent=parent_window)
-            license_win.present()
-            return True  # We handled this custom URI
-        return False  # Let default handler open external URLs
-
-    about.connect("activate-link", on_activate_link)
-
-
-    # Add developers
-    about.set_developers([
-        "TFCBM Developers"
-    ])
-
-    # Add copyright
-    about.set_copyright("© 2025 TFCBM Developers")
-
-    # Present the dialog with parent window
-    about.present(parent_window)
+    about.present()

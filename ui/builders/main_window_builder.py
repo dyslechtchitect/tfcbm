@@ -1,4 +1,4 @@
-"""Builds the main application window UI."""
+"""Builds the main application window UI - DE-agnostic GTK4 version."""
 
 import os
 from dataclasses import dataclass, field
@@ -6,10 +6,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import gi
-from gi.repository import Adw, Gdk, Gio, Gtk
+from gi.repository import Gdk, Gio, Gtk
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
 
 if TYPE_CHECKING:
@@ -21,15 +20,14 @@ class MainWindowWidgets:
     """Dataclass to hold the widgets of the main window."""
 
     main_box: Gtk.Box
-    header: Adw.HeaderBar
+    header: Gtk.HeaderBar
     title_stack: Gtk.Stack
     search_container: Gtk.Box
     button_stack: Gtk.Stack
     search_entry: Gtk.SearchEntry
-    tag_flowbox: Gtk.FlowBox
+    tag_flowbox: Gtk.Box
     main_stack: Gtk.Stack
-    tab_view: Adw.TabView
-    tab_bar: Adw.TabBar
+    notebook: Gtk.Notebook
     copied_scrolled: Gtk.ScrolledWindow
     copied_listbox: Gtk.ListBox
     copied_loader: Gtk.Widget
@@ -38,13 +36,22 @@ class MainWindowWidgets:
     pasted_listbox: Gtk.ListBox
     pasted_loader: Gtk.Widget
     pasted_status_label: Gtk.Label
-    user_tags_group: Adw.PreferencesGroup
+    user_tags_group: Gtk.ListBox
     notification_box: Gtk.Box
     notification_label: Gtk.Label
     filter_bar: Gtk.Box
     filter_toggle_btn: Gtk.ToggleButton
     filter_sort_btn: Gtk.Button
-    builder: "MainWindowBuilder" = field(repr=False)  # Add builder itself
+    builder: "MainWindowBuilder" = field(repr=False)
+
+    # Compatibility properties for code that references tab_view/tab_bar
+    @property
+    def tab_view(self):
+        return self.notebook
+
+    @property
+    def tab_bar(self):
+        return self.notebook
 
 
 class MainWindowBuilder:
@@ -55,11 +62,12 @@ class MainWindowBuilder:
         self.filter_sort_btn = None
         self.filter_box = None
         self.system_filter_chips = []
+        self.notebook = None
 
     def build(self) -> MainWindowWidgets:
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
-        header = Adw.HeaderBar()
+        header = Gtk.HeaderBar()
         header.add_css_class("tfcbm-header")
 
         title_stack = Gtk.Stack()
@@ -182,18 +190,12 @@ class MainWindowBuilder:
         main_stack = Gtk.Stack()
         main_stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
 
-        tab_view = Adw.TabView()
-        tab_view.set_vexpand(True)
-        main_stack.add_named(tab_view, "tabs")
+        # Use Gtk.Notebook instead of Adw.TabView/TabBar
+        self.notebook = Gtk.Notebook()
+        self.notebook.set_vexpand(True)
+        main_stack.add_named(self.notebook, "tabs")
 
-        tab_view.connect("close-page", self.window._on_close_page)
-
-        tab_bar = Adw.TabBar()
-        tab_bar.set_view(tab_view)
-        main_box.append(tab_bar)
-
-        self._create_filter_bar()
-
+        # Create Copied tab
         copied_scrolled = Gtk.ScrolledWindow()
         copied_scrolled.set_vexpand(True)
         copied_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -217,8 +219,6 @@ class MainWindowBuilder:
         copied_listbox.add_css_class("boxed-list")
         copied_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
 
-        # Rows size based on content - don't force min-height to 0
-        # This was causing rows to compress when many items were present
         copied_box.append(copied_listbox)
 
         copied_loader = self._create_loader()
@@ -232,11 +232,16 @@ class MainWindowBuilder:
         copied_vadj = copied_scrolled.get_vadjustment()
         copied_vadj.connect("value-changed", lambda adj: self.window._on_scroll_changed(adj, "copied"))
 
-        copied_page = tab_view.append(copied_scrolled)
-        copied_page.set_title("Copied")
-        copied_page.set_icon(Gio.ThemedIcon.new("edit-copy-symbolic"))
-        copied_page.set_indicator_icon(None)
+        # Create tab label with icon for Copied
+        copied_tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        copied_tab_icon = Gtk.Image.new_from_icon_name("edit-copy-symbolic")
+        copied_tab_icon.set_pixel_size(16)
+        copied_tab_box.append(copied_tab_icon)
+        copied_tab_box.append(Gtk.Label(label="Copied"))
 
+        self.notebook.append_page(copied_scrolled, copied_tab_box)
+
+        # Create Pasted tab
         pasted_scrolled = Gtk.ScrolledWindow()
         pasted_scrolled.set_vexpand(True)
         pasted_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -260,8 +265,6 @@ class MainWindowBuilder:
         pasted_listbox.add_css_class("boxed-list")
         pasted_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
 
-        # Rows size based on content - don't force min-height to 0
-        # This was causing rows to compress when many items were present
         pasted_box.append(pasted_listbox)
 
         pasted_loader = self._create_loader()
@@ -275,27 +278,35 @@ class MainWindowBuilder:
         pasted_vadj = pasted_scrolled.get_vadjustment()
         pasted_vadj.connect("value-changed", lambda adj: self.window._on_scroll_changed(adj, "pasted"))
 
-        pasted_page = tab_view.append(pasted_scrolled)
-        pasted_page.set_title("Pasted")
-        pasted_page.set_icon(Gio.ThemedIcon.new("edit-paste-symbolic"))
-        pasted_page.set_indicator_icon(None)
+        # Create tab label with icon for Pasted
+        pasted_tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        pasted_tab_icon = Gtk.Image.new_from_icon_name("edit-paste-symbolic")
+        pasted_tab_icon.set_pixel_size(16)
+        pasted_tab_box.append(pasted_tab_icon)
+        pasted_tab_box.append(Gtk.Label(label="Pasted"))
+
+        self.notebook.append_page(pasted_scrolled, pasted_tab_box)
+
+        # Connect tab switch signal
+        self.notebook.connect("switch-page", self.window._on_tab_switched)
 
         settings_page = self._create_settings_page()
         main_stack.add_named(settings_page, "settings")
 
-        # Create user_tags_group but don't add it to a tab - it will be used elsewhere if needed
-        user_tags_group = Adw.PreferencesGroup()
-        user_tags_group.set_title("Your Tags")
+        # Create user_tags_group as a ListBox for dynamic tag row management
+        user_tags_group = Gtk.ListBox()
+        user_tags_group.set_selection_mode(Gtk.SelectionMode.NONE)
+        user_tags_group.add_css_class("boxed-list")
 
-        tab_view.connect("notify::selected-page", self.window._on_tab_switched)
+        # Add notebook (replaces tab_bar position in layout)
+        main_box.append(self.notebook)
 
+        self._create_filter_bar()
         main_box.append(self.filter_bar)
 
         main_box.append(main_stack)
 
         main_box.append(tag_frame)
-
-        # DELETED - NotificationManager creates this now
 
         return MainWindowWidgets(
             main_box=main_box,
@@ -306,8 +317,7 @@ class MainWindowBuilder:
             search_entry=search_entry,
             tag_flowbox=tag_flowbox,
             main_stack=main_stack,
-            tab_view=tab_view,
-            tab_bar=tab_bar,
+            notebook=self.notebook,
             copied_scrolled=copied_scrolled,
             copied_listbox=copied_listbox,
             copied_loader=copied_loader,
@@ -317,39 +327,25 @@ class MainWindowBuilder:
             pasted_loader=pasted_loader,
             pasted_status_label=pasted_status_label,
             user_tags_group=user_tags_group,
-            notification_box=None,  # Created by NotificationManager
-            notification_label=None,  # Created by NotificationManager
+            notification_box=None,
+            notification_label=None,
             filter_bar=self.filter_bar,
             filter_toggle_btn=self.filter_toggle_btn,
             filter_sort_btn=self.filter_sort_btn,
-            builder=self,  # Pass self here
+            builder=self,
         )
 
     def _on_tag_scroll(self, controller, dx, dy):
-        """Handle mouse wheel scrolling on tags bar.
-
-        Args:
-            controller: The scroll event controller
-            dx: Horizontal scroll delta
-            dy: Vertical scroll delta
-
-        Returns:
-            bool: True if handled
-        """
+        """Handle mouse wheel scrolling on tags bar."""
         if not hasattr(self, 'tag_scrolled'):
             return False
 
-        # Get horizontal adjustment
         hadj = self.tag_scrolled.get_hadjustment()
         if not hadj:
             return False
 
-        # Scroll horizontally based on vertical wheel movement
-        # Use dy (vertical scroll) to scroll horizontally
-        scroll_amount = dy * 30  # Adjust sensitivity
+        scroll_amount = dy * 30
         new_value = hadj.get_value() + scroll_amount
-
-        # Clamp to valid range
         new_value = max(hadj.get_lower(), min(new_value, hadj.get_upper() - hadj.get_page_size()))
         hadj.set_value(new_value)
 
@@ -395,7 +391,7 @@ class MainWindowBuilder:
                 icon_found = True
                 break
         if not icon_found:
-            self.filter_toggle_btn.set_label("⚙")
+            self.filter_toggle_btn.set_label("Filter")
 
         self.filter_toggle_btn.set_tooltip_text("Show/hide system filters")
         self.filter_toggle_btn.add_css_class("flat")
@@ -429,7 +425,7 @@ class MainWindowBuilder:
 
         self.filter_sort_btn = Gtk.Button()
         self.filter_sort_btn.set_icon_name("view-sort-descending-symbolic")
-        self.filter_sort_btn.set_tooltip_text("Newest first ↓")
+        self.filter_sort_btn.set_tooltip_text("Newest first")
         self.filter_sort_btn.add_css_class("flat")
         self.filter_sort_btn.add_css_class("sort-toggle")
         self.filter_sort_btn.connect("clicked", lambda btn: self.window._toggle_sort_from_toolbar())

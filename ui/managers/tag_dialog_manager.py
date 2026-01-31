@@ -11,8 +11,7 @@ from ui.services.ipc_helpers import connect as ipc_connect
 from ui.utils.color_utils import sanitize_color
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import GLib, Gtk
 
 logger = logging.getLogger("TFCBM.TagDialogManager")
 
@@ -59,9 +58,18 @@ class TagDialogManager:
 
     def show_create_dialog(self):
         """Show dialog to create a new tag."""
-        dialog = Adw.MessageDialog.new(self.parent_window)
-        dialog.set_heading("Create New Tag")
-        dialog.set_body("Enter a name for the new tag")
+        dialog = Gtk.MessageDialog(
+            transient_for=self.parent_window,
+            modal=True,
+            message_type=Gtk.MessageType.OTHER,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Create New Tag",
+            secondary_text="Enter a name for the new tag",
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Create", Gtk.ResponseType.OK)
+        ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+        ok_button.add_css_class("suggested-action")
 
         # Create entry for tag name
         entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -84,13 +92,12 @@ class TagDialogManager:
         color_flow.select_child(color_flow.get_child_at_index(0))
         entry_box.append(color_flow)
 
-        dialog.set_extra_child(entry_box)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("create", "Create")
-        dialog.set_response_appearance("create", Adw.ResponseAppearance.SUGGESTED)
+        message_area = dialog.get_message_area()
+        message_area.append(entry_box)
 
         def on_response(dialog, response):
-            if response == "create":
+            dialog.close()
+            if response == Gtk.ResponseType.OK:
                 tag_name = name_entry.get_text().strip()
                 if not tag_name:
                     logger.warning("Tag name cannot be empty")
@@ -121,9 +128,18 @@ class TagDialogManager:
                 self.parent_window.show_notification("Tag not found")
             return
 
-        dialog = Adw.MessageDialog.new(self.parent_window)
-        dialog.set_heading("Edit Tag")
-        dialog.set_body(f"Modify the tag '{tag.get('name')}'")
+        dialog = Gtk.MessageDialog(
+            transient_for=self.parent_window,
+            modal=True,
+            message_type=Gtk.MessageType.OTHER,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Edit Tag",
+            secondary_text=f"Modify the tag '{tag.get('name')}'",
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Save", Gtk.ResponseType.OK)
+        ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+        ok_button.add_css_class("suggested-action")
 
         # Create entry for tag name
         entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -151,13 +167,12 @@ class TagDialogManager:
         color_flow.select_child(color_flow.get_child_at_index(current_color_index))
         entry_box.append(color_flow)
 
-        dialog.set_extra_child(entry_box)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("save", "Save")
-        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+        message_area = dialog.get_message_area()
+        message_area.append(entry_box)
 
         def on_response(dialog, response):
-            if response == "save":
+            dialog.close()
+            if response == Gtk.ResponseType.OK:
                 tag_name = name_entry.get_text().strip()
                 if not tag_name:
                     logger.warning("Tag name cannot be empty")
@@ -341,9 +356,18 @@ class TagDialogManager:
         Args:
             tag: Tag data dict
         """
-        dialog = Adw.MessageDialog.new(self.parent_window)
-        dialog.set_heading("Rename Tag")
-        dialog.set_body(f"Rename '{tag['name']}'")
+        dialog = Gtk.MessageDialog(
+            transient_for=self.parent_window,
+            modal=True,
+            message_type=Gtk.MessageType.OTHER,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Rename Tag",
+            secondary_text=f"Rename '{tag['name']}'",
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Rename", Gtk.ResponseType.OK)
+        ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+        ok_button.add_css_class("suggested-action")
 
         # Create entry for new name
         entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -357,13 +381,12 @@ class TagDialogManager:
         name_entry.set_placeholder_text("Tag name")
         entry_box.append(name_entry)
 
-        dialog.set_extra_child(entry_box)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("rename", "Rename")
-        dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+        message_area = dialog.get_message_area()
+        message_area.append(entry_box)
 
         def on_response(dialog, response):
-            if response == "rename":
+            dialog.close()
+            if response == Gtk.ResponseType.OK:
                 new_name = name_entry.get_text().strip()
                 if not new_name:
                     logger.warning("Tag name cannot be empty")
@@ -379,9 +402,18 @@ class TagDialogManager:
         Args:
             tag: Tag data dict
         """
-        dialog = Adw.MessageDialog.new(self.parent_window)
-        dialog.set_heading("Change Tag Color")
-        dialog.set_body(f"Choose a new color for '{tag['name']}'")
+        dialog = Gtk.MessageDialog(
+            transient_for=self.parent_window,
+            modal=True,
+            message_type=Gtk.MessageType.OTHER,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Change Tag Color",
+            secondary_text=f"Choose a new color for '{tag['name']}'",
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Save", Gtk.ResponseType.OK)
+        ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+        ok_button.add_css_class("suggested-action")
 
         # Color picker
         entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -399,13 +431,12 @@ class TagDialogManager:
         color_flow.select_child(color_flow.get_child_at_index(current_color_index))
         entry_box.append(color_flow)
 
-        dialog.set_extra_child(entry_box)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("save", "Save")
-        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+        message_area = dialog.get_message_area()
+        message_area.append(entry_box)
 
         def on_response(dialog, response):
-            if response == "save":
+            dialog.close()
+            if response == Gtk.ResponseType.OK:
                 selected_color = self._get_selected_color(color_flow, current_color_index)
                 self._update_tag_on_server(tag['id'], tag.get('name', ''), selected_color)
 

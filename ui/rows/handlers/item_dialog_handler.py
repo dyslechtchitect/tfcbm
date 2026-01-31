@@ -17,9 +17,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gio", "2.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 
 logger = logging.getLogger("TFCBM.UI")
 
@@ -185,23 +184,26 @@ class ItemDialogHandler:
         window = self.get_root()
 
         # Create confirmation dialog
-        dialog = Adw.AlertDialog.new(
-            "Delete this item?",
-            "This item will be permanently removed from your clipboard history.",
+        dialog = Gtk.MessageDialog(
+            transient_for=window,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Delete this item?",
+            secondary_text="This item will be permanently removed from your clipboard history.",
         )
-
-        dialog.add_response("cancel", "Nah")
-        dialog.add_response("delete", "Yeah")
-        dialog.set_response_appearance("delete", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
+        dialog.add_button("Nah", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Yeah", Gtk.ResponseType.OK)
+        ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+        ok_button.add_css_class("suggested-action")
 
         def on_response(dialog, response):
-            if response == "delete":
+            dialog.close()
+            if response == Gtk.ResponseType.OK:
                 self.ipc_service.delete_item_from_server(self.item["id"])
 
         dialog.connect("response", on_response)
-        dialog.present(window)
+        dialog.present()
 
     def show_save_dialog(self):
         """Show file save dialog."""
@@ -351,7 +353,7 @@ class ItemDialogHandler:
         window = self.get_root()
         logger.info(f"Got root window: {window}")
 
-        dialog = Adw.Window(modal=True, transient_for=window)
+        dialog = Gtk.Window(modal=True, transient_for=window)
         dialog.set_title("Full Clipboard Item")
         dialog.set_default_size(800, 600)
 
@@ -619,5 +621,5 @@ class ItemDialogHandler:
                 content_scroll.set_child(file_info_box)
 
         main_box.append(content_scroll)
-        dialog.set_content(main_box)
+        dialog.set_child(main_box)
         dialog.present()

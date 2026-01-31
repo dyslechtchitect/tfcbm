@@ -11,9 +11,9 @@ import logging
 
 import gi
 
-gi.require_version("Adw", "1")
+gi.require_version("Gtk", "4.0")
 
-from gi.repository import Adw
+from gi.repository import Gtk
 
 from ui.dialogs import SecretNamingDialog
 
@@ -77,24 +77,28 @@ class ItemSecretManager:
                 logger.info("Already authenticated for unmark")
 
             # Show confirmation dialog after authentication
-            dialog = Adw.AlertDialog.new(
-                "Unmark as Protected?",
-                "Are you sure you want to remove protection from this item? The content will become visible.",
+            dialog = Gtk.MessageDialog(
+                transient_for=self.get_root(),
+                modal=True,
+                message_type=Gtk.MessageType.WARNING,
+                buttons=Gtk.ButtonsType.NONE,
+                text="Unmark as Protected?",
+                secondary_text="Are you sure you want to remove protection from this item? The content will become visible.",
             )
-            dialog.add_response("cancel", "Cancel")
-            dialog.add_response("confirm", "Unmark as Protected")
-            dialog.set_response_appearance("confirm", Adw.ResponseAppearance.DESTRUCTIVE)
-            dialog.set_default_response("cancel")
-            dialog.set_close_response("cancel")
+            dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+            dialog.add_button("Unmark as Protected", Gtk.ResponseType.OK)
+            ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+            ok_button.add_css_class("destructive-action")
 
             def on_response(dialog_obj, response):
-                if response == "confirm":
+                dialog_obj.close()
+                if response == Gtk.ResponseType.OK:
                     self.ipc_service.toggle_secret_status(item_id, False, item_name)
                 # Consume authentication regardless of user choice (confirm or cancel)
                 self.password_service.consume_authentication("toggle_secret", item_id)
 
             dialog.connect("response", on_response)
-            dialog.present(self.get_root())
+            dialog.present()
 
         # If marking as secret and item has no name, show naming dialog
         elif not item_name:

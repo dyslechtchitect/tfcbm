@@ -1,4 +1,4 @@
-"""Settings page component."""
+"""Settings page component - DE-agnostic GTK4 version."""
 
 import os
 from pathlib import Path
@@ -9,15 +9,83 @@ import gi
 import logging
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, GObject, Gtk, Gio
+from gi.repository import Gdk, GLib, GObject, Gtk, Gio
 
 logger = logging.getLogger("TFCBM.SettingsPage")
 
 from ui.domain.keyboard import KeyboardShortcut
 from ui.infrastructure.gtk_keyboard_parser import GtkKeyboardParser
-from ui.infrastructure.gsettings_store import GSettingsStore
+from ui.infrastructure.json_settings_store import JsonSettingsStore
 from ui.services.shortcut_service import ShortcutService
+
+
+def _create_settings_row(title, subtitle=None):
+    """Create a GTK4 ListBoxRow that mimics Adw.ActionRow layout."""
+    row = Gtk.ListBoxRow()
+    row.set_activatable(False)
+
+    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+    box.set_margin_top(8)
+    box.set_margin_bottom(8)
+    box.set_margin_start(12)
+    box.set_margin_end(12)
+
+    text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    text_box.set_hexpand(True)
+    text_box.set_valign(Gtk.Align.CENTER)
+
+    title_label = Gtk.Label(label=title)
+    title_label.set_halign(Gtk.Align.START)
+    title_label.set_wrap(True)
+    text_box.append(title_label)
+
+    if subtitle:
+        sub_label = Gtk.Label(label=subtitle)
+        sub_label.set_halign(Gtk.Align.START)
+        sub_label.add_css_class("dim-label")
+        sub_label.add_css_class("caption")
+        sub_label.set_wrap(True)
+        text_box.append(sub_label)
+
+    box.append(text_box)
+    row.set_child(box)
+    return row, box
+
+
+def _create_settings_group(title, description=None):
+    """Create a settings group (Frame with ListBox) mimicking Adw.PreferencesGroup."""
+    frame = Gtk.Frame()
+    frame.set_margin_start(12)
+    frame.set_margin_end(12)
+    frame.set_margin_top(8)
+    frame.set_margin_bottom(8)
+
+    outer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+
+    # Group title
+    title_label = Gtk.Label()
+    title_label.set_markup(f"<b>{title}</b>")
+    title_label.set_halign(Gtk.Align.START)
+    title_label.set_margin_start(4)
+    title_label.set_margin_top(4)
+    outer_box.append(title_label)
+
+    if description:
+        desc_label = Gtk.Label(label=description)
+        desc_label.set_halign(Gtk.Align.START)
+        desc_label.set_margin_start(4)
+        desc_label.add_css_class("dim-label")
+        desc_label.add_css_class("caption")
+        desc_label.set_wrap(True)
+        outer_box.append(desc_label)
+
+    listbox = Gtk.ListBox()
+    listbox.add_css_class("boxed-list")
+    listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+    outer_box.append(listbox)
+
+    frame.set_child(outer_box)
+    return frame, listbox
 
 
 class SettingsPage:
@@ -25,18 +93,14 @@ class SettingsPage:
         self,
         settings,
         on_notification: Callable[[str], None],
-        window=None,  # Optional window reference for direct communication
+        window=None,
     ):
         self.settings = settings
         self.on_notification = on_notification
-        self.window = window  # Store window reference for setting recording state
+        self.window = window
 
-        # Shortcut service setup
-        self.settings_store = GSettingsStore(
-            schema_id="org.gnome.shell.extensions.tfcbm-clipboard-monitor",
-            key="toggle-tfcbm-ui",
-            schema_dir=None, # schema_dir is now handled by the extension via D-Bus, not loaded by the Flatpak app.
-        )
+        # Shortcut service setup - using JSON settings store (DE-agnostic)
+        self.settings_store = JsonSettingsStore()
         self.shortcut_service = ShortcutService(self.settings_store)
         self.keyboard_parser = GtkKeyboardParser()
 
@@ -44,53 +108,58 @@ class SettingsPage:
         self.shortcut_display = None
         self.record_btn = None
         self.recording_status = None
-        self.key_controller = None  # Store keyboard event controller
-        self.parent_window = None  # Store reference to parent window
+        self.key_controller = None
+        self.parent_window = None
 
-    def build(self) -> Adw.PreferencesPage:
-        settings_page = Adw.PreferencesPage()
+    def build(self) -> Gtk.ScrolledWindow:
+        """Build the settings page using pure GTK4 widgets."""
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_vexpand(True)
 
-        # General settings group (FIRST!)
-        general_group = Adw.PreferencesGroup()
-        general_group.set_title("General")
-        general_group.set_description("General application settings")
+        page_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        page_box.set_margin_top(8)
+        page_box.set_margin_bottom(8)
 
-        # Load on startup switch
-        startup_row = Adw.SwitchRow()
-        startup_row.set_title("Start on Login")
-        startup_row.set_subtitle("Automatically start TFCBM app and show tray icon when you log in")
-        startup_row.set_active(self._is_autostart_enabled())
-        startup_row.connect("notify::active", self._on_autostart_toggled)
-        general_group.add(startup_row)
+        # General settings group
+        general_frame, general_list = _create_settings_group(
+            "General", "General application settings"
+        )
 
-        settings_page.add(general_group)
+        startup_row, startup_box = _create_settings_row(
+            "Start on Login",
+            "Automatically start TFCBM app and show tray icon when you log in"
+        )
+        startup_switch = Gtk.Switch()
+        startup_switch.set_active(self._is_autostart_enabled())
+        startup_switch.set_valign(Gtk.Align.CENTER)
+        startup_switch.connect("notify::active", self._on_autostart_toggled)
+        startup_box.append(startup_switch)
+        general_list.append(startup_row)
+
+        page_box.append(general_frame)
 
         # Clipboard behavior group
-        clipboard_group = self._build_clipboard_group()
-        settings_page.add(clipboard_group)
+        clipboard_frame, clipboard_list = self._build_clipboard_group()
+        page_box.append(clipboard_frame)
 
         # Keyboard shortcut group
-        shortcut_group = self._build_shortcut_group()
-        settings_page.add(shortcut_group)
+        shortcut_frame, shortcut_list = self._build_shortcut_group()
+        page_box.append(shortcut_frame)
 
         # Retention settings group
-        retention_group = self._build_retention_group()
-        settings_page.add(retention_group)
+        retention_frame, retention_list = self._build_retention_group()
+        page_box.append(retention_frame)
 
-        storage_group = Adw.PreferencesGroup()
-        storage_group.set_title("Storage")
-        storage_group.set_description("Database storage information")
+        # Storage group
+        storage_frame, storage_list = _create_settings_group(
+            "Storage", "Database storage information"
+        )
 
-        db_size_row = Adw.ActionRow()
-        db_size_row.set_title("Database Size")
-
-        # Use AppPaths to get correct database location (handles flatpak)
         from ui.config import AppPaths
         db_path = AppPaths.default().db_path
         if db_path.exists():
             size_bytes = os.path.getsize(db_path)
-
-            # Format size with appropriate units
             if size_bytes == 0:
                 size_str = "Empty (0 bytes)"
             elif size_bytes < 1024:
@@ -101,43 +170,39 @@ class SettingsPage:
             else:
                 size_mb = size_bytes / (1024 * 1024)
                 size_str = f"{size_mb:.2f} MB"
-
-            db_size_row.set_subtitle(size_str)
         else:
-            db_size_row.set_subtitle("Database not found")
+            size_str = "Database not found"
 
-        storage_group.add(db_size_row)
-        settings_page.add(storage_group)
+        db_row, db_box = _create_settings_row("Database Size", size_str)
+        storage_list.append(db_row)
+        page_box.append(storage_frame)
 
-        # Extension management group
-        extension_group = self._build_extension_group()
-        settings_page.add(extension_group)
+        scrolled.set_child(page_box)
+        return scrolled
 
-        return settings_page
-
-    def _build_clipboard_group(self) -> Adw.PreferencesGroup:
+    def _build_clipboard_group(self):
         """Build the clipboard behavior settings section."""
-        group = Adw.PreferencesGroup()
-        group.set_title("Clipboard Behavior")
-        group.set_description("Configure keyboard selection behavior")
+        frame, listbox = _create_settings_group(
+            "Clipboard Behavior", "Configure keyboard selection behavior"
+        )
 
-        # Refocus on copy switch
-        refocus_row = Adw.SwitchRow()
-        refocus_row.set_title("Refocus on Copy")
-        refocus_row.set_subtitle(
+        row, box = _create_settings_row(
+            "Refocus on Copy",
             "Automatically hide window and refocus previous app when selecting via keyboard"
         )
-        refocus_row.set_active(self.settings.refocus_on_copy)
-        refocus_row.connect("notify::active", self._on_refocus_on_copy_toggled)
-        group.add(refocus_row)
+        refocus_switch = Gtk.Switch()
+        refocus_switch.set_active(self.settings.refocus_on_copy)
+        refocus_switch.set_valign(Gtk.Align.CENTER)
+        refocus_switch.connect("notify::active", self._on_refocus_on_copy_toggled)
+        box.append(refocus_switch)
+        listbox.append(row)
 
-        return group
+        return frame, listbox
 
-    def _on_refocus_on_copy_toggled(self, switch_row, _param):
+    def _on_refocus_on_copy_toggled(self, switch, _param):
         """Handle refocus on copy toggle."""
-        is_enabled = switch_row.get_active()
+        is_enabled = switch.get_active()
 
-        # Update via IPC in background thread
         import threading
 
         def update_in_thread():
@@ -148,7 +213,7 @@ class SettingsPage:
         thread.start()
 
     def _update_clipboard_settings_sync(self, refocus_on_copy: bool) -> dict:
-        """Update clipboard settings via IPC synchronously (runs in background thread)."""
+        """Update clipboard settings via IPC synchronously."""
         import asyncio
         import json
         from ui.services.ipc_helpers import connect as ipc_connect
@@ -178,7 +243,6 @@ class SettingsPage:
     def _handle_clipboard_settings_result(self, result: dict, refocus_on_copy: bool):
         """Handle clipboard settings update result in GTK main thread."""
         if result.get("status") == "success":
-            # Update local in-memory settings reference
             self.settings.settings.clipboard.refocus_on_copy = refocus_on_copy
 
             if refocus_on_copy:
@@ -191,78 +255,65 @@ class SettingsPage:
                 )
         else:
             self.on_notification(f"Error updating setting: {result.get('message', 'Unknown error')}")
-            print(f"Error updating refocus_on_copy: {result.get('message')}")
 
-        return False  # Don't repeat idle_add
+        return False
 
-    def _build_shortcut_group(self) -> Adw.PreferencesGroup:
+    def _build_shortcut_group(self):
         """Build the keyboard shortcut recorder section."""
-        group = Adw.PreferencesGroup()
-        group.set_title("Keyboard Shortcut")
-        group.set_description("Configure the global keyboard shortcut to toggle TFCBM")
+        frame, listbox = _create_settings_group(
+            "Keyboard Shortcut", "Configure the global keyboard shortcut to toggle TFCBM"
+        )
 
         # Current shortcut display row
-        shortcut_row = Adw.ActionRow()
-        shortcut_row.set_title("Current Shortcut")
+        row, box = _create_settings_row("Current Shortcut")
 
-        # Display current shortcut
         current = self.shortcut_service.get_current_shortcut()
         if current:
             display_text = current.to_display_string()
         else:
-            # No shortcut set - initialize with the default from schema
             display_text = "Ctrl+Escape (default)"
             logger.info("No shortcut configured, initializing with default: Ctrl+Escape")
             default_shortcut = KeyboardShortcut(modifiers=["Ctrl"], key="Escape")
-            # Apply the default shortcut to ensure it's actually set in GSettings
             success = self.settings_store.set_shortcut(default_shortcut)
             if success:
-                logger.info("Default shortcut initialized successfully")
                 current = default_shortcut
-            else:
-                logger.warning("Failed to initialize default shortcut")
 
         self.shortcut_display = Gtk.Label()
         self.shortcut_display.set_markup(f"<b>{display_text}</b>")
         self.shortcut_display.set_valign(Gtk.Align.CENTER)
-        shortcut_row.add_suffix(self.shortcut_display)
-
-        group.add(shortcut_row)
+        box.append(self.shortcut_display)
+        listbox.append(row)
 
         # Record new shortcut row
-        record_row = Adw.ActionRow()
-        record_row.set_title("Record New Shortcut")
-        record_row.set_subtitle("Click to record, then press any key combination")
-
+        record_row, record_box = _create_settings_row(
+            "Record New Shortcut", "Click to record, then press any key combination"
+        )
         self.record_btn = Gtk.Button()
         self.record_btn.set_label("Record")
         self.record_btn.add_css_class("suggested-action")
         self.record_btn.set_valign(Gtk.Align.CENTER)
         self.record_btn.connect("clicked", self._on_record_button_clicked)
-        record_row.add_suffix(self.record_btn)
-
-        group.add(record_row)
+        record_box.append(self.record_btn)
+        listbox.append(record_row)
 
         # Recording status row
-        status_row = Adw.ActionRow()
-        status_row.set_title("")
+        status_row, status_box = _create_settings_row("")
         self.recording_status = Gtk.Label()
         self.recording_status.set_halign(Gtk.Align.START)
         self.recording_status.set_valign(Gtk.Align.CENTER)
-        status_row.set_child(self.recording_status)
-        group.add(status_row)
+        status_box.append(self.recording_status)
+        listbox.append(status_row)
 
         # Register as observer
         self.shortcut_service.add_observer(self)
 
-        return group
+        return frame, listbox
 
     def _on_record_button_clicked(self, button: Gtk.Button) -> None:
         """Handle record button click."""
         try:
             logger.info("Record button clicked")
             is_recording = self.shortcut_service.toggle_recording()
-            logger.info(f"Recording state toggled to: {is_recording}")
 
             if is_recording:
                 self.record_btn.set_label("Stop Recording")
@@ -270,38 +321,26 @@ class SettingsPage:
                 self.record_btn.add_css_class("destructive-action")
                 self.recording_status.set_markup("<i>Press any key combination...</i>")
 
-                # Disable the global keybinding so we can capture it in the GTK window
-                logger.info("Disabling global keybinding...")
+                # Disable keybinding during recording (no-op for JSON store)
                 self.settings_store.disable_keybinding()
 
-                # Attach keyboard controller to main window to capture shortcut
-                logger.info("Attaching keyboard controller...")
                 self._attach_keyboard_controller()
-                logger.info("Setting recording state...")
                 self._set_main_app_recording_state(True)
-                logger.info("Record mode activated successfully")
             else:
                 self.record_btn.set_label("Record")
                 self.record_btn.remove_css_class("destructive-action")
                 self.record_btn.add_css_class("suggested-action")
                 self.recording_status.set_text("")
 
-                # Remove keyboard controller when not recording
-                logger.info("Detaching keyboard controller...")
                 self._detach_keyboard_controller()
-                logger.info("Clearing recording state...")
                 self._set_main_app_recording_state(False)
-                # Re-enable the global keybinding
-                logger.info("Re-enabling global keybinding...")
                 self.settings_store.enable_keybinding()
-                logger.info("Record mode deactivated successfully")
         except Exception as e:
             logger.error(f"Error in record button click handler: {e}", exc_info=True)
             self.on_notification(f"Error: {str(e)}")
 
     def _attach_keyboard_controller(self) -> None:
         """Attach keyboard event controller to window for shortcut recording."""
-        # Get the parent window
         if not self.parent_window:
             widget = self.record_btn
             while widget:
@@ -314,183 +353,131 @@ class SettingsPage:
             logger.error("Could not find parent window for keyboard controller")
             return
 
-        # Create and attach keyboard controller
         self.key_controller = Gtk.EventControllerKey.new()
         self.key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         self.key_controller.connect("key-pressed", self._on_key_pressed_for_recording)
         self.parent_window.add_controller(self.key_controller)
-        logger.debug("Attached keyboard controller to window")
 
     def _detach_keyboard_controller(self) -> None:
         """Remove keyboard event controller from window."""
         if self.key_controller and self.parent_window:
             self.parent_window.remove_controller(self.key_controller)
             self.key_controller = None
-            logger.debug("Detached keyboard controller from window")
 
     def _on_key_pressed_for_recording(
         self, controller: Gtk.EventControllerKey, keyval: int, keycode: int, state: int
     ) -> bool:
-        """Handle key press during shortcut recording (no popup)."""
-        logger.info(f"🔑 Key pressed: keyval={keyval}, keycode={keycode}, state={state}, is_recording={self.shortcut_service.is_recording}")
-
+        """Handle key press during shortcut recording."""
         if not self.shortcut_service.is_recording:
-            logger.warning("Key pressed but service not in recording mode!")
             return False
 
         try:
-            # Parse the key event
             event = self.keyboard_parser.parse_key_event(keyval, keycode, state)
-            logger.info(f"✅ Parsed event: {event}")
-
-            # Process it through the service
             shortcut = self.shortcut_service.process_key_event(event)
-            logger.info(f"✅ Processed shortcut: {shortcut}")
 
             if shortcut:
-                # Apply it to the extension
-                logger.info(f"🎯 Applying shortcut: {shortcut.to_display_string()}")
+                logger.info(f"Applying shortcut: {shortcut.to_display_string()}")
                 self.shortcut_service.apply_shortcut(shortcut)
-                # Note: Controller will be detached in on_shortcut_applied callback
                 return True
-            else:
-                logger.info("⚠️ No shortcut generated (likely modifier-only)")
-
         except Exception as e:
-            logger.error(f"❌ Error processing key event: {e}", exc_info=True)
+            logger.error(f"Error processing key event: {e}", exc_info=True)
 
         return False
-
-
 
     # ShortcutObserver implementations
     def on_shortcut_recorded(self, shortcut: KeyboardShortcut) -> None:
         """Called when a shortcut is recorded."""
-        logger.info(f"📝 Shortcut recorded: {shortcut.to_display_string()}")
-        pass  # Handled in on_shortcut_applied
+        pass
 
     def on_shortcut_applied(self, shortcut: KeyboardShortcut, success: bool) -> None:
         """Called when a shortcut application completes."""
-        logger.info(f"🔄 on_shortcut_applied callback: shortcut={shortcut.to_display_string()}, success={success}")
         display_text = shortcut.to_display_string()
 
         if success:
             self.shortcut_display.set_markup(f"<b>{display_text}</b>")
             self.recording_status.set_markup(
-                f"<span color='green'>✓ Applied: {display_text}</span>"
+                f"<span color='green'>Applied: {display_text}</span>"
             )
-            self.on_notification(
-                f"Shortcut changed to {display_text}! The extension will use it immediately."
-            )
-            logger.info(f"✅ Shortcut successfully applied: {display_text}")
+            self.on_notification(f"Shortcut changed to {display_text}!")
         else:
             self.recording_status.set_markup(
-                f"<span color='red'>✗ Failed to apply shortcut</span>"
+                f"<span color='red'>Failed to apply shortcut</span>"
             )
-            self.on_notification(
-                "Failed to apply shortcut. Make sure the extension is enabled."
-            )
-            logger.error(f"❌ Failed to apply shortcut: {display_text}")
+            self.on_notification("Failed to apply shortcut.")
 
-        # Reset button state and detach controller
         self.record_btn.set_label("Record")
         self.record_btn.remove_css_class("destructive-action")
         self.record_btn.add_css_class("suggested-action")
         self._detach_keyboard_controller()
-        # CRITICAL: Clear the recording flag so shortcuts work!
         self._set_main_app_recording_state(False)
-        # Re-enable the global keybinding
-        logger.info("Re-enabling global keybinding after shortcut applied...")
         self.settings_store.enable_keybinding()
-        logger.info("🔚 Recording mode UI reset complete")
 
-    def _build_retention_group(self) -> Adw.PreferencesGroup:
+    def _build_retention_group(self):
         """Build the retention settings section."""
-        group = Adw.PreferencesGroup()
-        group.set_title("Item Retention")
-        group.set_description("Automatically clean up old clipboard items")
+        frame, listbox = _create_settings_group(
+            "Item Retention", "Automatically clean up old clipboard items"
+        )
 
         # Enable retention switch
-        retention_switch = Adw.SwitchRow()
-        retention_switch.set_title("Enable Automatic Cleanup")
-        retention_switch.set_subtitle("Delete oldest items when limit is reached")
-        retention_switch.set_active(self.settings.retention_enabled)
-        retention_switch.connect("notify::active", self._on_retention_toggled)
-        group.add(retention_switch)
+        retention_row, retention_box = _create_settings_row(
+            "Enable Automatic Cleanup",
+            "Delete oldest items when limit is reached"
+        )
+        self.retention_switch = Gtk.Switch()
+        self.retention_switch.set_active(self.settings.retention_enabled)
+        self.retention_switch.set_valign(Gtk.Align.CENTER)
+        retention_box.append(self.retention_switch)
+        listbox.append(retention_row)
 
         # Max items spinner
-        max_items_row = Adw.SpinRow()
-        max_items_row.set_title("Maximum Items")
-        max_items_row.set_subtitle("Keep only this many recent items (10-10000)")
-        max_items_row.set_adjustment(
-            Gtk.Adjustment.new(
-                value=self.settings.retention_max_items,
-                lower=10,
-                upper=10000,
-                step_increment=10,
-                page_increment=100,
-                page_size=0,
-            )
+        max_items_row, max_items_box = _create_settings_row(
+            "Maximum Items", "Keep only this many recent items (10-10000)"
         )
-        max_items_row.set_digits(0)
-        max_items_row.connect("notify::value", self._on_max_items_changed)
-
-        # Enable/disable based on retention switch
-        max_items_row.set_sensitive(self.settings.retention_enabled)
-        retention_switch.bind_property(
-            "active",
-            max_items_row,
-            "sensitive",
-            GObject.BindingFlags.SYNC_CREATE
+        adjustment = Gtk.Adjustment.new(
+            value=self.settings.retention_max_items,
+            lower=10,
+            upper=10000,
+            step_increment=10,
+            page_increment=100,
+            page_size=0,
         )
+        self.max_items_spin = Gtk.SpinButton()
+        self.max_items_spin.set_adjustment(adjustment)
+        self.max_items_spin.set_digits(0)
+        self.max_items_spin.set_valign(Gtk.Align.CENTER)
+        self.max_items_spin.set_sensitive(self.settings.retention_enabled)
 
-        self.retention_switch = retention_switch
-        self.max_items_row = max_items_row
-        group.add(max_items_row)
+        # Bind sensitivity to retention switch
+        self.retention_switch.connect("notify::active",
+            lambda sw, _: self.max_items_spin.set_sensitive(sw.get_active()))
+
+        max_items_box.append(self.max_items_spin)
+        listbox.append(max_items_row)
 
         # Apply button
-        apply_row = Adw.ActionRow()
-        apply_row.set_title("Apply Retention Settings")
-        apply_row.set_subtitle("Save changes and apply cleanup if needed")
-
+        apply_row, apply_box = _create_settings_row(
+            "Apply Retention Settings",
+            "Save changes and apply cleanup if needed"
+        )
         apply_button = Gtk.Button()
         apply_button.set_label("Apply")
         apply_button.add_css_class("suggested-action")
         apply_button.set_valign(Gtk.Align.CENTER)
         apply_button.connect("clicked", self._on_apply_retention)
-        apply_row.add_suffix(apply_button)
+        apply_box.append(apply_button)
+        listbox.append(apply_row)
 
-        group.add(apply_row)
-
-        return group
-
-    def _on_retention_toggled(self, switch_row, _param):
-        """Handle retention toggle - just update in-memory setting."""
-        # Setting will be saved when user confirms in the dialog
-        pass
-
-    def _on_max_items_changed(self, spin_row, _param):
-        """Handle max items change - show confirmation if reducing."""
-        new_value = int(spin_row.get_value())
-        current_value = self.settings.retention_max_items
-
-        if new_value < current_value:
-            # User is reducing limit - will need confirmation
-            # This will be handled by the save button
-            pass
+        return frame, listbox
 
     def _on_apply_retention(self, button: Gtk.Button):
         """Handle retention settings apply button."""
         import threading
 
         new_enabled = self.retention_switch.get_active()
-        new_max_items = int(self.max_items_row.get_value())
+        new_max_items = int(self.max_items_spin.get_value())
         current_max_items = self.settings.retention_max_items
 
-        # Calculate if we need to delete items
         if new_enabled and new_max_items < current_max_items:
-            # User is reducing the limit - show confirmation
-            # First get item count in background thread
             def get_count_and_confirm():
                 total = self._get_total_count_sync()
                 GLib.idle_add(self._show_retention_confirmation_with_count, new_enabled, new_max_items, total)
@@ -498,11 +485,10 @@ class SettingsPage:
             thread = threading.Thread(target=get_count_and_confirm, daemon=True)
             thread.start()
         else:
-            # No deletion needed, just save
             self._save_retention_settings_threaded(new_enabled, new_max_items, delete_count=0)
 
     def _get_total_count_sync(self) -> int:
-        """Get total item count synchronously (runs in background thread)."""
+        """Get total item count synchronously."""
         import asyncio
         import json
         from ui.services.ipc_helpers import connect as ipc_connect
@@ -527,49 +513,52 @@ class SettingsPage:
         return total
 
     def _show_retention_confirmation_with_count(self, enabled: bool, max_items: int, total_items: int):
-        """Show confirmation dialog with pre-calculated item count (runs in GTK main thread)."""
+        """Show confirmation dialog with pre-calculated item count."""
         items_to_delete = max(0, total_items - max_items)
 
         if items_to_delete == 0:
-            # No items to delete
             self._save_retention_settings_threaded(enabled, max_items, delete_count=0)
-            return False  # Don't repeat idle_add
+            return False
 
-        # Show confirmation dialog
-        dialog = Adw.MessageDialog.new(
-            None,  # parent window
-            "Delete Old Items?",
-            f"{items_to_delete} oldest items will be deleted to meet the new limit of {max_items} items."
+        # Find parent window
+        parent = self.window
+        if not parent and self.parent_window:
+            parent = self.parent_window
+
+        dialog = Gtk.MessageDialog(
+            transient_for=parent,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Delete Old Items?",
+            secondary_text=f"{items_to_delete} oldest items will be deleted to meet the new limit of {max_items} items.",
         )
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("delete", "Delete Items")
-        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        delete_btn = dialog.add_button("Delete Items", Gtk.ResponseType.OK)
+        delete_btn.add_css_class("destructive-action")
 
-        def on_response(dialog, response):
-            if response == "delete":
+        def on_response(dialog, response_id):
+            if response_id == Gtk.ResponseType.OK:
                 self._save_retention_settings_threaded(enabled, max_items, delete_count=items_to_delete)
-            dialog.close()
+            dialog.destroy()
 
         dialog.connect("response", on_response)
         dialog.present()
-        return False  # Don't repeat idle_add
+        return False
 
     def _save_retention_settings_threaded(self, enabled: bool, max_items: int, delete_count: int):
-        """Save retention settings in background thread to avoid UI freeze."""
+        """Save retention settings in background thread."""
         import threading
 
         def save_in_thread():
             result = self._save_retention_settings_sync(enabled, max_items, delete_count)
-            # Update UI in main thread
             GLib.idle_add(self._handle_retention_save_result, result, enabled, max_items)
 
         thread = threading.Thread(target=save_in_thread, daemon=True)
         thread.start()
 
     def _save_retention_settings_sync(self, enabled: bool, max_items: int, delete_count: int) -> dict:
-        """Save retention settings synchronously (runs in background thread)."""
+        """Save retention settings synchronously."""
         import asyncio
         import json
         from ui.services.ipc_helpers import connect as ipc_connect
@@ -601,8 +590,6 @@ class SettingsPage:
     def _handle_retention_save_result(self, result: dict, enabled: bool, max_items: int):
         """Handle save result in GTK main thread."""
         if result.get("status") == "success":
-            # Update local in-memory settings reference
-            # Note: The backend already saved to file via IPC handler
             self.settings.settings.retention.enabled = enabled
             self.settings.settings.retention.max_items = max_items
 
@@ -616,7 +603,7 @@ class SettingsPage:
         else:
             self.on_notification(f"Error: {result.get('message', 'Unknown error')}")
 
-        return False  # Don't repeat idle_add
+        return False
 
     def _is_autostart_enabled(self) -> bool:
         """Check if autostart is enabled from app settings."""
@@ -627,10 +614,8 @@ class SettingsPage:
         logger.info(f"Starting autostart portal call: enable={enable}")
 
         try:
-            logger.debug("Getting session bus")
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 
-            logger.debug("Creating D-Bus proxy")
             proxy = Gio.DBusProxy.new_sync(
                 bus,
                 Gio.DBusProxyFlags.NONE,
@@ -641,55 +626,33 @@ class SettingsPage:
                 None
             )
 
-            logger.debug(f"Building portal options with autostart={enable}")
-
             try:
-                # Determine the command to use
-                # When running in Flatpak, use the flatpak run command
                 app_id = self._get_installed_app_id()
                 commandline = ["flatpak", "run", app_id]
 
-                logger.debug(f"Using commandline: {commandline}")
-
-                # Build options dictionary
-                logger.debug("Creating options dictionary")
                 options = {
                     "reason": GLib.Variant("s", "TFCBM clipboard history manager"),
                     "autostart": GLib.Variant("b", enable),
                     "commandline": GLib.Variant("as", commandline),
                     "dbus-activatable": GLib.Variant("b", False),
                 }
-                logger.debug(f"Options dict created: {options}")
 
-                # Build the full request variant
-                logger.debug("Creating request Variant tuple")
                 request_variant = GLib.Variant("(sa{sv})", ("", options))
-                logger.debug(f"Request Variant created: {request_variant}")
 
             except Exception as variant_error:
                 logger.error(f"Error building Variant: {variant_error}")
                 raise
 
-            logger.debug("Calling RequestBackground portal method")
-            # Call RequestBackground - portal handles creating/removing autostart file
             result = proxy.call_sync(
                 "RequestBackground",
                 request_variant,
                 Gio.DBusCallFlags.NONE,
-                -1,  # timeout
+                -1,
                 None
             )
 
-            logger.info(f"Portal call completed, result type: {type(result)}, result: {result}")
-
-            # For now, just assume success if no exception was raised
-            # The portal might return a handle or empty result
-            logger.info("Portal call succeeded, saving setting")
-
             try:
-                logger.debug(f"Updating settings with application.autostart_enabled={enable}")
                 self.settings.update_settings(**{"application.autostart_enabled": enable})
-                logger.debug("Settings updated successfully")
             except Exception as settings_error:
                 logger.error(f"Error updating settings: {settings_error}")
                 raise
@@ -701,57 +664,31 @@ class SettingsPage:
             return True
 
         except GLib.Error as e:
-            logger.error(f"GLib.Error calling portal: code={e.code if hasattr(e, 'code') else 'N/A'}, message={e.message if hasattr(e, 'message') else str(e)}")
+            logger.error(f"GLib.Error calling portal: {e}")
             self.on_notification("Error: Failed to change autostart setting.")
             return False
         except Exception as e:
-            logger.error(f"Exception calling portal: type={type(e).__name__}, value={e}, repr={repr(e)}")
+            logger.error(f"Exception calling portal: {e}")
             self.on_notification("Error: Failed to change autostart setting.")
             return False
 
-    def _on_autostart_toggled(self, switch_row, _param):
+    def _on_autostart_toggled(self, switch, _param):
         """Handle autostart toggle using Background Portal API."""
-        is_enabled = switch_row.get_active()
+        is_enabled = switch.get_active()
         success = self._set_autostart_via_portal(is_enabled)
         if not success:
-            # If setting autostart fails, revert the switch state
-            switch_row.set_active(not is_enabled)
-
-    def _build_extension_group(self) -> Adw.PreferencesGroup:
-        """Build the extension management section."""
-        group = Adw.PreferencesGroup()
-        group.set_title("GNOME Extension")
-        group.set_description("Manage the TFCBM GNOME Shell extension")
-
-        # Extension status row
-        from ui.utils.extension_check import get_extension_status
-        status = get_extension_status()
-
-        status_row = Adw.ActionRow()
-        status_row.set_title("Extension Status")
-        if status['ready']:
-            status_row.set_subtitle("Installed and running")
-        elif status['installed']:
-            status_row.set_subtitle("Installed but not enabled")
-        else:
-            status_row.set_subtitle("Not installed")
-        group.add(status_row)
-
-        return group
+            switch.set_active(not is_enabled)
 
     def _get_installed_app_id(self):
         """Get the app ID."""
         return 'io.github.dyslechtchitect.tfcbm'
 
     def _set_main_app_recording_state(self, is_recording: bool):
-        """Set the recording state directly on the window to prevent hiding during shortcut recording."""
-        # Use parent_window if window not available (parent_window is found via widget traversal)
+        """Set the recording state directly on the window."""
         target_window = self.window or self.parent_window
 
         if target_window:
-            # Set flag directly on the window
             target_window.is_recording_shortcut = is_recording
             logger.info(f"Recording state set directly on window: {is_recording}")
         else:
             logger.warning("No window reference available to set recording state")
-

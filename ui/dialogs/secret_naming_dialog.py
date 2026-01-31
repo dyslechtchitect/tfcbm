@@ -5,8 +5,7 @@ from typing import Callable, Optional
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
 
 
 class SecretNamingDialog:
@@ -25,16 +24,19 @@ class SecretNamingDialog:
 
     def show(self):
         """Show the naming dialog."""
-        dialog = Adw.AlertDialog.new(
-            "Name Required",
-            "Protected items must be named. Please enter a name for this item.",
+        dialog = Gtk.MessageDialog(
+            transient_for=self.parent_window,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Name Required",
+            secondary_text="Protected items must be named. Please enter a name for this item.",
         )
 
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("save", "Save")
-        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("save")
-        dialog.set_close_response("cancel")
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Save", Gtk.ResponseType.OK)
+        ok_button = dialog.get_widget_for_response(Gtk.ResponseType.OK)
+        ok_button.add_css_class("suggested-action")
 
         # Create content box
         content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -56,25 +58,33 @@ class SecretNamingDialog:
 
         content_box.append(name_entry)
 
-        dialog.set_extra_child(content_box)
+        message_area = dialog.get_message_area()
+        message_area.append(content_box)
 
         def on_response(dialog_obj, response):
-            if response == "save":
+            if response == Gtk.ResponseType.OK:
                 name = name_entry.get_text().strip()
                 print(f"[SecretNamingDialog] Save clicked, name: '{name}'")
                 if name:
                     print(f"[SecretNamingDialog] Calling on_save callback with name: '{name}'")
+                    dialog_obj.close()
                     self.on_save(name)
                 else:
                     # Show error if name is empty
                     print("[SecretNamingDialog] Name is empty, showing error")
-                    error_dialog = Adw.AlertDialog.new(
-                        "Name Required",
-                        "Please enter a non-empty name for this protected item.",
+                    error_dialog = Gtk.MessageDialog(
+                        transient_for=self.parent_window,
+                        modal=True,
+                        message_type=Gtk.MessageType.ERROR,
+                        buttons=Gtk.ButtonsType.OK,
+                        text="Name Required",
+                        secondary_text="Please enter a non-empty name for this protected item.",
                     )
-                    error_dialog.add_response("ok", "OK")
-                    error_dialog.set_default_response("ok")
-                    error_dialog.present(self.parent_window)
+                    error_dialog.connect("response", lambda d, r: d.close())
+                    error_dialog.present()
+                    return  # Don't close the main dialog
+            else:
+                dialog_obj.close()
 
         dialog.connect("response", on_response)
 
@@ -91,4 +101,4 @@ class SecretNamingDialog:
 
         name_entry.connect("activate", on_activate)
 
-        dialog.present(self.parent_window)
+        dialog.present()

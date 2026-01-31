@@ -54,15 +54,7 @@ install_data(
   install_dir: datadir / 'licenses' / meson.project_name()
 )
 
-# Bundle GNOME Shell extension files for user installation
-# Users can install via: flatpak run io.github.dyslechtchitect.tfcbm tfcbm-install-extension
-install_subdir('gnome-extension',
-  install_dir: datadir / 'gnome-shell/extensions/tfcbm-clipboard-monitor@github.com',
-  strip_directory: true,
-  exclude_files: ['install.sh', 'uninstall.sh', 'README.md', 'package.json']
-)
-
-# Configure and install wrapper scripts
+# Configure and install wrapper script
 conf_data = configuration_data()
 conf_data.set('PYTHON', python.full_path())
 conf_data.set('pkglibdir', pkglibdir)
@@ -70,15 +62,6 @@ conf_data.set('pkglibdir', pkglibdir)
 configure_file(
   input: 'tfcbm-wrapper.sh',
   output: 'tfcbm',
-  configuration: conf_data,
-  install: true,
-  install_dir: bindir,
-  install_mode: 'rwxr-xr-x'
-)
-
-configure_file(
-  input: 'tfcbm-install-extension.sh',
-  output: 'tfcbm-install-extension',
   configuration: conf_data,
   install: true,
   install_dir: bindir,

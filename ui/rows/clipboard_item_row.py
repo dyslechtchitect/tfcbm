@@ -21,9 +21,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gio", "2.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
 from ui.components.items import ItemActions, ItemContent, ItemHeader
 from ui.rows.handlers import (

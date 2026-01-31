@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
 import logging
 import signal

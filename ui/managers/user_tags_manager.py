@@ -12,9 +12,8 @@ from ui.services.ipc_helpers import connect as ipc_connect
 from ui.utils.color_utils import sanitize_color
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, GLib, GObject, Gtk
+from gi.repository import Gdk, GLib, GObject, Gtk
 
 logger = logging.getLogger("TFCBM.UserTagsManager")
 
@@ -24,7 +23,7 @@ class UserTagsManager:
 
     def __init__(
         self,
-        user_tags_group: Any,  # Adw.PreferencesGroup
+        user_tags_group: Any,  # Gtk.ListBox or similar container
         on_refresh_tag_display: Callable[[], None],
         on_item_tag_reload: Callable[[int, Gtk.ListBox, Gtk.ListBox], None],
         window: Any,  # Parent window for dialogs
@@ -32,7 +31,7 @@ class UserTagsManager:
         """Initialize UserTagsManager.
 
         Args:
-            user_tags_group: PreferencesGroup widget for Tag Manager tab
+            user_tags_group: ListBox widget for Tag Manager tab
             on_refresh_tag_display: Callback to refresh tag filter display
             on_item_tag_reload: Callback to reload tags for a clipboard item
             window: Parent window for dialogs
@@ -122,10 +121,15 @@ class UserTagsManager:
                             logger.error(f"Failed to create tag: {error_msg}")
 
                             def show_error():
-                                dialog = Adw.MessageDialog.new(parent_window)
-                                dialog.set_heading("Error Creating Tag")
-                                dialog.set_body(f"Failed to create tag: {error_msg}")
-                                dialog.add_response("ok", "OK")
+                                dialog = Gtk.MessageDialog(
+                                    transient_for=parent_window,
+                                    modal=True,
+                                    message_type=Gtk.MessageType.ERROR,
+                                    buttons=Gtk.ButtonsType.OK,
+                                    text="Error Creating Tag",
+                                    secondary_text=f"Failed to create tag: {error_msg}",
+                                )
+                                dialog.connect("response", lambda d, r: d.close())
                                 dialog.present()
 
                             GLib.idle_add(show_error)
@@ -179,10 +183,15 @@ class UserTagsManager:
                             logger.error(f"Failed to delete tag: {error_msg}")
 
                             def show_error():
-                                dialog = Adw.MessageDialog.new(parent_window)
-                                dialog.set_heading("Error Deleting Tag")
-                                dialog.set_body(f"Failed to delete tag: {error_msg}")
-                                dialog.add_response("ok", "OK")
+                                dialog = Gtk.MessageDialog(
+                                    transient_for=parent_window,
+                                    modal=True,
+                                    message_type=Gtk.MessageType.ERROR,
+                                    buttons=Gtk.ButtonsType.OK,
+                                    text="Error Deleting Tag",
+                                    secondary_text=f"Failed to delete tag: {error_msg}",
+                                )
+                                dialog.connect("response", lambda d, r: d.close())
                                 dialog.present()
 
                             GLib.idle_add(show_error)
@@ -302,10 +311,22 @@ class UserTagsManager:
 
         # Add tag rows to Tag Manager tab
         if not user_tags:
-            empty_row = Adw.ActionRow()
-            empty_row.set_title("No custom tags yet")
-            empty_row.set_subtitle("Create your first tag to organize clipboard items")
-            self.user_tags_group.add(empty_row)
+            empty_row = Gtk.ListBoxRow()
+            row_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            row_box.set_margin_start(12)
+            row_box.set_margin_end(12)
+            row_box.set_margin_top(8)
+            row_box.set_margin_bottom(8)
+            title_label = Gtk.Label(label="No custom tags yet")
+            title_label.set_halign(Gtk.Align.START)
+            row_box.append(title_label)
+            subtitle_label = Gtk.Label(label="Create your first tag to organize clipboard items")
+            subtitle_label.set_halign(Gtk.Align.START)
+            subtitle_label.add_css_class("dim-label")
+            subtitle_label.add_css_class("caption")
+            row_box.append(subtitle_label)
+            empty_row.set_child(row_box)
+            self.user_tags_group.append(empty_row)
             self._user_tag_rows.append(empty_row)
         else:
             for tag in user_tags:
@@ -313,13 +334,17 @@ class UserTagsManager:
                 tag_name = tag.get("name", "")
                 tag_color = tag.get("color", "#9a9996").strip()
 
-                tag_row = Adw.ActionRow()
-                tag_row.set_title(tag_name)
+                tag_row = Gtk.ListBoxRow()
+                row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                row_box.set_margin_start(12)
+                row_box.set_margin_end(12)
+                row_box.set_margin_top(8)
+                row_box.set_margin_bottom(8)
 
                 # Create a color indicator box
                 color_box = Gtk.Box()
                 color_box.set_size_request(20, 20)
-                color_box.add_css_class("card")
+                color_box.set_valign(Gtk.Align.CENTER)
 
                 # Apply color
                 css_provider = Gtk.CssProvider()
@@ -334,7 +359,13 @@ class UserTagsManager:
                 color_box.get_style_context().add_provider(
                     css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 )
-                tag_row.add_prefix(color_box)
+                row_box.append(color_box)
+
+                # Tag name label
+                name_label = Gtk.Label(label=tag_name)
+                name_label.set_halign(Gtk.Align.START)
+                name_label.set_hexpand(True)
+                row_box.append(name_label)
 
                 # Edit button
                 edit_button = Gtk.Button()
@@ -344,7 +375,7 @@ class UserTagsManager:
                 edit_button.connect(
                     "clicked", lambda b, tid=tag_id: self._on_edit_tag(tid)
                 )
-                tag_row.add_suffix(edit_button)
+                row_box.append(edit_button)
 
                 # Delete button
                 delete_button = Gtk.Button()
@@ -355,7 +386,9 @@ class UserTagsManager:
                 delete_button.connect(
                     "clicked", lambda b, tid=tag_id: self._on_delete_tag(tid)
                 )
-                tag_row.add_suffix(delete_button)
+                row_box.append(delete_button)
+
+                tag_row.set_child(row_box)
 
                 # Add drag source for drag-and-drop
                 drag_source = Gtk.DragSource.new()
@@ -364,7 +397,7 @@ class UserTagsManager:
                 drag_source.connect("drag-begin", self.on_tag_drag_begin)
                 tag_row.add_controller(drag_source)
 
-                self.user_tags_group.add(tag_row)
+                self.user_tags_group.append(tag_row)
                 self._user_tag_rows.append(tag_row)
 
         # Refresh tag filter display (to update the filter area)

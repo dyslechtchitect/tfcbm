@@ -17,11 +17,10 @@ import gi
 from ui.services.ipc_helpers import connect as ipc_connect
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gio", "2.0")
 
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
+from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from server.src.settings import get_settings
@@ -61,7 +60,7 @@ def highlight_text(text, query):
     return highlighted
 
 
-class ClipboardWindow(Adw.ApplicationWindow):
+class ClipboardWindow(Gtk.ApplicationWindow):
     """Main application window"""
 
     def __init__(self, app, server_pid=None):
@@ -129,8 +128,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.search_entry = widgets.search_entry
         self.tag_flowbox = widgets.tag_flowbox
         self.main_stack = widgets.main_stack
-        self.tab_view = widgets.tab_view
-        self.tab_bar = widgets.tab_bar
+        self.notebook = widgets.notebook
+        self.tab_view = widgets.notebook  # Compatibility alias
+        self.tab_bar = widgets.notebook   # Compatibility alias
         self.copied_scrolled = widgets.copied_scrolled
         self.copied_listbox = widgets.copied_listbox
         self.copied_loader = widgets.copied_loader
@@ -154,18 +154,16 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.filter_bar_manager.add_toolbar_separator()
         self.filter_sort_btn = self.filter_bar_manager.add_sort_button(
             on_sort_clicked=self._toggle_sort_from_toolbar,
-            initial_tooltip="Newest first ↓"
+            initial_tooltip="Newest first"
         )
         self.filter_bar_manager.add_jump_to_top_button(
             on_jump_clicked=self._jump_to_top_from_toolbar
         )
 
-        # Build filter bar widget and insert into main_box (after tab_bar)
-        # Builder already added: header, search, tab_bar, main_stack, tag_frame
-        # We need to insert filter_bar between tab_bar and main_stack
+        # Build filter bar widget and insert into main_box (after notebook)
         self.filter_bar_widget = self.filter_bar_manager.build()
-        # Insert filter_bar after tab_bar
-        widgets.main_box.insert_child_after(self.filter_bar_widget, widgets.tab_bar)
+        # Insert filter_bar after notebook
+        widgets.main_box.insert_child_after(self.filter_bar_widget, widgets.notebook)
 
         # Initialize NotificationManager and add its widget
         self.notification_manager = NotificationManager()
@@ -406,11 +404,16 @@ class ClipboardWindow(Adw.ApplicationWindow):
         """Show a notification message - delegates to NotificationManager"""
         self.notification_manager.show(message)
 
-    def _on_tab_switched(self, tab_view, param):
-        """Handle tab switching - delegates to TabManager"""
-        self.tab_manager.handle_tab_switched(tab_view, param)
-        # Update window's current_tab to match TabManager
-        self.current_tab = self.tab_manager.current_tab
+    def _on_tab_switched(self, notebook, page, page_num):
+        """Handle tab switching via Gtk.Notebook"""
+        if page_num == 0:
+            self.current_tab = "copied"
+        else:
+            self.current_tab = "pasted"
+
+        # Delegate to TabManager if available
+        if hasattr(self, 'tab_manager'):
+            self.tab_manager.handle_notebook_tab_switched(notebook, page, page_num)
 
     def _jump_to_top(self, list_type):
         """Scroll to the top of the specified list"""
@@ -468,8 +471,8 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.main_stack.set_visible_child_name("settings")
         self.title_stack.set_visible_child_name("settings")
         self.button_stack.set_visible_child_name("settings")
-        # Hide tab bar, filter bar, and search when in settings
-        self.tab_bar.set_visible(False)
+        # Hide notebook, filter bar, and search when in settings
+        self.notebook.set_visible(False)
         self.filter_bar_manager.set_visible(False)
         self.search_container.set_visible(False)
 
@@ -477,10 +480,10 @@ class ClipboardWindow(Adw.ApplicationWindow):
         self.main_stack.set_visible_child_name("tabs")
         self.title_stack.set_visible_child_name("main")
         self.button_stack.set_visible_child_name("main")
-        # Show tab bar and search when returning to main view
-        self.tab_bar.set_visible(True)
+        # Show notebook and search when returning to main view
+        self.notebook.set_visible(True)
         self.search_container.set_visible(True)
-        # Show filter bar when returning to clipboard tabs (Copied/Pasted)
+        # Show filter bar when returning to clipboard tabs
         self.filter_bar_manager.set_visible(True)
 
 
@@ -535,11 +538,7 @@ class ClipboardWindow(Adw.ApplicationWindow):
 
     def _reload_current_tab(self):
         """Reload items in the current tab"""
-        current_page = self.tab_view.get_selected_page()
-        if not current_page:
-            return
-
-        is_copied_tab = current_page.get_title() == "Copied"
+        is_copied_tab = self.current_tab == "copied"
         if is_copied_tab:
             # Clear and reload copied items
             for row in list(self.copied_listbox):
@@ -553,10 +552,9 @@ class ClipboardWindow(Adw.ApplicationWindow):
             self.history_loader.reset_pagination("pasted")
             self.history_loader.load_pasted_history()
 
-    def _on_close_page(self, tab_view, page):
-        """Prevent pages from being closed. This should also hide the close button."""
-        logger.info("Intercepted 'close-page' signal. Preventing tab closure.")
-        return True  # Returning True handles the signal and prevents the default action (closing)
+    def _on_close_page(self, *args):
+        """Prevent pages from being closed (compatibility stub)."""
+        return True
 
     def _on_search_changed_wrapper(self, entry):
         """Wrapper for search entry text changes - delegates to SearchManager"""
@@ -726,20 +724,22 @@ class ClipboardWindow(Adw.ApplicationWindow):
             print("Tag not found")
             return
 
-        dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Delete Tag")
-        dialog.set_body(
-            f"Are you sure you want to delete the tag '{tag.get('name')}'?"
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Delete Tag",
+            secondary_text=f"Are you sure you want to delete the tag '{tag.get('name')}'?",
         )
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("delete", "Delete")
-        dialog.set_response_appearance(
-            "delete", Adw.ResponseAppearance.DESTRUCTIVE
-        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        delete_btn = dialog.add_button("Delete", Gtk.ResponseType.OK)
+        delete_btn.add_css_class("destructive-action")
 
-        def on_response(dialog, response):
-            if response == "delete":
+        def on_response(dialog, response_id):
+            if response_id == Gtk.ResponseType.OK:
                 self._delete_tag_on_server(tag_id)
+            dialog.destroy()
 
         dialog.connect("response", on_response)
         dialog.present()
