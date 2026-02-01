@@ -81,7 +81,7 @@ class JsonSettingsStore(ISettingsStore):
         return True
 
     def enable_keybinding(self) -> bool:
-        """No-op for JSON store. Keybinding is handled by pynput/global shortcut service."""
+        """No-op for JSON store. Keybinding is handled by the global shortcut service."""
         return True
 
     def disable_keybinding(self) -> bool:

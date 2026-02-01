@@ -10,7 +10,8 @@ BUILD_DIR="build-dir"
 echo "🔧 Creating local development manifest..."
 
 # Create a temporary manifest that uses local directory
-sed 's|type: git|type: dir|g; s|url: .*|path: .|g; s|tag: .*||g' "$MANIFEST" > "$LOCAL_MANIFEST"
+# Only replace the git repo url (github), not PyPI file download urls
+sed 's|type: git|type: dir|g; /github\.com/{s|url: .*|path: .|g}; s|tag: .*||g' "$MANIFEST" > "$LOCAL_MANIFEST"
 
 echo "📦 Building and installing Flatpak from local sources..."
 flatpak-builder --user --install --force-clean "$BUILD_DIR" "$LOCAL_MANIFEST"

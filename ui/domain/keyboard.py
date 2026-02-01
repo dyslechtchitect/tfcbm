@@ -43,6 +43,23 @@ class KeyboardShortcut:
 
         return "".join(gsettings_modifiers) + self.key
 
+    def to_xdg_string(self) -> str:
+        """
+        Convert to XDG GlobalShortcuts portal format.
+
+        Returns:
+            String like "CTRL+SHIFT+k"
+        """
+        xdg_map = {
+            "Ctrl": "CTRL",
+            "Alt": "ALT",
+            "Shift": "SHIFT",
+            "Super": "LOGO",
+        }
+        parts = [xdg_map.get(mod, mod.upper()) for mod in self.modifiers]
+        parts.append(self.key)
+        return "+".join(parts)
+
     def to_display_string(self) -> str:
         """
         Convert to human-readable display string.

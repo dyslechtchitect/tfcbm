@@ -2,7 +2,7 @@
 # Python dependencies for local development
 
 # Production dependencies
-# GTK4 and Libadwaita (UI framework) - includes GdkPixbuf for image processing
+# GTK4 (UI framework) - includes GdkPixbuf for image processing
 PyGObject>=3.42.0
 
 # Development dependencies

@@ -170,7 +170,7 @@ class ClipboardWindow(Gtk.ApplicationWindow):
         widgets.main_box.append(self.notification_manager.get_widget())
 
         # Set window content
-        self.set_content(widgets.main_box)
+        self.set_child(widgets.main_box)
 
         # Store current tab state
         self.current_tab = "copied"
