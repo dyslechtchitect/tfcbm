@@ -31,6 +31,7 @@ class ClipboardApp(Gtk.Application):
         self.splash_window = None
         self.main_window = None  # Track main window even when hidden
         self.clipboard_monitor = None
+        self.shortcut_listener = None
 
         self.add_main_option(
             "activate",
@@ -135,6 +136,22 @@ class ClipboardApp(Gtk.Application):
             self.clipboard_monitor = None
             logger.info("Clipboard monitor stopped")
 
+    def _start_shortcut_listener(self):
+        """Start the XDG GlobalShortcuts portal listener in-process."""
+        if self.shortcut_listener:
+            return
+        from ui.services.shortcut_listener import ShortcutListener
+        self.shortcut_listener = ShortcutListener()
+        self.shortcut_listener.start()
+        logger.info("Shortcut listener started")
+
+    def _stop_shortcut_listener(self):
+        """Stop the shortcut listener."""
+        if self.shortcut_listener:
+            self.shortcut_listener.stop()
+            self.shortcut_listener = None
+            logger.info("Shortcut listener stopped")
+
     def _on_show_window_action(self, action, parameter):
         """Handle show-window action"""
         logger.info("show-window action triggered")
@@ -171,7 +188,7 @@ class ClipboardApp(Gtk.Application):
         """Called when application is shutting down - cleanup"""
         logger.info("Application shutting down")
 
-        # Stop clipboard monitoring
+        self._stop_shortcut_listener()
         self._stop_clipboard_monitor()
 
         self._cleanup_server()
@@ -367,6 +384,7 @@ class ClipboardApp(Gtk.Application):
 
             # Start clipboard monitoring (replaces GNOME extension monitoring)
             self._start_clipboard_monitor()
+            self._start_shortcut_listener()
 
             logger.info("Main window loaded and presented")
         except Exception as e:

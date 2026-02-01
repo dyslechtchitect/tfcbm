@@ -22,8 +22,5 @@ else
     sleep 0.5
 fi
 
-# Launch the shortcut listener in the background
-@PYTHON@ ui/services/shortcut_listener.py > /dev/null 2>&1 &
-
-# Launch the UI with server PID
+# Launch the UI (handles clipboard monitor + shortcut listener in-process)
 exec @PYTHON@ ui/main.py --server-pid $SERVER_PID --activate "$@"
