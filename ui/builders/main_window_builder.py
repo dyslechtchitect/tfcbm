@@ -108,7 +108,8 @@ class MainWindowBuilder:
         settings_buttons.append(back_button)
         button_stack.add_named(settings_buttons, "settings")
 
-        main_box.append(header)
+        # Header is set as the window titlebar (CSD) in ClipboardWindow,
+        # not packed into main_box, to avoid a double header on DEs like KDE.
 
         search_container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         search_container.set_margin_start(8)
@@ -189,11 +190,12 @@ class MainWindowBuilder:
 
         main_stack = Gtk.Stack()
         main_stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        main_stack.set_vexpand(True)
+        main_stack.set_visible(False)  # Start hidden; notebook is the default view
 
         # Use Gtk.Notebook instead of Adw.TabView/TabBar
         self.notebook = Gtk.Notebook()
         self.notebook.set_vexpand(True)
-        main_stack.add_named(self.notebook, "tabs")
 
         # Create Copied tab
         copied_scrolled = Gtk.ScrolledWindow()

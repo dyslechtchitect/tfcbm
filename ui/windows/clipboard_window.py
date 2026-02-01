@@ -169,6 +169,8 @@ class ClipboardWindow(Gtk.ApplicationWindow):
         self.notification_manager = NotificationManager()
         widgets.main_box.append(self.notification_manager.get_widget())
 
+        # Set header bar as CSD titlebar (avoids double header on KDE/XFCE)
+        self.set_titlebar(widgets.header)
         # Set window content
         self.set_child(widgets.main_box)
 
@@ -468,22 +470,21 @@ class ClipboardWindow(Gtk.ApplicationWindow):
         show_about_dialog(self)
 
     def _show_settings_page(self, button):
-        self.main_stack.set_visible_child_name("settings")
         self.title_stack.set_visible_child_name("settings")
         self.button_stack.set_visible_child_name("settings")
-        # Hide notebook, filter bar, and search when in settings
+        # Hide notebook, filter bar, and search; show settings
         self.notebook.set_visible(False)
         self.filter_bar_manager.set_visible(False)
         self.search_container.set_visible(False)
+        self.main_stack.set_visible(True)
 
     def _show_tabs_page(self, button):
-        self.main_stack.set_visible_child_name("tabs")
         self.title_stack.set_visible_child_name("main")
         self.button_stack.set_visible_child_name("main")
-        # Show notebook and search when returning to main view
+        # Hide settings; show notebook, search, and filter bar
+        self.main_stack.set_visible(False)
         self.notebook.set_visible(True)
         self.search_container.set_visible(True)
-        # Show filter bar when returning to clipboard tabs
         self.filter_bar_manager.set_visible(True)
 
 

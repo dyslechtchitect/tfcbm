@@ -1,6 +1,7 @@
 """Password authentication service for secrets with one-time operation model."""
 
 import logging
+import os
 import subprocess
 import time
 from typing import Optional
@@ -64,22 +65,12 @@ class PasswordService:
         # Use pkexec for native PolicyKit authentication dialog
         # When running in Flatpak, use flatpak-spawn to access host pkexec
         try:
-            # Check if we're running in Flatpak
-            import os
             in_flatpak = os.path.exists('/.flatpak-info')
             logger.info(f"[AUTH] Running in Flatpak: {in_flatpak}")
 
-            # Get current username
-            if in_flatpak:
-                whoami_cmd = ['flatpak-spawn', '--host', '--directory=/', 'whoami']
-            else:
-                whoami_cmd = ['whoami']
-            logger.info(f"[AUTH] Getting username with: {' '.join(whoami_cmd)}")
-            username_result = subprocess.run(whoami_cmd, capture_output=True, text=True)
-            if username_result.returncode != 0:
-                logger.error(f"[AUTH] Failed to get username. stderr: {username_result.stderr}")
-                return False
-            username = username_result.stdout.strip()
+            # Get current username (works inside Flatpak without flatpak-spawn)
+            from gi.repository import GLib
+            username = GLib.get_user_name()
             logger.info(f"[AUTH] Username: {username}")
 
             # Build pkexec command

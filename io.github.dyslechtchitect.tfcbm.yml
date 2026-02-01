@@ -10,6 +10,7 @@ finish-args:
   - --socket=fallback-x11
   - --device=dri
   - --filesystem=home:ro                                  # Required: Read file contents when files are copied
+  - --talk-name=org.freedesktop.Flatpak                    # Required: flatpak-spawn --host for pkexec auth dialog
 
 modules:
   - name: tfcbm
