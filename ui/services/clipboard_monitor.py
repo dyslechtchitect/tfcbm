@@ -17,7 +17,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 logger = logging.getLogger("TFCBM.ClipboardMonitor")
 
@@ -36,6 +36,7 @@ class ClipboardMonitor:
         self.on_clipboard_event = on_clipboard_event
         self._last_text_hash = None
         self._last_image_hash = None
+        self._last_uri_hash = None
         self._timeout_id = None
         self._running = False
         self._skip_next = True  # Skip the first check to avoid re-capturing existing clipboard
@@ -98,16 +99,77 @@ class ClipboardMonitor:
             self._skip_next = False
             return True  # Continue polling
 
-        # Check clipboard content formats
+        # Check clipboard content formats (file URIs first, then text, then images)
         content = self._clipboard.get_formats()
 
-        if content.contain_mime_type("text/plain") or content.contain_mime_type("UTF8_STRING") or content.contain_mime_type("text/plain;charset=utf-8"):
+        if content.contain_mime_type("text/uri-list"):
+            self._clipboard.read_async(
+                ["text/uri-list"],
+                GLib.PRIORITY_DEFAULT,
+                None,
+                self._on_uri_list_read,
+            )
+        elif content.contain_mime_type("text/plain") or content.contain_mime_type("UTF8_STRING") or content.contain_mime_type("text/plain;charset=utf-8"):
             self._clipboard.read_text_async(None, self._on_text_read)
         elif content.contain_mime_type("image/png") or content.contain_mime_type("image/jpeg"):
             # Read image data
             self._clipboard.read_texture_async(None, self._on_texture_read)
 
         return True  # Continue polling
+
+    def _on_uri_list_read(self, clipboard, result):
+        """Handle text/uri-list read from clipboard (file/folder copies)."""
+        try:
+            stream, _mime = clipboard.read_finish(result)
+            if not stream:
+                return
+
+            # Read all bytes from the stream (file URI lists are small)
+            data_stream = Gio.DataInputStream.new(stream)
+            raw = b""
+            while True:
+                chunk = data_stream.read_bytes(8192, None)
+                if not chunk or chunk.get_size() == 0:
+                    break
+                raw += chunk.get_data()
+            stream.close(None)
+
+            if not raw:
+                return
+
+            uri_text = raw.decode("utf-8", errors="replace").strip()
+            if not uri_text:
+                return
+
+            uri_hash = hashlib.md5(uri_text.encode("utf-8")).hexdigest()
+            if uri_hash == self._last_uri_hash:
+                return  # No change
+
+            self._last_uri_hash = uri_hash
+            self._last_text_hash = None
+            self._last_image_hash = None
+
+            # Filter to file:// URIs only, strip \r
+            uris = [
+                line.strip()
+                for line in uri_text.splitlines()
+                if line.strip().startswith("file://")
+            ]
+
+            if not uris:
+                return
+
+            event = {
+                "type": "file",
+                "data": "\n".join(uris),
+                "formatted_content": None,
+            }
+
+            logger.info("Clipboard file change detected: %d URI(s)", len(uris))
+            self.on_clipboard_event(event)
+
+        except Exception as e:
+            logger.debug("Error reading clipboard URI list: %s", e)
 
     def _on_text_read(self, clipboard, result):
         """Handle text read from clipboard."""
