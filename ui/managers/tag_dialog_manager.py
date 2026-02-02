@@ -203,7 +203,11 @@ class TagDialogManager:
             color_clean = sanitize_color(color)
             color_btn.color_value = color_clean
             css_provider = Gtk.CssProvider()
-            css_data = f"button {{ background-color: {color_clean}; border-radius: 20px; }}"
+            css_data = (
+                f"button {{ background-color: {color_clean}; background-image: none;"
+                f" border-radius: 20px; border: none; box-shadow: none;"
+                f" min-width: 40px; min-height: 40px; padding: 0; }}"
+            )
             try:
                 css_provider.load_from_string(css_data)
             except Exception as e:

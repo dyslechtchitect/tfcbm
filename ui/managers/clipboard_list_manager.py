@@ -152,10 +152,6 @@ class ClipboardListManager:
             )
             listbox.append(row)
 
-        # Update status label
-        current_count = len(items)
-        status_label.set_label(f"Showing {current_count} of {total_count} items")
-
         # Kill splash screen and show main window on initial copied history load
         if list_type == "copied" and offset == 0:
             import subprocess
@@ -213,9 +209,6 @@ class ClipboardListManager:
                 break
             current_count += 1
             index += 1
-
-        # Update status label
-        status_label.set_label(f"Showing {current_count} of {pagination_manager.total} items")
 
     def handle_ipc_message(self, data: Dict[str, Any]):
         msg_type = data.get("type")
@@ -322,8 +315,7 @@ class ClipboardListManager:
             current_count += 1
             index += 1
         # Update status label
-        total = self.copied_pagination_manager.total
-        self.copied_status_label.set_label(f"Showing {current_count} of {total} items")
+        pass
 
     def remove_item(self, item_id: str):
         """Remove an item from both lists by ID"""

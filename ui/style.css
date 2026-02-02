@@ -1,3 +1,9 @@
+/* Header title styling */
+.tfcbm-title {
+    color: #ADFF2F;
+    font-weight: 800;
+}
+
 /* Text item styling - remove background from TextView widgets */
 textview.clipboard-item-text,
 textview.clipboard-item-text text {

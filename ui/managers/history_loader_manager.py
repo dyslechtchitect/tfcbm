@@ -267,12 +267,6 @@ class HistoryLoaderManager:
             )
             self.copied_listbox.append(row)  # Append to maintain DESC order
 
-        # Update status label
-        current_count = len(items)
-        self.copied_status_label.set_label(
-            f"Showing {current_count} of {total_count} items"
-        )
-
         # Kill standalone splash screen and show main window
         subprocess.run(
             ["pkill", "-f", "ui/splash.py"], stderr=subprocess.DEVNULL
@@ -304,12 +298,6 @@ class HistoryLoaderManager:
                 search_query=self.get_search_query(),
             )
             self.pasted_listbox.append(row)  # Append to maintain DESC order
-
-        # Update status label
-        current_count = len(items)
-        self.pasted_status_label.set_label(
-            f"Showing {current_count} of {total_count} items"
-        )
 
         # Scroll to top
         vadj = self.pasted_scrolled.get_vadjustment()
@@ -474,13 +462,9 @@ class HistoryLoaderManager:
 
         # Update status label
         if list_type == "copied":
-            self.copied_status_label.set_label(
-                f"Showing {current_count} of {self.copied_total} items"
-            )
+            pass
         else:
-            self.pasted_status_label.set_label(
-                f"Showing {current_count} of {self.pasted_total} items"
-            )
+            pass
 
         return False  # Don't repeat
 

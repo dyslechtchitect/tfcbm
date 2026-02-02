@@ -33,26 +33,14 @@ class DatabaseService:
         logger.info("[DatabaseService.__init__] Initialization complete")
 
     def add_item(self, item_type: str, data: bytes, timestamp: str, **kwargs) -> int:
-        """Thread-safe add item to database with automatic retention cleanup"""
+        """Thread-safe add item to database"""
         with self.lock:
-            item_id = self.db.add_item(item_type, data, timestamp, **kwargs)
+            return self.db.add_item(item_type, data, timestamp, **kwargs)
 
-            # Apply retention policy if enabled
-            if self.settings_service:
-                retention_enabled = self.settings_service.retention_enabled
-                logger.debug(f"[RETENTION] Retention enabled: {retention_enabled}")
-                if retention_enabled:
-                    max_items = self.settings_service.retention_max_items
-                    logger.info(f"[RETENTION] Triggering cleanup with max_items={max_items} after adding item {item_id}")
-                    deleted = self.db.cleanup_old_items(max_items)
-                    if deleted > 0:
-                        logger.info(f"[RETENTION] Deleted {deleted} old items")
-                    else:
-                        logger.debug(f"[RETENTION] No items needed to be deleted (within limit)")
-            else:
-                logger.warning("[RETENTION] Settings service not available - skipping retention cleanup")
-
-            return item_id
+    def cleanup_old_items(self, max_items: int) -> list:
+        """Thread-safe retention cleanup. Returns list of deleted item IDs."""
+        with self.lock:
+            return self.db.cleanup_old_items(max_items)
 
     def get_item(self, item_id: int) -> Optional[Dict[str, Any]]:
         """Thread-safe get item from database"""

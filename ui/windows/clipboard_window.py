@@ -351,21 +351,7 @@ class ClipboardWindow(Gtk.ApplicationWindow):
 
     def _update_copied_status(self):
         """Update the copied items status label"""
-        # Count current items in listbox
-        current_count = 0
-        index = 0
-        while True:
-            row = self.copied_listbox.get_row_at_index(index)
-            if row is None:
-                break
-            current_count += 1
-            index += 1
-
-        # Update status label
-        total = getattr(self, "copied_total_count", current_count)
-        self.copied_status_label.set_label(
-            f"Showing {current_count} of {total} items"
-        )
+        pass
 
     def remove_item(self, item_id):
         """Remove an item from both lists by ID"""

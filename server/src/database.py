@@ -339,10 +339,9 @@ class ClipboardDB:
         )
         return item_id
 
-    def cleanup_old_items(self, max_items: int) -> int:
+    def cleanup_old_items(self, max_items: int) -> list:
         """
         Delete oldest items if total count exceeds max_items.
-        This is called after adding a new item to maintain the retention limit.
 
         IMPORTANT: Favorited items are NEVER auto-deleted.
 
@@ -350,7 +349,7 @@ class ClipboardDB:
             max_items: Maximum number of items to retain
 
         Returns:
-            Number of items deleted
+            List of deleted item IDs
         """
         cursor = self.conn.cursor()
 
@@ -359,36 +358,40 @@ class ClipboardDB:
         total = cursor.fetchone()["total"]
 
         if total <= max_items:
-            return 0
+            return []
 
         # Calculate how many to delete
         to_delete = total - max_items
 
-        # Delete oldest NON-FAVORITE items (by timestamp, then by ID as tiebreaker)
+        # Select IDs to delete first so we can return them
         cursor.execute(
             """
-            DELETE FROM clipboard_items
-            WHERE id IN (
-                SELECT id FROM clipboard_items
-                WHERE is_favorite = 0
-                ORDER BY timestamp ASC, id ASC
-                LIMIT ?
-            )
+            SELECT id FROM clipboard_items
+            WHERE is_favorite = 0
+            ORDER BY timestamp ASC, id ASC
+            LIMIT ?
             """,
             (to_delete,),
         )
+        ids_to_delete = [row["id"] for row in cursor.fetchall()]
 
-        deleted_count = cursor.rowcount
+        if not ids_to_delete:
+            return []
+
+        # Delete them
+        placeholders = ",".join("?" * len(ids_to_delete))
+        cursor.execute(
+            f"DELETE FROM clipboard_items WHERE id IN ({placeholders})",
+            ids_to_delete,
+        )
         self.conn.commit()
 
-        if deleted_count > 0:
-            logging.info(
-                f"Retention cleanup: deleted {deleted_count} oldest non-favorite items (limit: {max_items})"
-            )
-            # Clean up orphaned recently_pasted records (belt-and-suspenders approach)
-            self._cleanup_orphaned_pasted_records()
+        logging.info(
+            f"Retention cleanup: deleted {len(ids_to_delete)} oldest non-favorite items (limit: {max_items})"
+        )
+        self._cleanup_orphaned_pasted_records()
 
-        return deleted_count
+        return ids_to_delete
 
     def bulk_delete_oldest(self, count: int) -> int:
         """

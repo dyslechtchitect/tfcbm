@@ -57,6 +57,13 @@ class TFCBMServer:
             enabled=False  # Disabled by default
         )
 
+        # Enforce retention on startup (prune items left over from previous session)
+        if self.settings_service.retention_enabled:
+            max_items = self.settings_service.retention_max_items
+            deleted_ids = self.database_service.cleanup_old_items(max_items)
+            if deleted_ids:
+                logging.info(f"Startup retention cleanup: removed {len(deleted_ids)} items (limit: {max_items})")
+
         logging.info("All services initialized successfully")
 
     async def start_ipc_server(self):

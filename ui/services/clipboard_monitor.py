@@ -36,6 +36,7 @@ class ClipboardMonitor:
         self._skip_next = True
         self._clipboard = None
         self._changed_handler_id = None
+        self._pending_text = None
 
     def start(self):
         if self._running:
@@ -141,9 +142,33 @@ class ClipboardMonitor:
             text = None
 
         if text:
-            self._handle_text(text)
+            # Also try reading text/html for formatted content
+            self._pending_text = text
+            self._clipboard.read_async(
+                ["text/html"],
+                GLib.PRIORITY_DEFAULT,
+                None,
+                self._on_html_result,
+            )
         else:
             logger.debug("Clipboard changed but no readable content found")
+
+    def _on_html_result(self, clipboard, result):
+        text = self._pending_text
+        self._pending_text = None
+        html_b64 = None
+
+        try:
+            stream, _mime = clipboard.read_finish(result)
+            if stream:
+                raw = self._read_stream(stream)
+                if raw:
+                    html_b64 = base64.b64encode(raw).decode("ascii")
+        except Exception:
+            pass
+
+        self._handle_text(text, format_type="html" if html_b64 else None,
+                          formatted_content=html_b64)
 
     # ── event builders ──────────────────────────────────────────────
 
@@ -186,7 +211,7 @@ class ClipboardMonitor:
         logger.info("Clipboard file change detected: %d URI(s)", len(uris))
         self.on_clipboard_event(event)
 
-    def _handle_text(self, text):
+    def _handle_text(self, text, format_type=None, formatted_content=None):
         text_hash = hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
         if text_hash == self._last_text_hash:
             return
@@ -202,9 +227,14 @@ class ClipboardMonitor:
         event = {
             "type": event_type,
             "data": text,
-            "formatted_content": None,
+            "formatted_content": formatted_content,
         }
-        logger.info("Clipboard change detected: type=%s, length=%d", event_type, len(text))
+        if format_type:
+            event["format_type"] = format_type
+            event["formatType"] = format_type
+
+        logger.info("Clipboard change detected: type=%s, length=%d, format=%s",
+                     event_type, len(text), format_type or "plain")
         self.on_clipboard_event(event)
 
     # ── helpers ──────────────────────────────────────────────────────

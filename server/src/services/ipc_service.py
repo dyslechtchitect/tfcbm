@@ -323,6 +323,7 @@ class IPCService:
         item_id = data.get("id")
         if item_id:
             self.db_service.delete_item(item_id)
+            await connection.send_json({"status": "success", "id": item_id})
             await self.broadcast({"type": "item_deleted", "id": item_id})
 
     async def _handle_get_recently_pasted(self, connection: IPCConnection, data):
@@ -635,6 +636,13 @@ class IPCService:
         event_data = data.get("data", {})
         logger.info(f"Received clipboard event via IPC: {event_data.get('type', 'unknown')}")
         self.clipboard_service.handle_clipboard_event(event_data)
+
+        # Enforce retention and notify UI of any deletions
+        if self.settings_service.retention_enabled:
+            max_items = self.settings_service.retention_max_items
+            deleted_ids = self.db_service.cleanup_old_items(max_items)
+            for item_id in deleted_ids:
+                await self.broadcast({"type": "item_deleted", "id": item_id})
 
     async def _handle_shutdown(self, connection: IPCConnection):
         """Handle shutdown action - gracefully shutdown the server"""
