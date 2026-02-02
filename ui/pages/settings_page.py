@@ -628,7 +628,7 @@ class SettingsPage:
 
             try:
                 app_id = self._get_installed_app_id()
-                commandline = ["flatpak", "run", app_id]
+                commandline = ["tfcbm"]
 
                 options = {
                     "reason": GLib.Variant("s", "TFCBM clipboard history manager"),
