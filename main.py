@@ -160,10 +160,7 @@ class TFCBMServer:
         signal.signal(signal.SIGTERM, self.signal_handler)
         signal.signal(signal.SIGINT, self.signal_handler)
 
-        # Note: GNOME Shell extension is optional and must be enabled manually
-        # To enable: gnome-extensions enable tfcbm-clipboard-monitor@github.com
-        # Or use the GNOME Extensions app
-        logging.info("TFCBM server starting. Optional GNOME extension can be enabled with: gnome-extensions enable tfcbm-clipboard-monitor@github.com")
+        logging.info("TFCBM server starting")
 
         # Start screenshot service if enabled
         self.screenshot_service.start()

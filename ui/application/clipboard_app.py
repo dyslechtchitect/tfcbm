@@ -71,9 +71,8 @@ class ClipboardApp(Gtk.Application):
         except Exception as e:
             print(f"Warning: Could not load custom CSS: {e}")
 
-        # Register D-Bus service for integration
-        # The UI handles Activate/ShowSettings/Quit commands AND forwards clipboard events to server
-        self.dbus_service = TFCBMDBusService(self, clipboard_handler=self._handle_clipboard_event)
+        # Register D-Bus service (Activate / ShowSettings / Quit)
+        self.dbus_service = TFCBMDBusService(self)
         if not self.dbus_service.start():
             logger.error("Failed to start DBus service")
 

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-TFCBM DBus Service - Handles DBus communication for GNOME extension integration
+TFCBM DBus Service - Exposes Activate/ShowSettings/Quit over session D-Bus.
 """
 
-import json
 import logging
 import os
 import signal
@@ -26,28 +25,22 @@ DBUS_XML = """
             <arg type="u" name="timestamp" direction="in"/>
         </method>
         <method name="Quit"/>
-        <method name="OnClipboardChange">
-            <arg type="s" name="eventData" direction="in"/>
-        </method>
     </interface>
 </node>
 """
 
 
 class TFCBMDBusService:
-    """DBus service for TFCBM integration with GNOME extension"""
+    """DBus service exposing Activate / ShowSettings / Quit over session bus."""
 
-    def __init__(self, app, clipboard_handler=None):
+    def __init__(self, app):
         """
-        Initialize DBus service
+        Initialize DBus service.
 
         Args:
             app: The GTK application instance
-            clipboard_handler: Callback function to handle clipboard events
-                              Should accept (event_data: dict) -> None
         """
         self.app = app
-        self.clipboard_handler = clipboard_handler
         self.connection = None
         self.registration_id = None
         self.bus_name_id = None
@@ -82,7 +75,6 @@ class TFCBMDBusService:
             logger.info("✓ DBus object registered at /io/github/dyslechtchitect/tfcbm/ClipboardService")
 
             # Own the bus name io.github.dyslechtchitect.tfcbm.ClipboardService
-            # This makes the service available to the GNOME extension
             self.bus_name_id = Gio.bus_own_name_on_connection(
                 self.connection,
                 "io.github.dyslechtchitect.tfcbm.ClipboardService",
@@ -128,9 +120,6 @@ class TFCBMDBusService:
 
             elif method_name == "Quit":
                 self._handle_quit(invocation)
-
-            elif method_name == "OnClipboardChange":
-                self._handle_clipboard_change(parameters, invocation)
 
             else:
                 invocation.return_error_literal(
@@ -268,18 +257,11 @@ class TFCBMDBusService:
                     logger.error(f"Error forwarding show settings to UI: {e}")
 
     def _handle_quit(self, invocation):
-        """Handle Quit method - quit the application
-
-        Note: The extension stays enabled. The tray icon will automatically hide
-        when the app quits and unregisters its D-Bus name (see extension.js:_updateIconStyle).
-        This allows the extension to remain ready for when the app is launched again.
-        """
+        """Handle Quit method - quit the application."""
         logger.info("DBus Quit called")
 
         invocation.return_value(None)
 
-        # Just quit the app - DBus cleanup happens automatically
-        # The extension watches for the name to disappear
         if hasattr(self.app, 'quit'):
             logger.info("Quitting application - DBus name will be unregistered automatically")
             GLib.idle_add(self.app.quit)
@@ -301,28 +283,3 @@ class TFCBMDBusService:
             except Exception as e:
                 logger.error(f"Error forwarding quit to UI: {e}")
 
-    def _handle_clipboard_change(self, parameters, invocation):
-        """Handle OnClipboardChange method - process clipboard event from extension"""
-        event_data_json = parameters.unpack()[0]
-        logger.info(f"DBus OnClipboardChange called, data length: {len(event_data_json)}")
-
-        # Return immediately to avoid blocking the extension
-        invocation.return_value(None)
-
-        try:
-            # Parse event data
-            event_data = json.loads(event_data_json)
-            logger.info(f"Parsed clipboard event: type={event_data.get('type')}, has_data={bool(event_data.get('data'))}")
-
-            # Call clipboard handler if provided
-            if self.clipboard_handler:
-                self.clipboard_handler(event_data)
-                logger.info(f"Clipboard handler called successfully for type: {event_data.get('type')}")
-            else:
-                logger.warning("No clipboard handler registered, event ignored")
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse clipboard event JSON: {e}")
-        except Exception as e:
-            logger.error(f"Error processing clipboard event: {e}")
-            logger.error(traceback.format_exc())

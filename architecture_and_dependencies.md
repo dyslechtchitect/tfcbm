@@ -2,6 +2,10 @@
 
 ## High-Level Architecture
 
+TFCBM is a two-process clipboard manager distributed as a Flatpak.
+The **server** manages persistence and event processing; the **UI** handles
+clipboard monitoring, user interaction, and global shortcuts.
+
 ```mermaid
 graph TB
     subgraph Flatpak Sandbox
@@ -82,6 +86,10 @@ sequenceDiagram
 
 ## Clipboard Detection Cascade
 
+The `ClipboardMonitor` tries each read method and cascades on failure.
+This avoids `get_formats().contain_mime_type()` which returns `False` for
+everything on KDE Wayland.
+
 ```mermaid
 flowchart TD
     SIGNAL["Gdk.Clipboard 'changed' signal"] --> DELAY["50ms delay"]
@@ -98,18 +106,18 @@ flowchart TD
 
 ## Runtime Dependencies
 
-### What the app actually imports (from code, not docs)
+### GI Modules (provided by org.gnome.Platform runtime)
 
 | GI Module | Version | Where Used | Purpose |
 |-----------|---------|------------|---------|
-| **Gtk** | 4.0 | 41 files | UI framework |
-| **Gdk** | 4.0 | 11 files | Clipboard, display, keyboard, DnD |
-| **GLib** | 2.0 | Everywhere (via Gio/Gtk) | Event loop, variants, idle_add |
-| **Gio** | 2.0 | 8 files | D-Bus, file I/O, actions |
-| **GObject** | 2.0 | 3 files | Signal handling, type system |
-| **GdkPixbuf** | 2.0 | 5 files | Image loading, thumbnails |
-| **Pango** | 1.0 | 2 files | Text layout/measurement |
-| **WebKit** | 6.0 | 1 file (optional) | HTML preview in view dialog |
+| **Gtk** | 4.0 | UI framework | Windows, widgets, list rows |
+| **Gdk** | 4.0 | ClipboardMonitor, display, DnD | Clipboard access, keyboard |
+| **GLib** | 2.0 | Everywhere | Event loop, idle_add, variants |
+| **Gio** | 2.0 | DBus, IPC, file I/O | D-Bus service, portal calls |
+| **GObject** | 2.0 | Signal handling | Type system |
+| **GdkPixbuf** | 2.0 | ThumbnailService | Image loading & scaling |
+| **Pango** | 1.0 | Text layout | Measurement & rendering |
+| **WebKit** | 6.0 | HTML preview (optional) | Rich text preview in view dialog |
 
 ### Python stdlib (no pip install needed)
 
@@ -128,119 +136,58 @@ sys, threading, time, traceback, typing, urllib.parse
 
 | Tool | Usage | Notes |
 |------|-------|-------|
-| **xdotool** | Auto-paste after copy | Commented as system dep in requirements.txt |
-| **pkexec** | Secret item authentication | Via flatpak-spawn --host in sandbox |
+| **xdotool** | Auto-paste after copy | System dep |
+| **pkexec** | Protected item authentication | Via `flatpak-spawn --host` |
 
-## Dead Code & Unused Dependencies (Mark for Deletion)
+## Flatpak Runtime
 
-### Files to delete
+**Runtime:** `org.gnome.Platform//49`
 
-| File | Reason |
-|------|--------|
-| `ui/utils/extension_check.py` | GNOME extension check utility. Only imported by `gsettings_store.py` which is itself dead. 502 lines of dead code. |
-| `ui/infrastructure/gsettings_store.py` | `GSettingsStore` and `ExtensionSettingsStore` classes. ZERO imports anywhere in the codebase. Replaced by `JsonSettingsStore`. 630 lines of dead code. |
-| `ui/managers/window_manager.py` | `WindowManager` class. Exported from `__init__.py` but never instantiated anywhere. 26 lines. |
-| `ui/windows/extension_error_window.py` | Already deleted in git (shows as `D` in status). Confirm removal. |
+This is the standard runtime for GTK4 apps regardless of target DE. KDE ships
+GTK4 apps (GIMP, Inkscape, etc.) using GNOME Platform without issues.
+`org.freedesktop.Platform` does NOT include GTK4, GdkPixbuf, Pango, or WebKit
+and would require bundling all of them as Flatpak modules for zero user-visible
+benefit.
 
-### Dead imports within live files
+The app is DE-agnostic in code: Gdk.Clipboard for monitoring, XDG Portal for
+shortcuts, CSD headers via `set_titlebar()`, JSON settings. The runtime choice
+does not affect DE compatibility.
 
-| File | Line | Import | Reason |
-|------|------|--------|--------|
-| `ui/main.py` | 17 | `import signal` | Never referenced |
-| `ui/managers/keyboard_shortcut_handler.py` | 4 | `import shutil` | Never referenced |
-| `ui/rows/handlers/clipboard_operations_handler.py` | 14 | `import shutil` | Never referenced |
+## D-Bus Interface
 
-### Dead `__init__.py` exports
+The UI process owns `io.github.dyslechtchitect.tfcbm.ClipboardService` on the
+session bus, exposing:
 
-| File | Export | Reason |
-|------|--------|--------|
-| `ui/managers/__init__.py` | `WindowManager` in `__all__` | Class is never used; remove from `__all__` and `from .window_manager import` line |
+| Method | Purpose | Called By |
+|--------|---------|-----------|
+| `Activate(timestamp)` | Toggle window visibility | ShortcutListener |
+| `ShowSettings(timestamp)` | Open settings page | External callers |
+| `Quit()` | Quit application | External callers |
 
-## GNOME vs Freedesktop Runtime
+## IPC Protocol
 
-### Current: `org.gnome.Platform//49`
+UI and server communicate via a UNIX domain socket at
+`$XDG_RUNTIME_DIR/tfcbm.sock` using length-prefixed JSON messages.
 
-Provides everything out of the box: GTK4, GdkPixbuf, Pango, GLib, Gio,
-WebKit, Adwaita theme, python3 + PyGObject.
+### Client -> Server
 
-### Alternative: `org.freedesktop.Platform//24.08`
+| Action | Key Parameters |
+|--------|---------------|
+| `get_history` | `offset`, `limit`, `sort_order`, `filters` |
+| `get_recently_pasted` | `offset`, `limit`, `sort_order`, `filters` |
+| `search` | `query`, `limit`, `filters` |
+| `clipboard_event` | `data` (type, content, formatted_content) |
+| `delete_item` | `id` |
+| `update_tags` | `item_id`, `tags` |
+| `toggle_favorite` | `id` |
+| `toggle_secret` | `id` |
+| `get_settings` | -- |
+| `update_settings` | settings dict |
 
-`org.freedesktop.Platform` does NOT include GTK4, GdkPixbuf, Pango, or
-WebKit. Switching would require bundling all of them as Flatpak modules.
+### Server -> Client (broadcasts)
 
-**What you'd need to add to the manifest:**
-
-```yaml
-modules:
-  # ~50 MB of extra bundled libraries:
-  - name: gtk4           # + its deps: graphene, gdk-pixbuf, pango,
-                         #   harfbuzz, fribidi, cairo, glib, etc.
-  - name: pygobject      # Python bindings
-  - name: libadwaita     # If you want Adwaita styling (optional)
-  - name: webkit2gtk-6.0 # Only if you keep HTML preview (optional)
-```
-
-**Verdict: Stay on `org.gnome.Platform`.** It is the standard runtime for
-GTK4 apps regardless of target DE. KDE ships GTK4 apps (like GIMP,
-Inkscape) using GNOME Platform without issues. Freedesktop Platform would
-triple the build complexity for zero user-visible benefit.
-
-The app is already DE-agnostic in code (Gdk.Clipboard, XDG Portal
-shortcuts, CSD headers). The runtime choice doesn't affect DE compatibility.
-
-## Manifest Recommendations
-
-### Current issues
-
-1. **`Categories=Utility;GNOME;GTK;`** in desktop file -- remove `GNOME`
-   since app is DE-agnostic. Use `Categories=Utility;GTK;`
-
-2. **`X-GNOME-UsesNotifications=true`** in desktop file -- GNOME-specific
-   key. Harmless on KDE but unnecessary.
-
-3. **`resouces`** typo in meson.build line 25 -- directory is actually
-   named `resouces` (missing 'r'). Either rename the directory to
-   `resources` or leave as-is (functional but ugly).
-
-4. **Missing `--talk-name=org.freedesktop.portal.Desktop`** in manifest --
-   the ShortcutListener uses the XDG GlobalShortcuts portal. Portal access
-   works by default for Flatpak apps, but explicitly listing it is good
-   practice.
-
-## Meson Build Refresh
-
-The meson.build is mostly correct. Suggested changes:
-
-1. **Remove `gnome-extension/` from install** -- it's not referenced in
-   meson.build (good), but the directory ships with the source. Consider
-   adding it to the Flatpak manifest's `sources` exclude, or just leave it
-   (meson ignores it).
-
-2. **The `install_subdir` for `ui/`** installs everything including dead
-   files like `gsettings_store.py` and `extension_check.py`. After deleting
-   those files, no meson changes needed.
-
-3. **No sub-meson.build files exist** -- the single root meson.build handles
-   everything. This is fine for the project's size.
-
-## Summary of Actionable Items
-
-### Delete (dead code)
-- [ ] `ui/utils/extension_check.py`
-- [ ] `ui/infrastructure/gsettings_store.py`
-- [ ] `ui/managers/window_manager.py`
-- [ ] `WindowManager` export from `ui/managers/__init__.py`
-
-### Clean up (dead imports)
-- [ ] `ui/main.py:17` -- remove `import signal`
-- [ ] `ui/managers/keyboard_shortcut_handler.py:4` -- remove `import shutil`
-- [ ] `ui/rows/handlers/clipboard_operations_handler.py:14` -- remove `import shutil`
-
-### Desktop file
-- [ ] Change `Categories=Utility;GNOME;GTK;` to `Categories=Utility;GTK;`
-- [ ] Optionally remove `X-GNOME-UsesNotifications=true`
-
-### Keep as-is
-- Flatpak runtime: `org.gnome.Platform//49` (correct choice)
-- Meson build: functional, no structural changes needed
-- `requirements.txt`: accurate, no unused pip deps
+| Event | Data | Purpose |
+|-------|------|---------|
+| `new_item` | item object | New clipboard entry |
+| `item_deleted` | `id` | Item removed (manual or retention) |
+| `settings_changed` | settings | Sync across clients |

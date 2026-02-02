@@ -1,7 +1,6 @@
 """Handles keyboard shortcuts and keyboard-triggered actions."""
 
 import logging
-import shutil
 import subprocess
 from typing import Any
 

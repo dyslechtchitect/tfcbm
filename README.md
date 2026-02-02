@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>A powerful clipboard manager for GNOME</strong>
+  <strong>A powerful clipboard manager for Linux</strong>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/GNOME-49-blue.svg" alt="GNOME 49">
+  <img src="https://img.shields.io/badge/GTK4-blue.svg" alt="GTK4">
   <a href="https://flathub.org/apps/io.github.dyslechtchitect.tfcbm"><img src="https://img.shields.io/flathub/v/io.github.dyslechtchitect.tfcbm" alt="Flathub"></a>
 </p>
 
@@ -27,9 +27,9 @@ flatpak run io.github.dyslechtchitect.tfcbm
 ```
 ## About
 
-TFCBM is a modern clipboard manager that enhances your GNOME desktop experience. Never lose track of what you copy - TFCBM keeps a complete history of your clipboard, making it easy to find and reuse content whenever you need it.
+TFCBM is a modern clipboard manager for Linux desktops. Never lose track of what you copy - TFCBM keeps a complete history of your clipboard, making it easy to find and reuse content whenever you need it.
 
-Built with GTK4 and Libadwaita, TFCBM seamlessly integrates with your GNOME desktop, providing quick access through keyboard shortcuts and a system tray icon.
+Built with GTK4, TFCBM works across desktop environments (GNOME, KDE Plasma, Hyprland, Sway, etc.), providing quick access through configurable keyboard shortcuts.
 
 ## Features
 
@@ -39,8 +39,8 @@ Built with GTK4 and Libadwaita, TFCBM seamlessly integrates with your GNOME desk
 🖼️ **Rich Media Support** - Handle text, images, files, and URLs
 🔐 **Secret Items** - Mark sensitive items as secrets with password protection
 ⌨️ **Keyboard Shortcuts** - Fast workflow with configurable shortcuts
-🎨 **Modern Interface** - Beautiful Adwaita-based UI that follows GNOME HIG
-🔄 **Real-time Monitoring** - Instant clipboard detection via GNOME Shell extension
+🎨 **Modern Interface** - Clean GTK4 UI
+🔄 **Real-time Monitoring** - Instant clipboard detection via GTK4 Gdk.Clipboard
 💾 **Persistent Storage** - SQLite database with automatic retention management
 
 ## Screenshots
@@ -104,24 +104,13 @@ flatpak install flathub io.github.dyslechtchitect.tfcbm
 
 ## Usage
 
-### First Run
-
-On first launch, TFCBM will install and enable a GNOME Shell extension for clipboard monitoring. This extension provides:
-
-- System tray icon for quick access
-- Real-time clipboard monitoring
-- Global keyboard shortcut (default: `Ctrl+Escape`, configurable in settings)
-
-You may need to restart GNOME Shell (log out and back in) after first installation for the extension to activate.
-
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Escape` | Toggle TFCBM window (configurable) |
+| `Ctrl+Escape` | Toggle TFCBM window (configurable in settings) |
 | Type to search | Auto-focus search and start typing |
 | `Enter` or `Space` | Paste selected item |
-| Click tray icon | Toggle TFCBM window |
 
 ### Quick Tips
 
@@ -141,27 +130,26 @@ TFCBM takes your privacy seriously:
 ### Required Permissions
 
 - **Display Access**: To show the application window
-- **D-Bus**: For communication with the GNOME Shell extension
+- **D-Bus**: For shortcut listener and window activation
 - **XDG Data/Config**: To store clipboard history and settings
 
 All data is stored in your home directory under `.var/app/io.github.dyslechtchitect.tfcbm/` (Flatpak) or `.local/share/tfcbm/` (local install).
 
 ## How It Works
 
-TFCBM consists of three components that work together:
+TFCBM consists of two processes that work together:
 
-1. **GNOME Shell Extension**: Monitors clipboard changes in real-time using GNOME's native clipboard API
-2. **Backend Server**: Manages the clipboard database and handles all clipboard operations
-3. **UI Application**: Provides the interface for viewing and managing your clipboard history
+1. **Backend Server**: Manages the clipboard database, processes events, and handles all clipboard operations
+2. **UI Application**: Monitors the system clipboard via GTK4's `Gdk.Clipboard`, provides the user interface, and listens for global keyboard shortcuts via the XDG Desktop Portal
 
-These components communicate via Unix domain sockets for fast, secure local communication.
+These processes communicate via a UNIX domain socket with a JSON-based protocol.
 
 ## Development
 
 ### Prerequisites
 
 - Python 3.11+
-- GNOME 49
+- GTK4
 - Flatpak SDK (for packaging)
 
 ### Setup
@@ -193,10 +181,6 @@ python3 ui/main.py
 # Server tests
 cd server
 ../.venv/bin/pytest test/integration -v
-
-# Extension tests
-cd gnome-extension
-npm test
 ```
 
 ### Building Flatpak
@@ -212,11 +196,7 @@ Simply uninstall TFCBM from GNOME Software or App Center.
 ### Via Command Line
 
 ```bash
-# Quit the app first (from tray icon menu)
 flatpak uninstall io.github.dyslechtchitect.tfcbm
-
-# Remove the GNOME Shell extension
-gnome-extensions uninstall tfcbm-clipboard-monitor@github.com
 ```
 
 ## Contributing
@@ -246,12 +226,5 @@ TFCBM is free and open source software licensed under the [GNU General Public Li
 
 Built with:
 - [GTK4](https://www.gtk.org/) - UI toolkit
-- [Libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/) - GNOME design system
 - [Python](https://www.python.org/) - Programming language
-- [GNOME Shell](https://www.gnome.org/) - Desktop environment
-
-Special thanks to the GNOME community for creating amazing tools and libraries.
-
----
-
-<p align="center">Made with ❤️ for the GNOME community</p>
+- [XDG Desktop Portal](https://flatpak.github.io/xdg-desktop-portal/) - Global shortcuts

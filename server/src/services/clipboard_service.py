@@ -162,10 +162,10 @@ class ClipboardService:
 
     def handle_clipboard_event(self, event_data: Dict):
         """
-        Handle clipboard event from GNOME extension via DBus
+        Handle clipboard event received via IPC.
 
         Args:
-            event_data: Dictionary with clipboard event data from extension
+            event_data: Dictionary with clipboard event data
                        Format: {"type": "text|image/...|file", "content": "..."}
         """
         try:

@@ -14,8 +14,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 
 import logging
-import signal
-import os # Ensure os is imported
+import os
+
 from gi.repository import GLib # GLib for get_user_data_dir
 
 # Get Flatpak's user data directory for logs

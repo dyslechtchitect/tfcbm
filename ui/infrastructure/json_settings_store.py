@@ -1,7 +1,6 @@
-"""JSON-based settings storage implementation.
+"""JSON-based settings storage.
 
-Replaces the GSettings/D-Bus extension-based settings store with a simple
-JSON file at ~/.config/tfcbm/settings.json. Works on any DE.
+Stores settings in ~/.config/tfcbm/settings.json. Works on any DE.
 """
 
 import json

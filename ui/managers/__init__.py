@@ -13,11 +13,9 @@ from .tag_dialog_manager import TagDialogManager
 from .tag_display_manager import TagDisplayManager
 from .tag_filter_manager import TagFilterManager
 from .user_tags_manager import UserTagsManager
-from .window_manager import WindowManager
 from .window_position_manager import WindowPositionManager
 
 __all__ = [
-    "WindowManager",
     "PaginationManager",
     "FilterManager",
     "TabManager",

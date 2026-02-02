@@ -9,7 +9,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build*
+build/
 develop-eggs/
 dist/
 downloads/
@@ -421,7 +421,6 @@ build-test/
 .flatpak-builder/
 repo*
 *.flatpak
-tfcbm-gnome-extension.zip
 
 # === Internal Documentation (keep only README.md) ===
 docs/

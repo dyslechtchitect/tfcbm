@@ -4,12 +4,12 @@
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0-or-later</project_license>
     <name>TFCBM</name>
-    <summary>The * Clipboard Manager - A powerful clipboard manager for GNOME</summary>
+    <summary>The * Clipboard Manager - A powerful DE-agnostic clipboard manager</summary>
 
     <description>
         <p>
             TFCBM (The * Clipboard Manager) is a feature-rich clipboard manager
-            designed for GNOME desktop environments. Keep track of your clipboard history,
+            for Linux desktops. Keep track of your clipboard history,
             manage multiple items, and quickly access your copied content.
         </p>
         <p>Features:</p>
@@ -19,14 +19,9 @@
             <li>Quick search and filtering</li>
             <li>Tag and organize clipboard items</li>
             <li>Secret Items for sensitive data</li>
-            <li>Keyboard shortcuts for quick access</li>
-            <li>Beautiful GTK4/Libadwaita interface</li>
-            <li>GNOME Shell extension</li>
+            <li>Keyboard shortcuts via XDG Desktop Portal</li>
+            <li>Beautiful GTK4 interface</li>
         </ul>
-        <p>
-            The optional GNOME Shell extension provides system-wide clipboard monitoring
-            and quick access through a keyboard shortcut (Ctrl+Escape by default).
-        </p>
     </description>
 
     <launchable type="desktop-id">io.github.dyslechtchitect.tfcbm.desktop</launchable>
@@ -59,7 +54,7 @@
                 <ul>
                     <li>Fixed performance issue with large text files</li>
                     <li>Improved database size reporting for Flatpak installations</li>
-                    <li>Removed unsupported uninstall extension button in Flatpak</li>
+                    <li>Removed legacy extension support</li>
                     <li>Optimized text content loading and display</li>
                 </ul>
             </description>
@@ -72,7 +67,7 @@
                     <li>Text, image, and file support</li>
                     <li>Search and filtering</li>
                     <li>Tag management</li>
-                    <li>GNOME Shell extension integration</li>
+                    <li>GTK4-based clipboard monitoring</li>
                 </ul>
             </description>
         </release>
@@ -98,7 +93,6 @@
 
     <categories>
         <category>Utility</category>
-        <category>GNOME</category>
     </categories>
 
     <keywords>
