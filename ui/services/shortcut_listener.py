@@ -41,6 +41,8 @@ class ShortcutListener:
         self.monitor = None
         self._activated_sub_id = 0
         self._portal_available = False
+        self._session_counter = 0
+        self._busy = False
 
     def start(self):
         try:
@@ -67,6 +69,18 @@ class ShortcutListener:
         self._create_session()
         self.monitor_settings()
         logger.info("Shortcut listener started.")
+
+    def disable(self):
+        """Temporarily disable the global shortcut (e.g. during recording)."""
+        if self.session_path:
+            logger.info("Disabling global shortcut (destroying portal session)")
+            self._destroy_session()
+
+    def enable(self):
+        """Re-enable the global shortcut after recording."""
+        if self._portal_available and not self.session_path:
+            logger.info("Re-enabling global shortcut (creating portal session)")
+            self._create_session()
 
     def stop(self):
         self._destroy_session()
@@ -106,11 +120,19 @@ class ShortcutListener:
         return f"/org/freedesktop/portal/desktop/request/{self._sender_token()}/{token}"
 
     def _create_session(self):
-        token = "tfcbm_session"
-        request_token = "tfcbm_create"
+        self._busy = True
+        try:
+            self._create_session_inner()
+        finally:
+            self._busy = False
+
+    def _create_session_inner(self):
+        self._session_counter += 1
+        token = f"tfcbm_session_{self._session_counter}"
+        request_token = f"tfcbm_create_{self._session_counter}"
 
         options = {
-            "handle_token": GLib.Variant("s", token),
+            "handle_token": GLib.Variant("s", request_token),
             "session_handle_token": GLib.Variant("s", token),
         }
 
@@ -142,7 +164,6 @@ class ShortcutListener:
         )
 
         try:
-            options["handle_token"] = GLib.Variant("s", request_token)
             self.bus.call_sync(
                 PORTAL_BUS_NAME,
                 PORTAL_OBJECT_PATH,
@@ -183,7 +204,7 @@ class ShortcutListener:
         xdg_str = shortcut.to_xdg_string()
         logger.info("Binding shortcut: %s (XDG: %s)", shortcut.to_display_string(), xdg_str)
 
-        request_token = "tfcbm_bind"
+        request_token = f"tfcbm_bind_{self._session_counter}"
         request_path = self._request_path(request_token)
 
         # Build shortcuts list and options as plain Python structures.
@@ -324,6 +345,9 @@ class ShortcutListener:
     def _reload_shortcut(self):
         if not self._portal_available:
             logger.info("Portal not available, shortcut reload skipped.")
+            return
+        if self._busy:
+            logger.debug("Session operation in progress, skipping reload.")
             return
         logger.info("Reloading shortcut — destroying old session and creating new one.")
         self._destroy_session()

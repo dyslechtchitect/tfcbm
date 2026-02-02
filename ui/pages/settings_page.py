@@ -321,8 +321,7 @@ class SettingsPage:
                 self.record_btn.add_css_class("destructive-action")
                 self.recording_status.set_markup("<i>Press any key combination...</i>")
 
-                # Disable keybinding during recording (no-op for JSON store)
-                self.settings_store.disable_keybinding()
+                self._set_shortcut_listener_enabled(False)
 
                 self._attach_keyboard_controller()
                 self._set_main_app_recording_state(True)
@@ -334,7 +333,7 @@ class SettingsPage:
 
                 self._detach_keyboard_controller()
                 self._set_main_app_recording_state(False)
-                self.settings_store.enable_keybinding()
+                self._set_shortcut_listener_enabled(True)
         except Exception as e:
             logger.error(f"Error in record button click handler: {e}", exc_info=True)
             self.on_notification(f"Error: {str(e)}")
@@ -410,7 +409,7 @@ class SettingsPage:
         self.record_btn.add_css_class("suggested-action")
         self._detach_keyboard_controller()
         self._set_main_app_recording_state(False)
-        self.settings_store.enable_keybinding()
+        self._set_shortcut_listener_enabled(True)
 
     def _build_retention_group(self):
         """Build the retention settings section."""
@@ -682,6 +681,19 @@ class SettingsPage:
     def _get_installed_app_id(self):
         """Get the app ID."""
         return 'io.github.dyslechtchitect.tfcbm'
+
+    def _set_shortcut_listener_enabled(self, enabled: bool):
+        """Disable/enable the XDG Portal global shortcut listener."""
+        target_window = self.window or self.parent_window
+        if not target_window:
+            return
+        app = target_window.get_application()
+        listener = getattr(app, 'shortcut_listener', None) if app else None
+        if listener:
+            if enabled:
+                listener.enable()
+            else:
+                listener.disable()
 
     def _set_main_app_recording_state(self, is_recording: bool):
         """Set the recording state directly on the window."""

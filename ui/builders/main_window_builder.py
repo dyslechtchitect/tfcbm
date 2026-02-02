@@ -487,11 +487,13 @@ class MainWindowBuilder:
         # Use the proper SettingsPage class which includes keyboard shortcut recorder
         from ui.pages.settings_page import SettingsPage
 
-        settings_page_obj = SettingsPage(
+        # Store on window to prevent garbage collection of the SettingsPage instance.
+        # Its signal handlers (record button, key event recording) must stay alive.
+        self.window._settings_page = SettingsPage(
             settings=self.window.settings,
             on_notification=self.window.show_notification,
-            window=self.window  # Pass window reference for direct communication
+            window=self.window,
         )
-        settings_page = settings_page_obj.build()
+        settings_page = self.window._settings_page.build()
 
         return settings_page
