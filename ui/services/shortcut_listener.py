@@ -31,11 +31,11 @@ CLIPBOARD_SERVICE_BUS_NAME = "io.github.dyslechtchitect.tfcbm.ClipboardService"
 CLIPBOARD_SERVICE_OBJECT_PATH = "/io/github/dyslechtchitect/tfcbm/ClipboardService"
 CLIPBOARD_SERVICE_IFACE = "io.github.dyslechtchitect.tfcbm.ClipboardService"
 
-SHORTCUT_ID = "toggle-clipboard"
+SHORTCUT_ID_PREFIX = "toggle-clipboard"
 
 
 class ShortcutListener:
-    def __init__(self):
+    def __init__(self, on_activated=None):
         self.bus = None
         self.session_path = None
         self.monitor = None
@@ -43,6 +43,9 @@ class ShortcutListener:
         self._portal_available = False
         self._session_counter = 0
         self._busy = False
+        self._last_activate_time = 0
+        self._on_activated_callback = on_activated
+        self._active_shortcut_id = None
 
     def start(self):
         try:
@@ -202,7 +205,13 @@ class ShortcutListener:
             return
 
         xdg_str = shortcut.to_xdg_string()
-        logger.info("Binding shortcut: %s (XDG: %s)", shortcut.to_display_string(), xdg_str)
+        # Use a shortcut ID derived from the actual key combo so the portal
+        # treats each different shortcut as a brand-new binding instead of
+        # silently reusing a cached (stale) trigger for the same ID.
+        shortcut_id = f"{SHORTCUT_ID_PREFIX}-{xdg_str.lower().replace('+', '-')}"
+        self._active_shortcut_id = shortcut_id
+        logger.info("Binding shortcut: %s (XDG: %s, ID: %s)",
+                     shortcut.to_display_string(), xdg_str, shortcut_id)
 
         request_token = f"tfcbm_bind_{self._session_counter}"
         request_path = self._request_path(request_token)
@@ -212,7 +221,7 @@ class ShortcutListener:
         # .unpack() on an a{sv} variant as that strips the Variant wrappers.
         shortcuts = [
             (
-                SHORTCUT_ID,
+                shortcut_id,
                 {
                     "description": GLib.Variant("s", "Toggle TFCBM clipboard window"),
                     "preferred_trigger": GLib.Variant("s", xdg_str),
@@ -289,27 +298,52 @@ class ShortcutListener:
         )
 
     def _on_portal_activated(self, _connection, _sender, _path, _iface, _signal, params):
-        _session_handle, shortcut_id, _timestamp, _options = params.unpack()
-        if shortcut_id == SHORTCUT_ID:
-            logger.info("Shortcut activated via portal!")
+        _session_handle, shortcut_id, _timestamp, options = params.unpack()
+        if shortcut_id != self._active_shortcut_id:
+            return
+
+        now = time.monotonic()
+        if now - self._last_activate_time < 0.5:
+            logger.debug("Ignoring duplicate portal activation (debounce)")
+            return
+        self._last_activate_time = now
+
+        # Extract activation token from portal options (needed for Wayland focus)
+        activation_token = ''
+        if isinstance(options, dict):
+            logger.debug("Portal Activated options: %s", options)
+            token = options.get('activation_token', '')
+            activation_token = str(token) if token else ''
+
+        logger.info("Shortcut activated via portal! (token=%s, timestamp=%s)",
+                     activation_token[:16] + '...' if len(activation_token) > 16 else activation_token,
+                     _timestamp)
+
+        if self._on_activated_callback:
+            self._on_activated_callback(activation_token, _timestamp)
+        else:
             self._call_activate()
 
     def _call_activate(self):
-        try:
-            self.bus.call_sync(
-                CLIPBOARD_SERVICE_BUS_NAME,
-                CLIPBOARD_SERVICE_OBJECT_PATH,
-                CLIPBOARD_SERVICE_IFACE,
-                "Activate",
-                GLib.Variant("(u)", (int(time.time()),)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                2000,
-                None,
-            )
-            logger.info("Called Activate method on DBus service.")
-        except GLib.Error as e:
-            logger.warning("Failed to call Activate: %s", e.message)
+        def on_call_done(bus, result):
+            try:
+                bus.call_finish(result)
+                logger.info("Called Activate method on DBus service.")
+            except GLib.Error as e:
+                logger.warning("Failed to call Activate: %s", e.message)
+
+        self.bus.call(
+            CLIPBOARD_SERVICE_BUS_NAME,
+            CLIPBOARD_SERVICE_OBJECT_PATH,
+            CLIPBOARD_SERVICE_IFACE,
+            "Activate",
+            GLib.Variant("(u)", (int(time.time()),)),
+            None,
+            Gio.DBusCallFlags.NONE,
+            2000,
+            None,
+            on_call_done,
+        )
 
     def _destroy_session(self):
         if self.session_path and self.bus:

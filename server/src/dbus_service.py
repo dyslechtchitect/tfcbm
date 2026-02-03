@@ -8,6 +8,7 @@ import os
 import signal
 import subprocess
 import traceback
+import time
 
 from gi.repository import Gio, GLib
 
@@ -136,15 +137,14 @@ class TFCBMDBusService:
                 str(e),
             )
 
-    def _handle_activate(self, parameters, invocation):
-        """Handle Activate method - toggle window visibility"""
-        timestamp = parameters.unpack()[0] if parameters else 0
-        logger.info(f"DBus Activate called with timestamp {timestamp}")
+    def activate_window(self, activation_token='', timestamp=0):
+        """Toggle window visibility. Called directly by portal shortcut or via D-Bus.
 
-        # Return immediately to avoid blocking the caller
-        invocation.return_value(None)
-
-        # Try to get window - use main_window reference if available (works even when hidden)
+        Args:
+            activation_token: Wayland activation token from XDG portal (allows focus).
+                            Empty string on X11 or when called via external D-Bus.
+            timestamp: Portal activation timestamp (used as fallback for focus).
+        """
         win = getattr(self.app, 'main_window', None)
         if not win:
             win = getattr(self.app, 'props', None) and self.app.props.active_window
@@ -154,24 +154,35 @@ class TFCBMDBusService:
                 is_visible = win.is_visible()
 
                 # If recording shortcut and window is visible, do NOT hide it.
-                # This prevents unfocusing during shortcut recording.
                 is_recording = getattr(win, 'is_recording_shortcut', False)
                 if is_recording and is_visible:
-                    logger.info("Ignoring Activate call to hide window because shortcut recording is active.")
+                    logger.info("Ignoring Activate call because shortcut recording is active.")
                     return
 
-                if is_visible:
+                if is_visible and win.is_active():
                     win.hide()
                     if hasattr(win, 'keyboard_handler'):
                         win.keyboard_handler.activated_via_keyboard = False
-                    logger.info("Window hidden via DBus")
+                    logger.info("Window hidden")
                 else:
+                    # If portal didn't provide a token, try generating one
+                    if not activation_token:
+                        activation_token = self._request_activation_token(timestamp)
+
+                    # Set activation token on the GDK display so present()
+                    # can use it for Wayland focus via xdg_activation_v1.
+                    # Note: os.environ is only read at display init; the GDK
+                    # Wayland API must be used at runtime.
+                    if activation_token:
+                        self._set_activation_token(activation_token)
+
                     win.show()
                     win.unminimize()
-                    win.present_with_time(timestamp)
+                    win.present()
                     if hasattr(win, 'keyboard_handler'):
                         win.keyboard_handler.activated_via_keyboard = True
-                    logger.info("Window shown via DBus")
+                    logger.info("Window shown (token=%s)",
+                                'yes' if activation_token else 'no')
 
                     # Focus first item
                     if hasattr(win, 'keyboard_handler'):
@@ -182,12 +193,9 @@ class TFCBMDBusService:
         else:
             # No window exists yet - activate the app to create it
             if hasattr(self.app, 'activate'):
-                # Directly call the app's activate method
                 GLib.idle_add(self.app.activate)
                 logger.info("Activated app to create window")
             else:
-                # Fallback: try to activate UI via GtkApplication D-Bus interface
-                # (This path is for when D-Bus service runs in separate process)
                 try:
                     result = subprocess.run([
                         'gdbus', 'call', '--session',
@@ -202,6 +210,55 @@ class TFCBMDBusService:
                         logger.warning(f"Failed to activate UI: {result.stderr.decode()}")
                 except Exception as e:
                     logger.error(f"Error forwarding activate to UI: {e}")
+
+    def _set_activation_token(self, token):
+        """Set activation token on the GDK Wayland display for window focus.
+
+        On Wayland, GTK4 reads XDG_ACTIVATION_TOKEN only at display init.
+        At runtime we must use the GDK Wayland API directly.
+        Falls back to env var for X11 / non-Wayland sessions.
+        """
+        try:
+            from gi.repository import Gdk
+            display = Gdk.Display.get_default()
+            if display and hasattr(display, 'set_startup_notification_id'):
+                display.set_startup_notification_id(token)
+                logger.info("Set Wayland activation token via GDK API")
+                return
+        except Exception as e:
+            logger.debug("GDK Wayland token API unavailable: %s", e)
+        # Fallback for X11 or older GTK
+        os.environ['XDG_ACTIVATION_TOKEN'] = token
+
+    def _request_activation_token(self, timestamp=0):
+        """Generate a Wayland activation token via GDK's app launch context.
+
+        This asks the compositor for an xdg_activation_v1 token that allows
+        us to present and focus the window even though the keyboard input
+        happened through the portal rather than directly in our app.
+        """
+        try:
+            from gi.repository import Gdk
+            display = Gdk.Display.get_default()
+            if not display:
+                return ''
+            context = display.get_app_launch_context()
+            if timestamp:
+                context.set_timestamp(timestamp)
+            token = context.get_startup_notify_id(None, None)
+            if token:
+                logger.info("Generated fallback activation token via GDK launch context")
+                return token
+        except Exception as e:
+            logger.debug("Could not generate activation token: %s", e)
+        return ''
+
+    def _handle_activate(self, parameters, invocation):
+        """Handle Activate method from D-Bus - toggle window visibility"""
+        timestamp = parameters.unpack()[0] if parameters else 0
+        logger.info(f"DBus Activate called with timestamp {timestamp}")
+        invocation.return_value(None)
+        self.activate_window()
 
     def _handle_show_settings(self, parameters, invocation):
         """Handle ShowSettings method - show settings page"""

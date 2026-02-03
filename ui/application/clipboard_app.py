@@ -140,9 +140,16 @@ class ClipboardApp(Gtk.Application):
         if self.shortcut_listener:
             return
         from ui.services.shortcut_listener import ShortcutListener
-        self.shortcut_listener = ShortcutListener()
+        self.shortcut_listener = ShortcutListener(on_activated=self._on_shortcut_activated)
         self.shortcut_listener.start()
         logger.info("Shortcut listener started")
+
+    def _on_shortcut_activated(self, activation_token='', timestamp=0):
+        """Handle portal shortcut activation with activation token for Wayland focus."""
+        if self.dbus_service:
+            self.dbus_service.activate_window(activation_token, timestamp)
+        else:
+            logger.warning("No dbus_service available for shortcut activation")
 
     def _stop_shortcut_listener(self):
         """Stop the shortcut listener."""
