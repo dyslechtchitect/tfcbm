@@ -7,7 +7,9 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
+import re
 import traceback
 from typing import Set, Optional, Tuple
 
@@ -71,6 +73,9 @@ class IPCConnection:
             await self.writer.wait_closed()
 
 
+TEXT_PAGE_SIZE = 500
+
+
 class IPCService:
     """Service for UNIX domain socket communication with UI clients"""
 
@@ -98,24 +103,71 @@ class IPCService:
         runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
         return os.path.join(runtime_dir, "tfcbm-ipc.sock")
 
-    def prepare_item_for_ui(self, item: dict) -> dict:
-        """Convert database item to UI-renderable format"""
-        # Max preview length for text content (only send preview to UI for performance)
-        MAX_PREVIEW_LENGTH = 500
+    @staticmethod
+    def _find_match_page(full_content, search_query, page_size):
+        """Find which page contains the earliest match for the search query.
 
+        Args:
+            full_content: The full text content
+            search_query: The search query string
+            page_size: Characters per page
+
+        Returns:
+            Page number (0-indexed) containing the earliest match, or 0 if no match
+        """
+        if not search_query or not full_content:
+            return 0
+
+        query = search_query.strip()
+        content_lower = full_content.lower()
+
+        # Parse query into terms (quoted phrases + individual words)
+        if query.startswith('"') and query.endswith('"') and query.count('"') == 2:
+            terms = [query[1:-1]]
+        else:
+            parts = re.findall(r'"[^"]+"|\S+', query)
+            terms = [p.strip('"') for p in parts]
+
+        # Find earliest match position across all terms
+        earliest_pos = len(full_content)
+        for term in terms:
+            if not term:
+                continue
+            pos = content_lower.find(term.lower())
+            if pos != -1 and pos < earliest_pos:
+                earliest_pos = pos
+
+        if earliest_pos >= len(full_content):
+            return 0
+
+        return earliest_pos // page_size
+
+    def prepare_item_for_ui(self, item: dict, search_query=None) -> dict:
+        """Convert database item to UI-renderable format"""
         item_type = item["type"]
         data = item["data"]
         thumbnail = item.get("thumbnail")
         content_truncated = False
+        content_page = 0
+        total_pages = 1
+        total_length = 0
 
         if item_type == "text" or item_type == "url":
             full_content = data.decode("utf-8") if isinstance(data, bytes) else data
-            # Only send preview for list display to avoid performance issues with large text
-            if len(full_content) > MAX_PREVIEW_LENGTH:
-                content = full_content[:MAX_PREVIEW_LENGTH]
+            total_length = len(full_content)
+            total_pages = max(1, math.ceil(total_length / TEXT_PAGE_SIZE))
+
+            # Determine which page to show in preview
+            if search_query and total_pages > 1:
+                content_page = self._find_match_page(full_content, search_query, TEXT_PAGE_SIZE)
+
+            start = content_page * TEXT_PAGE_SIZE
+            end = min(start + TEXT_PAGE_SIZE, total_length)
+            content = full_content[start:end]
+
+            if total_length > end or start > 0:
                 content_truncated = True
-            else:
-                content = full_content
+
             thumbnail_b64 = None
         elif item_type == "file":
             try:
@@ -154,7 +206,7 @@ class IPCService:
             content = None
             thumbnail_b64 = None
 
-        return {
+        result = {
             "id": item["id"],
             "type": item_type,
             "content": content,
@@ -167,6 +219,13 @@ class IPCService:
             "is_favorite": item.get("is_favorite", False),
             "content_truncated": content_truncated,
         }
+
+        if item_type in ("text", "url"):
+            result["content_page"] = content_page
+            result["total_pages"] = total_pages
+            result["total_length"] = total_length
+
+        return result
 
     async def client_handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle IPC client connections"""
@@ -250,6 +309,8 @@ class IPCService:
             await self._handle_update_clipboard_settings(connection, data)
         elif action == "clipboard_event":
             await self._handle_clipboard_event(data)
+        elif action == "get_text_page":
+            await self._handle_get_text_page(connection, data)
         elif action == "shutdown":
             await self._handle_shutdown(connection)
         else:
@@ -364,7 +425,7 @@ class IPCService:
         if query:
             logger.info(f"Searching for: '{query}' (limit={limit}, filters={filters})")
             results = self.db_service.search_items(query, limit, filters)
-            ui_items = [self.prepare_item_for_ui(item) for item in results]
+            ui_items = [self.prepare_item_for_ui(item, search_query=query) for item in results]
             response = {"type": "search_results", "query": query, "items": ui_items, "count": len(ui_items)}
             await connection.send_json(response)
             logger.info(f"Search complete: {len(ui_items)} results")
@@ -756,6 +817,30 @@ class IPCService:
                 "status": "error",
                 "message": str(e)
             }
+            await connection.send_json(response)
+
+    async def _handle_get_text_page(self, connection: IPCConnection, data):
+        """Handle get_text_page action - fetch a page of text content"""
+        item_id = data.get("id")
+        page = data.get("page", 0)
+        page_size = data.get("page_size", TEXT_PAGE_SIZE)
+
+        if item_id is not None:
+            result = self.db_service.get_text_page(item_id, page, page_size)
+            if result:
+                response = {
+                    "type": "text_page",
+                    "id": item_id,
+                    "content": result["content"],
+                    "page": result["page"],
+                    "total_pages": result["total_pages"],
+                    "total_length": result["total_length"],
+                }
+            else:
+                response = {"type": "error", "message": "Item not found or not a text item"}
+            await connection.send_json(response)
+        else:
+            response = {"type": "error", "message": "id is required"}
             await connection.send_json(response)
 
     async def broadcast(self, message: dict):

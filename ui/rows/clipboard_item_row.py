@@ -77,6 +77,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             password_service=self.password_service,
             ws_service=self.ipc_service,
             get_root=self.get_root,
+            search_query=self.search_query,
         )
 
         # Initialize secret manager

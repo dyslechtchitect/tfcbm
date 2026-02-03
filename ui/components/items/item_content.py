@@ -96,6 +96,11 @@ class ItemContent:
 
         text_content = self.item["content"]
 
+        # If showing a page beyond page 0, prepend ellipsis to indicate prior content
+        content_page = self.item.get("content_page", 0)
+        if content_page > 0:
+            text_content = "..." + text_content
+
         # Check if content was truncated and add indicator
         content_truncated = self.item.get("content_truncated", False)
         if content_truncated and not text_content.endswith("..."):

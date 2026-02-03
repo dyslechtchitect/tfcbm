@@ -171,6 +171,11 @@ class DatabaseService:
         with self.lock:
             return self.db.toggle_favorite(item_id, is_favorite)
 
+    def get_text_page(self, item_id: int, page: int = 0, page_size: int = 500) -> Optional[Dict[str, Any]]:
+        """Thread-safe get a page of text content"""
+        with self.lock:
+            return self.db.get_text_page(item_id, page, page_size)
+
     def get_file_extensions(self) -> List[str]:
         """Thread-safe get file extensions"""
         with self.lock:

@@ -9,6 +9,7 @@ This handler manages:
 
 import base64
 import logging
+import re
 from pathlib import Path
 
 import gi
@@ -33,6 +34,7 @@ class ItemDialogHandler:
         password_service,
         ws_service,
         get_root: callable,
+        search_query: str = "",
     ):
         """Initialize the dialog handler.
 
@@ -42,12 +44,14 @@ class ItemDialogHandler:
             password_service: PasswordService for authentication
             ipc_service: ItemIPCService for fetching secret content
             get_root: Callback to get the root window for dialog presentation
+            search_query: Current search query for highlighting in expand dialog
         """
         self.item = item
         self.window = window
         self.password_service = password_service
         self.ipc_service = ws_service
         self.get_root = get_root
+        self.search_query = search_query
 
     def _is_text_file(self, mime_type: str) -> bool:
         """Check if a file is text-based and can be displayed.
@@ -107,24 +111,36 @@ class ItemDialogHandler:
             else:
                 logger.info("Already authenticated for view")
 
-            # Fetch real content for viewing
-            logger.info(f"Fetching real content for secret item {item_id} for view")
-            real_content = self.ipc_service.fetch_secret_content(item_id)
-            if not real_content:
+            # Fetch first page to get pagination info
+            logger.info(f"Fetching content for secret item {item_id} for view")
+            page_data = self.ipc_service.fetch_text_page(item_id, 0)
+            if not page_data:
                 self.window.show_notification("Failed to retrieve secret content")
-                # Consume authentication even on failure
                 self.password_service.consume_authentication("view", item_id)
                 return
             logger.info(
-                f"Retrieved secret content for view (length: {len(str(real_content))})"
+                f"Retrieved secret content for view (length: {page_data.get('total_length', 0)})"
             )
 
-            # Temporarily replace content for viewing
+            # Temporarily set content and pagination info for viewing
             original_content = self.item.get("content")
-            self.item["content"] = real_content
+            original_total_pages = self.item.get("total_pages")
+            original_total_length = self.item.get("total_length")
+            self.item["content"] = page_data["content"]
+            self.item["total_pages"] = page_data["total_pages"]
+            self.item["total_length"] = page_data["total_length"]
+            self.item["content_page"] = 0
             self.show_view_dialog()
-            # Restore placeholder
+            # Restore original values
             self.item["content"] = original_content
+            if original_total_pages is not None:
+                self.item["total_pages"] = original_total_pages
+            else:
+                self.item.pop("total_pages", None)
+            if original_total_length is not None:
+                self.item["total_length"] = original_total_length
+            else:
+                self.item.pop("total_length", None)
             # Consume authentication after successful view
             self.password_service.consume_authentication("view", item_id)
         else:
@@ -444,13 +460,27 @@ class ItemDialogHandler:
                     content_label.set_valign(Gtk.Align.START)
                     content_scroll.set_child(content_label)
             else:
-                # Plain text - no formatting
-                content_label = Gtk.Label(label=self.item["content"])
-                content_label.set_wrap(True)
-                content_label.set_selectable(True)
-                content_label.set_halign(Gtk.Align.START)
-                content_label.set_valign(Gtk.Align.START)
-                content_scroll.set_child(content_label)
+                # Plain text - check pagination
+                total_pages = self.item.get("total_pages", 1)
+                item_id = self.item.get("id")
+
+                if total_pages <= 1:
+                    # Single-page item: fetch full text and display in a label
+                    page_data = self.ipc_service.fetch_text_page(item_id, 0)
+                    text = page_data["content"] if page_data else self.item.get("content", "")
+
+                    content_label = Gtk.Label(label=text)
+                    content_label.set_wrap(True)
+                    content_label.set_selectable(True)
+                    content_label.set_halign(Gtk.Align.START)
+                    content_label.set_valign(Gtk.Align.START)
+                    content_scroll.set_child(content_label)
+                else:
+                    # Multi-page item: build paginated text view
+                    start_page = self.item.get("content_page", 0)
+                    self._build_paginated_text_view(
+                        content_scroll, start_page, total_pages, item_id
+                    )
 
         elif item_type.startswith("image/") or item_type == "screenshot":
             # Need to fetch full image from server
@@ -623,3 +653,174 @@ class ItemDialogHandler:
         main_box.append(content_scroll)
         dialog.set_child(main_box)
         dialog.present()
+
+    def _build_paginated_text_view(self, content_scroll, start_page, total_pages, item_id):
+        """Build a paginated text view that loads pages on scroll.
+
+        Args:
+            content_scroll: The ScrolledWindow to populate
+            start_page: Initial page to display
+            total_pages: Total number of pages
+            item_id: ID of the item for fetching pages
+        """
+        state = {
+            "loaded_pages": set(),
+            "lowest_page": start_page,
+            "highest_page": start_page,
+            "loading": False,
+            "total_pages": total_pages,
+        }
+
+        text_view = Gtk.TextView()
+        text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        text_view.set_editable(False)
+        text_view.set_cursor_visible(False)
+        text_view.set_hexpand(True)
+        text_view.set_vexpand(True)
+        text_view.set_margin_start(12)
+        text_view.set_margin_end(12)
+        text_view.set_margin_top(12)
+        text_view.set_margin_bottom(12)
+
+        buf = text_view.get_buffer()
+
+        # Create highlight tag if search query is set
+        if self.search_query:
+            tag_table = buf.get_tag_table()
+            highlight_tag = Gtk.TextTag(name="highlight")
+            highlight_tag.set_property("background", "yellow")
+            highlight_tag.set_property("foreground", "black")
+            tag_table.add(highlight_tag)
+
+        # Fetch and display the start page synchronously
+        page_data = self.ipc_service.fetch_text_page(item_id, start_page)
+        if page_data:
+            buf.set_text(page_data["content"])
+            state["loaded_pages"].add(start_page)
+            # Update total_pages from server response
+            state["total_pages"] = page_data.get("total_pages", total_pages)
+        else:
+            buf.set_text(self.item.get("content", ""))
+            state["loaded_pages"].add(start_page)
+
+        # Apply search highlights
+        if self.search_query:
+            self._apply_search_highlights(buf, self.search_query)
+
+        content_scroll.set_child(text_view)
+
+        # Connect scroll handler
+        def on_scroll(adj):
+            if state["loading"]:
+                return
+
+            value = adj.get_value()
+            page_size = adj.get_page_size()
+            upper = adj.get_upper()
+
+            # Near bottom: load next page
+            if (value + page_size >= upper - 50 and
+                    state["highest_page"] < state["total_pages"] - 1):
+                state["loading"] = True
+                next_page = state["highest_page"] + 1
+
+                def on_append(data):
+                    if data:
+                        self._append_page(buf, data, state)
+                    else:
+                        state["loading"] = False
+                    return False
+
+                self.ipc_service.fetch_text_page_async(item_id, next_page, on_append)
+
+            # Near top: load previous page
+            elif value <= 50 and state["lowest_page"] > 0:
+                state["loading"] = True
+                prev_page = state["lowest_page"] - 1
+                old_upper = adj.get_upper()
+                old_value = adj.get_value()
+
+                def on_prepend(data):
+                    if data:
+                        self._prepend_page(buf, data, state, adj, old_value, old_upper)
+                    else:
+                        state["loading"] = False
+                    return False
+
+                self.ipc_service.fetch_text_page_async(item_id, prev_page, on_prepend)
+
+        adj = content_scroll.get_vadjustment()
+        adj.connect("value-changed", on_scroll)
+
+    def _append_page(self, buf, data, state):
+        """Append a page of content to the end of the buffer."""
+        end_iter = buf.get_end_iter()
+        buf.insert(end_iter, data["content"])
+        state["highest_page"] = data["page"]
+        state["loaded_pages"].add(data["page"])
+        state["loading"] = False
+
+        if self.search_query:
+            self._apply_search_highlights(buf, self.search_query)
+
+    def _prepend_page(self, buf, data, state, adj, old_value, old_upper):
+        """Prepend a page of content to the beginning of the buffer."""
+        start_iter = buf.get_start_iter()
+        buf.insert(start_iter, data["content"])
+        state["lowest_page"] = data["page"]
+        state["loaded_pages"].add(data["page"])
+        state["loading"] = False
+
+        if self.search_query:
+            self._apply_search_highlights(buf, self.search_query)
+
+        # Adjust scroll position to maintain visual position
+        def adjust_scroll():
+            new_upper = adj.get_upper()
+            delta = new_upper - old_upper
+            adj.set_value(old_value + delta)
+            return False
+
+        GLib.idle_add(adjust_scroll)
+
+    def _apply_search_highlights(self, buf, search_query):
+        """Apply search term highlighting to the entire buffer.
+
+        Args:
+            buf: Gtk.TextBuffer to apply highlights to
+            search_query: Search query string to highlight
+        """
+        tag_table = buf.get_tag_table()
+        highlight_tag = tag_table.lookup("highlight")
+        if not highlight_tag:
+            return
+
+        # Remove existing highlights
+        start = buf.get_start_iter()
+        end = buf.get_end_iter()
+        buf.remove_tag(highlight_tag, start, end)
+
+        # Parse query into terms
+        query = search_query.strip()
+        if query.startswith('"') and query.endswith('"') and query.count('"') == 2:
+            terms = [query[1:-1]]
+        else:
+            parts = re.findall(r'"[^"]+"|\S+', query)
+            terms = [p.strip('"') for p in parts]
+
+        # Highlight each term
+        for term in terms:
+            if not term:
+                continue
+            search_iter = buf.get_start_iter()
+            while True:
+                match = search_iter.forward_search(
+                    term,
+                    Gtk.TextSearchFlags.CASE_INSENSITIVE,
+                    None,
+                )
+                if not match:
+                    break
+                match_start, match_end = match
+                buf.apply_tag(highlight_tag, match_start, match_end)
+                search_iter = match_end

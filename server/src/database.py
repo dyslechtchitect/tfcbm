@@ -7,6 +7,7 @@ Handles SQLite storage of clipboard items
 import hashlib
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -671,6 +672,49 @@ class ClipboardDB:
                 "hash": row["hash"],
             }
         return None
+
+    def get_text_page(self, item_id: int, page: int = 0, page_size: int = 500) -> Optional[Dict]:
+        """Get a single page of text content for a clipboard item.
+
+        Args:
+            item_id: ID of the item
+            page: Page number (0-indexed)
+            page_size: Characters per page
+
+        Returns:
+            Dict with content, page, total_pages, total_length or None if not found
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT type, data FROM clipboard_items WHERE id = ?",
+            (item_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        item_type = row["type"]
+        if item_type not in ("text", "url"):
+            return None
+
+        data = row["data"]
+        full_text = data.decode("utf-8") if isinstance(data, bytes) else data
+        total_length = len(full_text)
+        total_pages = max(1, math.ceil(total_length / page_size))
+
+        # Clamp page to valid range
+        page = max(0, min(page, total_pages - 1))
+
+        start = page * page_size
+        end = min(start + page_size, total_length)
+        content = full_text[start:end]
+
+        return {
+            "content": content,
+            "page": page,
+            "total_pages": total_pages,
+            "total_length": total_length,
+        }
 
     def update_thumbnail(self, item_id: int, thumbnail: bytes) -> bool:
         """Update thumbnail for an item"""

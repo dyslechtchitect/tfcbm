@@ -137,6 +137,111 @@ class ItemIPCService:
 
         return content[0]
 
+    def fetch_text_page(self, item_id: int, page: int, page_size: int = 500) -> Optional[dict]:
+        """Fetch a single page of text content from the server.
+
+        Args:
+            item_id: ID of the text item
+            page: Page number (0-indexed)
+            page_size: Characters per page
+
+        Returns:
+            Dict with content, page, total_pages, total_length or None if fetch failed
+        """
+        result = [None]
+
+        def fetch_content():
+            try:
+
+                async def get_content():
+                    async with ipc_connect() as conn:
+                        request = {
+                            "action": "get_text_page",
+                            "id": item_id,
+                            "page": page,
+                            "page_size": page_size,
+                        }
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "text_page":
+                            result[0] = {
+                                "content": data.get("content", ""),
+                                "page": data.get("page", 0),
+                                "total_pages": data.get("total_pages", 1),
+                                "total_length": data.get("total_length", 0),
+                            }
+                            logger.info(
+                                f"Fetched text page {page} for item {item_id} "
+                                f"({len(result[0]['content'])} chars)"
+                            )
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(get_content())
+                finally:
+                    loop.close()
+
+            except Exception as e:
+                logger.error(f"Error fetching text page: {e}")
+
+        thread = threading.Thread(target=fetch_content)
+        thread.start()
+        thread.join(timeout=5)
+
+        return result[0]
+
+    def fetch_text_page_async(self, item_id: int, page: int, callback, page_size: int = 500):
+        """Fetch a single page of text content asynchronously.
+
+        Args:
+            item_id: ID of the text item
+            page: Page number (0-indexed)
+            callback: Callback receiving the result dict (called on main thread)
+            page_size: Characters per page
+        """
+
+        def fetch_content():
+            try:
+
+                async def get_content():
+                    async with ipc_connect() as conn:
+                        request = {
+                            "action": "get_text_page",
+                            "id": item_id,
+                            "page": page,
+                            "page_size": page_size,
+                        }
+                        await conn.send(json.dumps(request))
+                        response = await conn.recv()
+                        data = json.loads(response)
+
+                        if data.get("type") == "text_page":
+                            result = {
+                                "content": data.get("content", ""),
+                                "page": data.get("page", 0),
+                                "total_pages": data.get("total_pages", 1),
+                                "total_length": data.get("total_length", 0),
+                            }
+                            GLib.idle_add(callback, result)
+                        else:
+                            GLib.idle_add(callback, None)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(get_content())
+                finally:
+                    loop.close()
+
+            except Exception as e:
+                logger.error(f"Error fetching text page async: {e}")
+                GLib.idle_add(callback, None)
+
+        threading.Thread(target=fetch_content, daemon=True).start()
+
     def toggle_secret_status(
         self, item_id: int, is_secret: bool, name: Optional[str] = None
     ) -> None:
