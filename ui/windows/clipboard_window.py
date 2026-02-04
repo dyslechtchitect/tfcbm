@@ -89,27 +89,26 @@ class ClipboardWindow(Gtk.ApplicationWindow):
         click_gesture.connect("released", self._on_window_clicked)
         self.add_controller(click_gesture)
 
-        # Set window properties - tall and narrow
+        # Set window properties - 1/4 screen width and full height
         display = Gdk.Display.get_default()
         if display:
             monitors = display.get_monitors()
             if monitors and monitors.get_n_items() > 0:
                 primary_monitor = monitors.get_item(0)
                 monitor_geometry = primary_monitor.get_geometry()
-                # Narrow width (just enough for UI components) and full height
-                width = 350
+                width = monitor_geometry.width // 4
                 height = monitor_geometry.height
                 self.set_default_size(width, height)
             else:
-                self.set_default_size(350, 800)
+                self.set_default_size(480, 800)
         else:
-            self.set_default_size(350, 800)
+            self.set_default_size(480, 800)
 
         self.set_resizable(True)
 
-        # Initialize WindowPositionManager and position window to the right
+        # Initialize WindowPositionManager and position window to the left
         self.position_manager = WindowPositionManager(self)
-        self.position_manager.position_right()
+        self.position_manager.position_left()
 
         self.page_size = self.settings.max_page_length
 

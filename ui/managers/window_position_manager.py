@@ -47,7 +47,7 @@ class WindowPositionManager:
                 width = self.window.get_width()
                 if width <= 0:
                     # Fallback if window hasn't been realized yet
-                    width = 350
+                    width = monitor_geometry.width // 4
 
                 # Calculate x position to place window at right edge
                 x = monitor_geometry.width - width
