@@ -215,15 +215,28 @@ class TFCBMDBusService:
         """Set activation token on the GDK Wayland display for window focus.
 
         On Wayland, GTK4 reads XDG_ACTIVATION_TOKEN only at display init.
-        At runtime we must use the GDK Wayland API directly.
+        At runtime we must use the GdkWayland API directly.
         Falls back to env var for X11 / non-Wayland sessions.
         """
         try:
+            import gi
             from gi.repository import Gdk
             display = Gdk.Display.get_default()
-            if display and hasattr(display, 'set_startup_notification_id'):
+            if not display:
+                os.environ['XDG_ACTIVATION_TOKEN'] = token
+                return
+
+            # Import GdkWayland typelib so Wayland-specific methods
+            # become available on the display object via GI.
+            try:
+                gi.require_version('GdkWayland', '4.0')
+                from gi.repository import GdkWayland  # noqa: F401
+            except (ImportError, ValueError):
+                pass
+
+            if hasattr(display, 'set_startup_notification_id'):
                 display.set_startup_notification_id(token)
-                logger.info("Set Wayland activation token via GDK API")
+                logger.info("Set Wayland activation token via GdkWayland API")
                 return
         except Exception as e:
             logger.debug("GDK Wayland token API unavailable: %s", e)
