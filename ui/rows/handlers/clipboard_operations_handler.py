@@ -11,7 +11,6 @@ import asyncio
 import base64
 import json
 import logging
-import tempfile
 import threading
 from pathlib import Path
 
@@ -325,14 +324,46 @@ class ClipboardOperationsHandler:
     def _copy_regular_file_to_clipboard(
         self, item_id, file_metadata, clipboard
     ):
-        """Fetch file from server and copy to clipboard.
+        """Copy file to clipboard.
 
-        Args:
-            item_id: ID of the file item
-            file_metadata: File metadata dictionary
-            clipboard: Clipboard instance
+        Prefers the original path when it still exists (avoids a server
+        round-trip and works inside Flatpak).  Falls back to fetching
+        from the server and writing to $XDG_CACHE_HOME (accessible
+        outside the sandbox, unlike /tmp).
         """
+        file_name = file_metadata.get("name", "clipboard_file")
+        original_path = file_metadata.get("original_path", "")
 
+        # Fast path: original file still on disk
+        if original_path and Path(original_path).exists():
+
+            def copy_original():
+                try:
+                    self._skip_monitor()
+                    uri = Gio.File.new_for_path(original_path).get_uri()
+                    uri_bytes = f"{uri}\r\n".encode("utf-8")
+                    content_provider = Gdk.ContentProvider.new_for_bytes(
+                        "text/uri-list",
+                        GLib.Bytes.new(uri_bytes),
+                    )
+                    clipboard.set_content(content_provider)
+
+                    self.window.show_notification(
+                        f"📄 File copied: {file_name}"
+                    )
+                    self.ipc_service.record_paste(item_id)
+                    if self.item.get("is_secret", False):
+                        self.password_service.consume_authentication("copy", item_id)
+                except Exception as e:
+                    self.window.show_notification(
+                        f"Error copying file: {str(e)}"
+                    )
+                return False
+
+            GLib.idle_add(copy_original)
+            return
+
+        # Slow path: fetch from server, write to cache dir
         def fetch_and_copy():
             try:
 
@@ -351,24 +382,24 @@ class ClipboardOperationsHandler:
                             file_b64 = data.get("content")
                             file_data = base64.b64decode(file_b64)
 
-                            file_name = file_metadata.get(
-                                "name", "clipboard_file"
-                            )
+                            import os
 
-                            temp_dir = (
-                                Path(tempfile.gettempdir()) / "tfcbm_files"
+                            cache_home = os.environ.get(
+                                "XDG_CACHE_HOME",
+                                os.path.expanduser("~/.cache"),
                             )
-                            temp_dir.mkdir(exist_ok=True)
-                            temp_file_path = temp_dir / file_name
+                            cache_dir = Path(cache_home) / "tfcbm_files"
+                            cache_dir.mkdir(parents=True, exist_ok=True)
+                            cached_path = cache_dir / file_name
 
-                            with open(temp_file_path, "wb") as f:
+                            with open(cached_path, "wb") as f:
                                 f.write(file_data)
 
                             def copy_to_clipboard():
                                 try:
                                     self._skip_monitor()
                                     uri = Gio.File.new_for_path(
-                                        str(temp_file_path)
+                                        str(cached_path)
                                     ).get_uri()
                                     uri_bytes = f"{uri}\r\n".encode("utf-8")
                                     content_provider = (
@@ -383,7 +414,6 @@ class ClipboardOperationsHandler:
                                         f"📄 File copied: {file_name}"
                                     )
                                     self.ipc_service.record_paste(item_id)
-                                    # Consume authentication after successful copy
                                     if self.item.get("is_secret", False):
                                         self.password_service.consume_authentication("copy", item_id)
                                 except Exception as e:
