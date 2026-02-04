@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 
 from ui.services.ipc_helpers import connect as ipc_connect
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib
+from gi.repository import Gdk, Gio, GLib
 
 logger = logging.getLogger("TFCBM.UI")
 
@@ -46,6 +46,13 @@ class ClipboardOperationsHandler:
         self.ipc_service = ws_service
         self.password_service = password_service
         self.clipboard_service = clipboard_service
+
+    def _skip_monitor(self):
+        """Tell the clipboard monitor to ignore the next change."""
+        app = self.window.get_application()
+        if app and getattr(app, "clipboard_monitor", None):
+            app.clipboard_monitor.skip_next()
+
     def handle_copy_action(self):
         """Handle copy button click."""
         self.perform_copy_to_clipboard(
@@ -124,6 +131,7 @@ class ClipboardOperationsHandler:
 
                     if format_type and formatted_content:
                         # Use formatted text copy
+                        self._skip_monitor()
                         self.clipboard_service.copy_formatted_text(
                             content, formatted_content, format_type
                         )
@@ -132,6 +140,7 @@ class ClipboardOperationsHandler:
                         )
                     else:
                         # Use plain text copy
+                        self._skip_monitor()
                         self.clipboard_service.copy_text(content)
                         self.window.show_notification(
                             f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
@@ -195,15 +204,14 @@ class ClipboardOperationsHandler:
 
                             def copy_to_clipboard():
                                 try:
-                                    # Copy original bytes directly without re-encoding
-                                    # This preserves the hash so duplicates are detected
-                                    mime_type = item_type if item_type.startswith("image/") else "image/png"
-
+                                    # Always use image/png — the stored data is
+                                    # PNG bytes (from texture.save_to_png_bytes).
+                                    # The item_type "image/generic" is not a real
+                                    # MIME type and nothing can read it back.
+                                    self._skip_monitor()
                                     gbytes = GLib.Bytes.new(image_data)
-                                    content = (
-                                        Gdk.ContentProvider.new_for_bytes(
-                                            mime_type, gbytes
-                                        )
+                                    content = Gdk.ContentProvider.new_for_bytes(
+                                        "image/png", gbytes
                                     )
                                     clipboard.set_content(content)
 
@@ -274,10 +282,12 @@ class ClipboardOperationsHandler:
 
                     def copy_to_clipboard():
                         try:
-                            gfile = Gio.File.new_for_path(original_path)
-                            file_list = Gdk.FileList.new_from_array([gfile])
-                            content_provider = (
-                                Gdk.ContentProvider.new_for_value(file_list)
+                            self._skip_monitor()
+                            uri = Gio.File.new_for_path(original_path).get_uri()
+                            uri_bytes = f"{uri}\r\n".encode("utf-8")
+                            content_provider = Gdk.ContentProvider.new_for_bytes(
+                                "text/uri-list",
+                                GLib.Bytes.new(uri_bytes),
                             )
                             clipboard.set_content(content_provider)
 
@@ -356,15 +366,15 @@ class ClipboardOperationsHandler:
 
                             def copy_to_clipboard():
                                 try:
-                                    gfile = Gio.File.new_for_path(
+                                    self._skip_monitor()
+                                    uri = Gio.File.new_for_path(
                                         str(temp_file_path)
-                                    )
-                                    file_list = Gdk.FileList.new_from_array(
-                                        [gfile]
-                                    )
+                                    ).get_uri()
+                                    uri_bytes = f"{uri}\r\n".encode("utf-8")
                                     content_provider = (
-                                        Gdk.ContentProvider.new_for_value(
-                                            file_list
+                                        Gdk.ContentProvider.new_for_bytes(
+                                            "text/uri-list",
+                                            GLib.Bytes.new(uri_bytes),
                                         )
                                     )
                                     clipboard.set_content(content_provider)

@@ -60,6 +60,8 @@ class ClipboardService:
             print(f"Failed to copy formatted text: {e}, falling back to plain text")
             self.copy_text(plain_text)
 
-    def copy_image(self, texture: Gdk.Texture) -> None:
-        """Copy image to clipboard."""
-        self.clipboard.set_texture(texture)
+    def copy_image(self, image_bytes: bytes) -> None:
+        """Copy image (PNG bytes) to clipboard."""
+        gbytes = GLib.Bytes.new(image_bytes)
+        provider = Gdk.ContentProvider.new_for_bytes("image/png", gbytes)
+        self.clipboard.set_content(provider)

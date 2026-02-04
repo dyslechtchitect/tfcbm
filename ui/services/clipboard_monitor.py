@@ -60,6 +60,16 @@ class ClipboardMonitor:
         )
         logger.info("Clipboard monitor started (signal-based)")
 
+    def skip_next(self):
+        """Tell the monitor to ignore the next clipboard change.
+
+        Call this right before the app itself writes to the clipboard so
+        the monitor doesn't try to read back its own content (which
+        deadlocks on Wayland because the synchronous splice and the
+        content-provider write both need the main thread).
+        """
+        self._skip_next = True
+
     def stop(self):
         self._running = False
         if self._changed_handler_id is not None and self._clipboard:

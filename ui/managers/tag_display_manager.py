@@ -76,7 +76,7 @@ class TagDisplayManager:
         # Show empty state if no user tags
         if not user_tags:
             empty_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            empty_box.set_halign(Gtk.Align.CENTER)
+            empty_box.set_halign(Gtk.Align.END)
             empty_box.set_margin_start(12)
             empty_box.set_margin_end(12)
 
@@ -84,12 +84,22 @@ class TagDisplayManager:
             empty_label.add_css_class("dim-label")
             empty_box.append(empty_label)
 
-            # Add a cute arrow pointing right
+            # Add an animated arrow pointing right
             arrow_label = Gtk.Label(label="→")
             arrow_label.add_css_class("dim-label")
+            arrow_label.add_css_class("arrow-nudge")
             css_provider = Gtk.CssProvider()
-            css_data = "label { font-size: 14pt; }"
-            css_provider.load_from_data(css_data.encode())
+            css_data = """
+                @keyframes nudge-arrow {
+                    0%, 100% { margin-left: 0px; opacity: 0.4; }
+                    50% { margin-left: 8px; opacity: 1.0; }
+                }
+                label.arrow-nudge {
+                    font-size: 14pt;
+                    animation: nudge-arrow 1.5s ease-in-out infinite;
+                }
+            """
+            css_provider.load_from_string(css_data)
             arrow_label.get_style_context().add_provider(
                 css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
