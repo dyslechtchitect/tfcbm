@@ -128,7 +128,7 @@ class SettingsPage:
 
         startup_row, startup_box = _create_settings_row(
             "Start on Login",
-            "Automatically start TFCBM app and show tray icon when you log in"
+            "Automatically start TFCBM app when you log in"
         )
         startup_switch = Gtk.Switch()
         startup_switch.set_active(self._is_autostart_enabled())

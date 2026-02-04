@@ -46,6 +46,7 @@ class ShortcutListener:
         self._last_activate_time = 0
         self._on_activated_callback = on_activated
         self._active_shortcut_id = None
+        self._bind_response_sub_id = 0
 
     def start(self):
         try:
@@ -90,6 +91,9 @@ class ShortcutListener:
         if self.monitor:
             self.monitor.cancel()
             self.monitor = None
+        if self._bind_response_sub_id and self.bus:
+            self.bus.signal_unsubscribe(self._bind_response_sub_id)
+            self._bind_response_sub_id = 0
         if self._activated_sub_id and self.bus:
             self.bus.signal_unsubscribe(self._activated_sub_id)
             self._activated_sub_id = 0
@@ -154,7 +158,6 @@ class ShortcutListener:
                 logger.error("CreateSession returned no session_handle")
                 return
             logger.info("Portal session created: %s", self.session_path)
-            self._bind_shortcuts()
 
         sub_id = self.bus.signal_subscribe(
             PORTAL_BUS_NAME,
@@ -193,6 +196,8 @@ class ShortcutListener:
 
         if not response_received[0]:
             logger.error("Timed out waiting for CreateSession response")
+        elif self.session_path:
+            self._bind_shortcuts()
 
     def _bind_shortcuts(self):
         if not self.session_path:
@@ -210,9 +215,94 @@ class ShortcutListener:
         # silently reusing a cached (stale) trigger for the same ID.
         shortcut_id = f"{SHORTCUT_ID_PREFIX}-{xdg_str.lower().replace('+', '-')}"
         self._active_shortcut_id = shortcut_id
-        logger.info("Binding shortcut: %s (XDG: %s, ID: %s)",
+        logger.info("Checking shortcut: %s (XDG: %s, ID: %s)",
                      shortcut.to_display_string(), xdg_str, shortcut_id)
 
+        # Check if the shortcut is already bound via ListShortcuts.
+        # If it is, skip BindShortcuts to avoid showing the system dialog.
+        if self._is_shortcut_already_bound(shortcut_id):
+            logger.info("Shortcut '%s' is already bound, skipping BindShortcuts dialog.",
+                         shortcut.to_display_string())
+            return
+
+        logger.info("Shortcut not yet bound, calling BindShortcuts (may show system dialog).")
+        self._do_bind_shortcuts(shortcut_id, xdg_str)
+
+    def _is_shortcut_already_bound(self, shortcut_id):
+        """Check if the shortcut is already bound in the current portal session."""
+        request_token = f"tfcbm_list_{self._session_counter}"
+        request_path = self._request_path(request_token)
+
+        options = {
+            "handle_token": GLib.Variant("s", request_token),
+        }
+
+        response_received = [False]
+        already_bound = [False]
+
+        def on_list_response(_connection, _sender, _path, _iface, _signal, params):
+            response_received[0] = True
+            response_code, results = params.unpack()
+            if response_code != 0:
+                logger.debug("ListShortcuts returned response code %d", response_code)
+                return
+            shortcuts_list = results.get("shortcuts", [])
+            logger.debug("ListShortcuts returned: %s", shortcuts_list)
+            for sc in shortcuts_list:
+                if isinstance(sc, tuple) and len(sc) >= 1 and sc[0] == shortcut_id:
+                    already_bound[0] = True
+                    break
+
+        sub_id = self.bus.signal_subscribe(
+            PORTAL_BUS_NAME,
+            PORTAL_REQUEST_IFACE,
+            "Response",
+            request_path,
+            None,
+            Gio.DBusSignalFlags.NO_MATCH_RULE,
+            on_list_response,
+        )
+
+        try:
+            self.bus.call_sync(
+                PORTAL_BUS_NAME,
+                PORTAL_OBJECT_PATH,
+                PORTAL_SHORTCUTS_IFACE,
+                "ListShortcuts",
+                GLib.Variant("(oa{sv})", (
+                    self.session_path,
+                    options,
+                )),
+                GLib.VariantType("(o)"),
+                Gio.DBusCallFlags.NONE,
+                5000,
+                None,
+            )
+        except GLib.Error as e:
+            logger.debug("ListShortcuts call failed: %s", e.message)
+            self.bus.signal_unsubscribe(sub_id)
+            return False
+
+        context = GLib.MainContext.default()
+        deadline = GLib.get_monotonic_time() + 5_000_000
+        while not response_received[0] and GLib.get_monotonic_time() < deadline:
+            context.iteration(False)
+
+        self.bus.signal_unsubscribe(sub_id)
+
+        if not response_received[0]:
+            logger.debug("Timed out waiting for ListShortcuts response")
+            return False
+
+        return already_bound[0]
+
+    def _do_bind_shortcuts(self, shortcut_id, xdg_str):
+        """Call BindShortcuts on the portal, which may show a system dialog.
+
+        This is intentionally asynchronous — the portal may present a dialog
+        that requires user interaction, so we must not block the main loop
+        waiting for the response.
+        """
         request_token = f"tfcbm_bind_{self._session_counter}"
         request_path = self._request_path(request_token)
 
@@ -233,10 +323,9 @@ class ShortcutListener:
             "handle_token": GLib.Variant("s", request_token),
         }
 
-        response_received = [False]
-
         def on_bind_response(_connection, _sender, _path, _iface, _signal, params):
-            response_received[0] = True
+            self.bus.signal_unsubscribe(self._bind_response_sub_id)
+            self._bind_response_sub_id = 0
             response_code, results = params.unpack()
             if response_code != 0:
                 logger.error("BindShortcuts failed with response code %d", response_code)
@@ -244,7 +333,7 @@ class ShortcutListener:
             shortcuts_result = results.get("shortcuts", [])
             logger.info("Shortcuts bound successfully: %s", shortcuts_result)
 
-        sub_id = self.bus.signal_subscribe(
+        self._bind_response_sub_id = self.bus.signal_subscribe(
             PORTAL_BUS_NAME,
             PORTAL_REQUEST_IFACE,
             "Response",
@@ -273,18 +362,11 @@ class ShortcutListener:
             )
         except GLib.Error as e:
             logger.error("BindShortcuts call failed: %s", e.message)
-            self.bus.signal_unsubscribe(sub_id)
+            self.bus.signal_unsubscribe(self._bind_response_sub_id)
+            self._bind_response_sub_id = 0
             return
 
-        context = GLib.MainContext.default()
-        deadline = GLib.get_monotonic_time() + 5_000_000
-        while not response_received[0] and GLib.get_monotonic_time() < deadline:
-            context.iteration(False)
-
-        self.bus.signal_unsubscribe(sub_id)
-
-        if not response_received[0]:
-            logger.error("Timed out waiting for BindShortcuts response")
+        logger.info("BindShortcuts request sent, waiting for portal response (may show dialog).")
 
     def _subscribe_activated_signal(self):
         self._activated_sub_id = self.bus.signal_subscribe(
@@ -374,7 +456,10 @@ class ShortcutListener:
                     return KeyboardShortcut.from_gtk_string(shortcut_str)
         except (IOError, json.JSONDecodeError) as e:
             logger.error("Error reading settings file: %s", e)
-        return None
+        # Fall back to default Ctrl+Escape so the shortcut gets bound on
+        # first launch even before the user opens the settings page.
+        logger.info("No shortcut in settings, using default: Ctrl+Escape")
+        return KeyboardShortcut(modifiers=["Ctrl"], key="Escape")
 
     def _reload_shortcut(self):
         if not self._portal_available:

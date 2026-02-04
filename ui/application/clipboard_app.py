@@ -390,7 +390,11 @@ class ClipboardApp(Gtk.Application):
 
             # Start clipboard monitoring (replaces GNOME extension monitoring)
             self._start_clipboard_monitor()
-            self._start_shortcut_listener()
+
+            # Defer shortcut listener to after the window is fully realized.
+            # The portal may need to show a system dialog on first bind, which
+            # requires the app and main loop to be fully up and running.
+            GLib.idle_add(self._start_shortcut_listener)
 
             logger.info("Main window loaded and presented")
         except Exception as e:
