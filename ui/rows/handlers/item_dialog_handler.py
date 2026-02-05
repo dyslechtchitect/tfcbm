@@ -373,27 +373,22 @@ class ItemDialogHandler:
         dialog.set_title("Full Clipboard Item")
         dialog.set_default_size(800, 600)
 
+        # Close on Escape key
+        key_controller = Gtk.EventControllerKey()
+        key_controller.connect(
+            "key-pressed",
+            lambda ctrl, keyval, keycode, state: dialog.close()
+            or True
+            if keyval == Gdk.KEY_Escape
+            else False,
+        )
+        dialog.add_controller(key_controller)
+
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         main_box.set_margin_start(18)
         main_box.set_margin_end(18)
         main_box.set_margin_top(12)
         main_box.set_margin_bottom(12)
-
-        # Header with close button
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        header_box.set_hexpand(True)
-
-        spacer = Gtk.Box()
-        spacer.set_hexpand(True)
-        header_box.append(spacer)
-
-        close_button = Gtk.Button()
-        close_button.set_icon_name("window-close-symbolic")
-        close_button.set_tooltip_text("Close")
-        close_button.connect("clicked", lambda btn: dialog.close())
-        header_box.append(close_button)
-
-        main_box.append(header_box)
 
         # Content area
         content_scroll = Gtk.ScrolledWindow()
