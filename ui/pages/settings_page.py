@@ -703,7 +703,7 @@ class SettingsPage:
             success = self._set_autostart_via_portal(is_enabled)
             if not success:
                 self.on_notification(
-                    "Autostart unavailable. Install xdg-desktop-portal-gtk and restart."
+                    "Autostart requires xdg-desktop-portal-xapp 1.0.7+ (XFCE/MATE) or portal support."
                 )
         else:
             # Native: try portal first, fall back to desktop file
