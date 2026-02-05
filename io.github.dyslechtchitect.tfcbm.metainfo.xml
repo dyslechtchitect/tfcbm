@@ -4,11 +4,11 @@
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0-or-later</project_license>
     <name>TFCBM</name>
-    <summary>The * Clipboard Manager - a clipboard manager</summary>
+    <summary>The * Clipboard Manager</summary>
 
     <description>
         <p>
-        Stores clipboard history, supports tags, favorites, search and more which is useful if you copy things more than once.
+        Stores clipboard history, supports tags, favorites, search and more - which is useful if you copy things more than once.
         </p>
         <p>Features:</p>
         <ul>
