@@ -18,4 +18,4 @@ modules:
       - type: git
         url: https://github.com/dyslechtchitect/tfcbm.git
         tag: v1.0
-        commit: 6a58ca09d4648523072fb4e88ddb53b22c9c29f8
+        commit: 4ba86b3e8911d3fa54cfcd6da4f1351ff7d2c504
