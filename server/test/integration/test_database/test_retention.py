@@ -18,9 +18,9 @@ class TestRetentionAndCleanup:
             temp_db.add_item("text", generate_random_text(), timestamp=generate_timestamp(days_ago=i))
 
         # Cleanup to keep only 5
-        deleted = temp_db.cleanup_old_items(max_items=5)
+        deleted_ids = temp_db.cleanup_old_items(max_items=5)
 
-        assert deleted == 5
+        assert len(deleted_ids) == 5
         assert temp_db.get_total_count() == 5
 
     def test_cleanup_deletes_oldest_by_timestamp(self, temp_db: ClipboardDB):
@@ -45,9 +45,9 @@ class TestRetentionAndCleanup:
             temp_db.add_item("text", generate_random_text())
 
         # Cleanup with limit of 10 (no cleanup needed)
-        deleted = temp_db.cleanup_old_items(max_items=10)
+        deleted_ids = temp_db.cleanup_old_items(max_items=10)
 
-        assert deleted == 0
+        assert deleted_ids == []
         assert temp_db.get_total_count() == 3
 
     def test_bulk_delete_oldest_n_items(self, temp_db: ClipboardDB):

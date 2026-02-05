@@ -125,10 +125,10 @@ class TestFavoritesRetention:
         assert temp_db.get_total_count() == 10
 
         # Cleanup to keep only 3 non-favorite items
-        deleted = temp_db.cleanup_old_items(max_items=3)
+        deleted_ids = temp_db.cleanup_old_items(max_items=3)
 
         # Should delete 2 non-favorite items (5 - 3 = 2)
-        assert deleted == 2
+        assert len(deleted_ids) == 2
 
         # Should have 8 items total (5 favorites + 3 normal)
         assert temp_db.get_total_count() == 8
@@ -155,10 +155,10 @@ class TestFavoritesRetention:
             )
 
         # Cleanup to keep 5 non-favorite items (we only have 2)
-        deleted = temp_db.cleanup_old_items(max_items=5)
+        deleted_ids = temp_db.cleanup_old_items(max_items=5)
 
         # Nothing should be deleted
-        assert deleted == 0
+        assert deleted_ids == []
         assert temp_db.get_total_count() == 5
 
     def test_bulk_delete_oldest_excludes_favorites(self, temp_db: ClipboardDB):
@@ -216,10 +216,10 @@ class TestFavoritesRetention:
             )
 
         # Try to cleanup to 5 items
-        deleted = temp_db.cleanup_old_items(max_items=5)
+        deleted_ids = temp_db.cleanup_old_items(max_items=5)
 
         # Nothing should be deleted (all are favorites)
-        assert deleted == 0
+        assert deleted_ids == []
         assert temp_db.get_total_count() == 10
 
 
