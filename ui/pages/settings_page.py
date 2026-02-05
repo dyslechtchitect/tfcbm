@@ -130,11 +130,11 @@ class SettingsPage:
             "Start on Login",
             "Automatically start TFCBM app when you log in"
         )
-        startup_switch = Gtk.Switch()
-        startup_switch.set_active(self._is_autostart_enabled())
-        startup_switch.set_valign(Gtk.Align.CENTER)
-        startup_switch.connect("notify::active", self._on_autostart_toggled)
-        startup_box.append(startup_switch)
+        self.startup_switch = Gtk.Switch()
+        self.startup_switch.set_active(self._is_autostart_enabled())
+        self.startup_switch.set_valign(Gtk.Align.CENTER)
+        self._autostart_handler_id = self.startup_switch.connect("notify::active", self._on_autostart_toggled)
+        startup_box.append(self.startup_switch)
         general_list.append(startup_row)
 
         page_box.append(general_frame)
@@ -663,24 +663,76 @@ class SettingsPage:
             return True
 
         except GLib.Error as e:
-            logger.error(f"GLib.Error calling portal: {e}")
-            self.on_notification("Error: Failed to change autostart setting.")
+            logger.debug(f"Portal not available (will try fallback): {e}")
             return False
         except Exception as e:
-            logger.error(f"Exception calling portal: {e}")
-            self.on_notification("Error: Failed to change autostart setting.")
+            logger.debug(f"Portal call failed (will try fallback): {e}")
             return False
 
     def _on_autostart_toggled(self, switch, _param):
-        """Handle autostart toggle using Background Portal API."""
+        """Handle autostart toggle - try portal first, fall back to desktop file."""
         is_enabled = switch.get_active()
+
+        # Try portal first, fall back to desktop file method
         success = self._set_autostart_via_portal(is_enabled)
         if not success:
+            success = self._set_autostart_via_desktop_file(is_enabled)
+
+        if not success:
+            # Block signal while reverting to prevent loop
+            self.startup_switch.handler_block(self._autostart_handler_id)
             switch.set_active(not is_enabled)
+            self.startup_switch.handler_unblock(self._autostart_handler_id)
 
     def _get_installed_app_id(self):
         """Get the app ID."""
         return 'io.github.dyslechtchitect.tfcbm'
+
+    def _set_autostart_via_desktop_file(self, enable: bool) -> bool:
+        """Fallback: set autostart using traditional .desktop file in ~/.config/autostart/."""
+        logger.info(f"Trying desktop file fallback for autostart: enable={enable}")
+
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "io.github.dyslechtchitect.tfcbm.desktop"
+
+        try:
+            if enable:
+                # Create autostart directory if needed
+                autostart_dir.mkdir(parents=True, exist_ok=True)
+
+                # Write desktop entry
+                desktop_content = """[Desktop Entry]
+Type=Application
+Name=TFCBM
+Comment=The * Clipboard Manager
+Exec=tfcbm
+Icon=io.github.dyslechtchitect.tfcbm
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+"""
+                desktop_file.write_text(desktop_content)
+                logger.info(f"Created autostart desktop file: {desktop_file}")
+            else:
+                # Remove desktop file if it exists
+                if desktop_file.exists():
+                    desktop_file.unlink()
+                    logger.info(f"Removed autostart desktop file: {desktop_file}")
+
+            # Update settings
+            self.settings.update_settings(**{"application.autostart_enabled": enable})
+
+            if enable:
+                self.on_notification("Autostart enabled (desktop file).")
+            else:
+                self.on_notification("Autostart disabled.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error setting autostart via desktop file: {e}")
+            self.on_notification(f"Error: Failed to change autostart setting.")
+            return False
 
     def _set_shortcut_listener_enabled(self, enabled: bool):
         """Disable/enable the XDG Portal global shortcut listener."""
