@@ -29,15 +29,15 @@
     <screenshots>
         <screenshot type="default">
             <caption>Main window showing clipboard history</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0.1/screenshots/general.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0/screenshots/general.png</image>
         </screenshot>
         <screenshot>
             <caption>Search through clipboard history</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0.1/screenshots/search.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0/screenshots/search.png</image>
         </screenshot>
         <screenshot>
             <caption>Configure keyboard shortcuts in the settings</caption>
-            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0.1/screenshots/settings.png</image>
+            <image>https://raw.githubusercontent.com/dyslechtchitect/tfcbm/v1.0/screenshots/settings.png</image>
         </screenshot>
     </screenshots>
 
