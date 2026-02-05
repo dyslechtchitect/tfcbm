@@ -608,9 +608,34 @@ class SettingsPage:
         """Check if autostart is enabled from app settings."""
         return self.settings.autostart_enabled
 
+    def _is_background_portal_available(self) -> bool:
+        """Check if the Background portal interface is available."""
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            proxy = Gio.DBusProxy.new_sync(
+                bus,
+                Gio.DBusProxyFlags.DO_NOT_AUTO_START,
+                None,
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.DBus.Introspectable",
+                None
+            )
+            xml = proxy.call_sync("Introspect", None, Gio.DBusCallFlags.NONE, 1000, None)
+            introspection = xml.unpack()[0] if xml else ""
+            return "org.freedesktop.portal.Background" in introspection
+        except Exception as e:
+            logger.debug(f"Could not introspect portal: {e}")
+            return False
+
     def _set_autostart_via_portal(self, enable: bool):
         """Set autostart using Background Portal API."""
         logger.info(f"Starting autostart portal call: enable={enable}")
+
+        # Check if portal interface exists first
+        if not self._is_background_portal_available():
+            logger.info("Background portal not available on this system")
+            return False
 
         try:
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -670,19 +695,31 @@ class SettingsPage:
             return False
 
     def _on_autostart_toggled(self, switch, _param):
-        """Handle autostart toggle - try portal first, fall back to desktop file."""
+        """Handle autostart toggle using the appropriate method for the environment."""
         is_enabled = switch.get_active()
 
-        # Try portal first, fall back to desktop file method
-        success = self._set_autostart_via_portal(is_enabled)
-        if not success:
-            success = self._set_autostart_via_desktop_file(is_enabled)
+        if self._is_running_in_flatpak():
+            # Flatpak: must use portal (desktop file write is sandboxed)
+            success = self._set_autostart_via_portal(is_enabled)
+            if not success:
+                self.on_notification(
+                    "Autostart unavailable. Install xdg-desktop-portal-gtk and restart."
+                )
+        else:
+            # Native: try portal first, fall back to desktop file
+            success = self._set_autostart_via_portal(is_enabled)
+            if not success:
+                success = self._set_autostart_via_desktop_file(is_enabled)
 
         if not success:
             # Block signal while reverting to prevent loop
             self.startup_switch.handler_block(self._autostart_handler_id)
             switch.set_active(not is_enabled)
             self.startup_switch.handler_unblock(self._autostart_handler_id)
+
+    def _is_running_in_flatpak(self) -> bool:
+        """Check if running inside a Flatpak sandbox."""
+        return Path("/.flatpak-info").exists()
 
     def _get_installed_app_id(self):
         """Get the app ID."""
