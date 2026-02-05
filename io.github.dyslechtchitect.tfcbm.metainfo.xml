@@ -4,13 +4,11 @@
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0-or-later</project_license>
     <name>TFCBM</name>
-    <summary>The * Clipboard Manager - A powerful DE-agnostic clipboard manager</summary>
+    <summary>The * Clipboard Manager - a clipboard manager</summary>
 
     <description>
         <p>
-            TFCBM (The * Clipboard Manager) is a feature-rich clipboard manager
-            for Linux desktops. Keep track of your clipboard history,
-            manage multiple items, and quickly access your copied content.
+        Stores clipboard history, supports tags, favorites, search and more which is useful if you copy things more than once.
         </p>
         <p>Features:</p>
         <ul>
@@ -19,8 +17,7 @@
             <li>Quick search and filtering</li>
             <li>Tag and organize clipboard items</li>
             <li>Secret Items for sensitive data</li>
-            <li>Keyboard shortcuts via XDG Desktop Portal</li>
-            <li>Beautiful GTK4 interface</li>
+            <li>Keyboard shortcuts for quick workflows</li>
         </ul>
     </description>
 
@@ -48,17 +45,6 @@
     <content_rating type="oars-1.1"/>
 
     <releases>
-        <release version="1.0.1" date="2026-01-29">
-            <description>
-                <p>Performance improvements and bug fixes</p>
-                <ul>
-                    <li>Fixed performance issue with large text files</li>
-                    <li>Improved database size reporting for Flatpak installations</li>
-                    <li>Removed legacy extension support</li>
-                    <li>Optimized text content loading and display</li>
-                </ul>
-            </description>
-        </release>
         <release version="1.0" date="2026-01-23">
             <description>
                 <p>Initial release</p>
@@ -72,11 +58,6 @@
             </description>
         </release>
     </releases>
-
-    <kudos>
-        <kudo>ModernToolkit</kudo>
-        <kudo>HiDpiIcon</kudo>
-    </kudos>
 
     <requires>
         <display_length compare="ge">360</display_length>
@@ -98,6 +79,8 @@
     <keywords>
         <keyword>clipboard</keyword>
         <keyword>manager</keyword>
+        <keyword>tag</keyword>
+        <keyword>search</keyword>
         <keyword>history</keyword>
         <keyword>copy</keyword>
         <keyword>paste</keyword>
