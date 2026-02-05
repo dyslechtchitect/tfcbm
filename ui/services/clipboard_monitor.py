@@ -24,6 +24,9 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 logger = logging.getLogger("TFCBM.ClipboardMonitor")
 
 
+STREAM_READ_TIMEOUT_MS = 2000  # 2 second timeout for stream reads
+
+
 class ClipboardMonitor:
     """Monitors the system clipboard for changes using GTK4's Gdk.Clipboard."""
 
@@ -37,6 +40,7 @@ class ClipboardMonitor:
         self._clipboard = None
         self._changed_handler_id = None
         self._pending_text = None
+        self._pending_stream_ops = {}  # Track pending async operations
 
     def start(self):
         if self._running:
@@ -126,8 +130,15 @@ class ClipboardMonitor:
             stream = None
 
         if stream is not None:
-            raw = self._read_stream(stream)
-            uri_text = raw.decode("utf-8", errors="replace").strip() if raw else ""
+            self._read_stream_async(stream, self._on_uri_stream_read)
+        else:
+            # Not file URIs — try plain text
+            self._try_read_text()
+
+    def _on_uri_stream_read(self, raw):
+        """Callback after async stream read for URI list."""
+        if raw:
+            uri_text = raw.decode("utf-8", errors="replace").strip()
             uris = [
                 l.strip()
                 for l in uri_text.splitlines()
@@ -166,19 +177,31 @@ class ClipboardMonitor:
     def _on_html_result(self, clipboard, result):
         text = self._pending_text
         self._pending_text = None
-        html_b64 = None
 
         try:
             stream, _mime = clipboard.read_finish(result)
             if stream:
-                raw = self._read_stream(stream)
-                if raw:
-                    html_b64 = base64.b64encode(raw).decode("ascii")
+                # Store text for the callback
+                self._pending_html_text = text
+                self._read_stream_async(stream, self._on_html_stream_read)
+                return
         except Exception:
             pass
 
-        self._handle_text(text, format_type="html" if html_b64 else None,
-                          formatted_content=html_b64)
+        self._handle_text(text, format_type=None, formatted_content=None)
+
+    def _on_html_stream_read(self, raw):
+        """Callback after async stream read for HTML content."""
+        text = getattr(self, '_pending_html_text', None)
+        self._pending_html_text = None
+        html_b64 = None
+
+        if raw:
+            html_b64 = base64.b64encode(raw).decode("ascii")
+
+        if text:
+            self._handle_text(text, format_type="html" if html_b64 else None,
+                              formatted_content=html_b64)
 
     # ── event builders ──────────────────────────────────────────────
 
@@ -259,13 +282,50 @@ class ClipboardMonitor:
         except Exception:
             pass
 
-    @staticmethod
-    def _read_stream(stream):
+    def _read_stream_async(self, stream, callback):
+        """Read stream asynchronously with timeout to prevent blocking on lazy clipboard providers."""
+        op_id = id(stream)
+        cancellable = Gio.Cancellable()
         out = Gio.MemoryOutputStream.new_resizable()
-        out.splice(
+
+        def on_timeout():
+            """Called if stream read takes too long."""
+            if op_id in self._pending_stream_ops:
+                logger.warning("Stream read timed out after %dms", STREAM_READ_TIMEOUT_MS)
+                del self._pending_stream_ops[op_id]
+                cancellable.cancel()
+                try:
+                    stream.close(None)
+                except Exception:
+                    pass
+                callback(None)
+            return False  # Don't repeat
+
+        def on_splice_done(output_stream, result):
+            """Called when splice completes (success or failure)."""
+            # Remove from pending and cancel timeout
+            if op_id in self._pending_stream_ops:
+                timeout_id = self._pending_stream_ops.pop(op_id)
+                GLib.source_remove(timeout_id)
+
+            try:
+                output_stream.splice_finish(result)
+                data = output_stream.steal_as_bytes().get_data()
+                callback(data)
+            except Exception as e:
+                if not cancellable.is_cancelled():
+                    logger.debug("Stream splice failed: %s", e)
+                callback(None)
+
+        # Start timeout
+        timeout_id = GLib.timeout_add(STREAM_READ_TIMEOUT_MS, on_timeout)
+        self._pending_stream_ops[op_id] = timeout_id
+
+        # Start async splice
+        out.splice_async(
             stream,
-            Gio.OutputStreamSpliceFlags.CLOSE_SOURCE
-            | Gio.OutputStreamSpliceFlags.CLOSE_TARGET,
-            None,
+            Gio.OutputStreamSpliceFlags.CLOSE_SOURCE | Gio.OutputStreamSpliceFlags.CLOSE_TARGET,
+            GLib.PRIORITY_DEFAULT,
+            cancellable,
+            on_splice_done,
         )
-        return out.steal_as_bytes().get_data()
