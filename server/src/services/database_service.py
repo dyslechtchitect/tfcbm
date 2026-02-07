@@ -161,11 +161,6 @@ class DatabaseService:
         with self.lock:
             return self.db.update_item_name(item_id, name)
 
-    def toggle_secret(self, item_id: int, is_secret: bool, name: str = None) -> bool:
-        """Thread-safe toggle secret status"""
-        with self.lock:
-            return self.db.toggle_secret(item_id, is_secret, name)
-
     def toggle_favorite(self, item_id: int, is_favorite: bool) -> bool:
         """Thread-safe toggle favorite status"""
         with self.lock:

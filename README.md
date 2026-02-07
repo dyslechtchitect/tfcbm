@@ -20,7 +20,6 @@ flatpak install flathub io.github.dyslechtchitect.tfcbm
 - Clipboard history for text, images, and files
 - Search and filter
 - Tags and organization
-- Password-protected secret items
 - Configurable keyboard shortcut
 - Retention management
 

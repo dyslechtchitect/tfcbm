@@ -31,7 +31,6 @@ class ItemDialogHandler:
         self,
         item: dict,
         window,
-        password_service,
         ws_service,
         get_root: callable,
         search_query: str = "",
@@ -41,14 +40,12 @@ class ItemDialogHandler:
         Args:
             item: The clipboard item data dictionary
             window: The window instance for notifications
-            password_service: PasswordService for authentication
             ipc_service: ItemIPCService for fetching secret content
             get_root: Callback to get the root window for dialog presentation
             search_query: Current search query for highlighting in expand dialog
         """
         self.item = item
         self.window = window
-        self.password_service = password_service
         self.ipc_service = ws_service
         self.get_root = get_root
         self.search_query = search_query
@@ -88,112 +85,12 @@ class ItemDialogHandler:
     def handle_view_action(self):
         """Handle view button click - show full item dialog."""
         logger.info(f"VIEW ACTION TRIGGERED for item {self.item.get('id')} type={self.item.get('type')}")
-        # Check if item is secret and require authentication
-        is_secret = self.item.get("is_secret", False)
-        item_id = self.item.get("id")
-
-        if is_secret:
-            logger.info(f"Item {item_id} is secret, checking authentication for view")
-            # Check if authenticated for THIS specific view operation on THIS item
-            if not self.password_service.is_authenticated_for("view", item_id):
-                logger.info("Not authenticated for view, prompting for password")
-                # Prompt for authentication for THIS operation on THIS item
-                if not self.password_service.authenticate_for(
-                    "view", item_id, self.get_root()
-                ):
-                    logger.info("Authentication failed or cancelled for view")
-                    self.window.show_notification(
-                        "Authentication required to view protected item"
-                    )
-                    return
-                else:
-                    logger.info("Authentication successful for view")
-            else:
-                logger.info("Already authenticated for view")
-
-            # Fetch first page to get pagination info
-            logger.info(f"Fetching content for secret item {item_id} for view")
-            page_data = self.ipc_service.fetch_text_page(item_id, 0)
-            if not page_data:
-                self.window.show_notification("Failed to retrieve secret content")
-                self.password_service.consume_authentication("view", item_id)
-                return
-            logger.info(
-                f"Retrieved secret content for view (length: {page_data.get('total_length', 0)})"
-            )
-
-            # Temporarily set content and pagination info for viewing
-            original_content = self.item.get("content")
-            original_total_pages = self.item.get("total_pages")
-            original_total_length = self.item.get("total_length")
-            self.item["content"] = page_data["content"]
-            self.item["total_pages"] = page_data["total_pages"]
-            self.item["total_length"] = page_data["total_length"]
-            self.item["content_page"] = 0
-            self.show_view_dialog()
-            # Restore original values
-            self.item["content"] = original_content
-            if original_total_pages is not None:
-                self.item["total_pages"] = original_total_pages
-            else:
-                self.item.pop("total_pages", None)
-            if original_total_length is not None:
-                self.item["total_length"] = original_total_length
-            else:
-                self.item.pop("total_length", None)
-            # Consume authentication after successful view
-            self.password_service.consume_authentication("view", item_id)
-        else:
-            self.show_view_dialog()
+        self.show_view_dialog()
 
     def handle_save_action(self):
         """Handle save button click - show save file dialog."""
         logger.info(f"SAVE ACTION TRIGGERED for item {self.item.get('id')} type={self.item.get('type')}")
-        # Check if item is secret and require authentication
-        is_secret = self.item.get("is_secret", False)
-        item_id = self.item.get("id")
-
-        if is_secret:
-            logger.info(f"Item {item_id} is secret, checking authentication for save")
-            # Check if authenticated for THIS specific save operation on THIS item
-            if not self.password_service.is_authenticated_for("save", item_id):
-                logger.info("Not authenticated for save, prompting for password")
-                # Prompt for authentication for THIS operation on THIS item
-                if not self.password_service.authenticate_for(
-                    "save", item_id, self.get_root()
-                ):
-                    logger.info("Authentication failed or cancelled for save")
-                    self.window.show_notification(
-                        "Authentication required to save protected item"
-                    )
-                    return
-                else:
-                    logger.info("Authentication successful for save")
-            else:
-                logger.info("Already authenticated for save")
-
-            # Fetch real content for saving
-            logger.info(f"Fetching real content for secret item {item_id} for save")
-            real_content = self.ipc_service.fetch_secret_content(item_id)
-            if not real_content:
-                self.window.show_notification("Failed to retrieve secret content")
-                # Consume authentication even on failure
-                self.password_service.consume_authentication("save", item_id)
-                return
-            logger.info(
-                f"Retrieved secret content for save (length: {len(str(real_content))})"
-            )
-
-            # Temporarily replace content for saving
-            original_content = self.item.get("content")
-            self.item["content"] = real_content
-            self.show_save_dialog()
-            # Restore placeholder
-            self.item["content"] = original_content
-            # Consume authentication after successful save
-            self.password_service.consume_authentication("save", item_id)
-        else:
-            self.show_save_dialog()
+        self.show_save_dialog()
 
     def handle_delete_action(self):
         """Handle delete button click - show confirmation dialog."""

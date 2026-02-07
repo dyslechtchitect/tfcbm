@@ -111,7 +111,6 @@ class ClipboardDB:
                 name TEXT,
                 format_type TEXT,
                 formatted_content BLOB,
-                is_secret INTEGER DEFAULT 0,
                 is_favorite INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -242,7 +241,6 @@ class ClipboardDB:
         name: str = None,
         format_type: str = None,
         formatted_content: bytes = None,
-        is_secret: bool = False,
         is_favorite: bool = False,
     ) -> int:
         """
@@ -257,7 +255,6 @@ class ClipboardDB:
             name: Optional custom name for the item
             format_type: Optional format type (e.g., 'html', 'rtf') for formatted text
             formatted_content: Optional formatted content (HTML, RTF, etc.)
-            is_secret: Whether this item is a secret (requires name and password to view)
             is_favorite: Whether this item is favorited
 
         Returns:
@@ -273,8 +270,8 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash, name, format_type, formatted_content, is_secret, is_favorite)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clipboard_items (timestamp, type, data, thumbnail, hash, name, format_type, formatted_content, is_favorite)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 timestamp,
@@ -285,21 +282,15 @@ class ClipboardDB:
                 name,
                 format_type,
                 formatted_content,
-                1 if is_secret else 0,
                 1 if is_favorite else 0,
             ),
         )
         item_id = cursor.lastrowid
 
         # Insert into FTS for searchability
-        # For secrets: only index name, not content
         if item_type == "text":
             try:
-                # If secret, don't index content - only index name
-                if is_secret:
-                    text_content = ""
-                else:
-                    text_content = data.decode("utf-8")
+                text_content = data.decode("utf-8")
                 cursor.execute(
                     """
                     INSERT INTO clipboard_fts (rowid, content, name)
@@ -606,7 +597,7 @@ class ClipboardDB:
             where_clause = "WHERE " + " AND ".join(where_clauses)
 
         query = f"""
-            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_secret, is_favorite
+            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_favorite
             FROM clipboard_items
             {where_clause}
             ORDER BY timestamp {sort_order}
@@ -637,7 +628,6 @@ class ClipboardDB:
                     "name": row["name"],
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
-                    "is_secret": bool(row["is_secret"]),
                     "is_favorite": bool(row["is_favorite"]),
                     "tags": tags,
                 }
@@ -649,7 +639,7 @@ class ClipboardDB:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_secret, is_favorite, hash
+            SELECT id, timestamp, type, data, thumbnail, name, format_type, formatted_content, is_favorite, hash
             FROM clipboard_items
             WHERE id = ?
         """,
@@ -667,7 +657,6 @@ class ClipboardDB:
                 "name": row["name"],
                 "format_type": row["format_type"],
                 "formatted_content": row["formatted_content"],
-                "is_secret": bool(row["is_secret"]),
                 "is_favorite": bool(row["is_favorite"]),
                 "hash": row["hash"],
             }
@@ -758,16 +747,15 @@ class ClipboardDB:
         # Also update FTS table.
         # We need to get the item's content to potentially re-insert/update FTS.
         cursor.execute(
-            "SELECT type, data, is_secret FROM clipboard_items WHERE id = ?", (item_id,)
+            "SELECT type, data FROM clipboard_items WHERE id = ?", (item_id,)
         )
         row = cursor.fetchone()
         if row:
             item_type = row["type"]
             item_data = row["data"]
-            is_secret = bool(row["is_secret"])
 
             fts_content = ""
-            if item_type == "text" and not is_secret: # Only index text content if not secret
+            if item_type == "text":
                 fts_content = item_data.decode("utf-8")
             elif item_type == "file":
                 # Extract filename from file metadata
@@ -790,79 +778,6 @@ class ClipboardDB:
 
         self.conn.commit()
         return cursor.rowcount > 0
-
-    def toggle_secret(self, item_id: int, is_secret: bool, name: str = None) -> bool:
-        """
-        Toggle the secret status of an item
-
-        Args:
-            item_id: ID of the item to toggle
-            is_secret: Whether the item should be a secret
-            name: Optional name to set (required if marking as secret and item has no name)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        cursor = self.conn.cursor()
-
-        # If marking as secret, require a name
-        if is_secret:
-            cursor.execute(
-                "SELECT name FROM clipboard_items WHERE id = ?", (item_id,)
-            )
-            row = cursor.fetchone()
-            if row:
-                current_name = row["name"]
-                # If no name provided and item has no name, return False
-                if not name and not current_name:
-                    return False
-                # Update name if provided
-                if name:
-                    cursor.execute(
-                        "UPDATE clipboard_items SET name = ? WHERE id = ?",
-                        (name, item_id),
-                    )
-
-        # Update is_secret status
-        cursor.execute(
-            "UPDATE clipboard_items SET is_secret = ? WHERE id = ?",
-            (1 if is_secret else 0, item_id),
-        )
-
-        # Update FTS: remove content if making secret, restore if unmarking
-        cursor.execute(
-            "SELECT type, data, name FROM clipboard_items WHERE id = ?", (item_id,)
-        )
-        row = cursor.fetchone()
-        if row: # Make sure the item exists
-            item_type = row["type"]
-            item_data = row["data"]
-            # Use the current name from clipboard_items (which was just updated if name was provided)
-            item_name = row["name"] if row["name"] else ""
-
-            fts_content = ""
-            if item_type == "text" and not is_secret:
-                fts_content = item_data.decode("utf-8")
-            elif item_type == "file" and not is_secret: # Files also have content, but only name is indexed
-                 # Extract filename from file metadata
-                separator = b"\n---FILE_CONTENT---\n"
-                if separator in item_data:
-                    metadata_bytes, _ = item_data.split(separator, 1)
-                    metadata = json.loads(metadata_bytes.decode("utf-8"))
-                    fts_content = metadata.get("name", "") # Index file name as content
-
-            try:
-                cursor.execute(
-                    "INSERT OR REPLACE INTO clipboard_fts (rowid, content, name) VALUES (?, ?, ?)",
-                    (item_id, fts_content, item_name),
-                )
-            except Exception as e:
-                logging.warning(
-                    f"Failed to update FTS content for item {item_id}: {e}"
-                )
-
-        self.conn.commit()
-        return True
 
     def toggle_favorite(self, item_id: int, is_favorite: bool) -> bool:
         """
@@ -1046,7 +961,6 @@ class ClipboardDB:
                 ci.name,
                 ci.format_type,
                 ci.formatted_content,
-                ci.is_secret,
                 ci.is_favorite
             FROM recently_pasted rp
             INNER JOIN clipboard_items ci ON rp.clipboard_item_id = ci.id
@@ -1081,7 +995,6 @@ class ClipboardDB:
                     "name": row["name"],
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
-                    "is_secret": bool(row["is_secret"]),
                     "is_favorite": bool(row["is_favorite"]),
                     "tags": tags,
                 }
@@ -1207,7 +1120,6 @@ class ClipboardDB:
                 ci.name,
                 ci.format_type,
                 ci.formatted_content,
-                ci.is_secret,
                 ci.is_favorite,
                 -rank as relevance
             FROM clipboard_fts
@@ -1237,7 +1149,6 @@ class ClipboardDB:
                     "name": row["name"],
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
-                    "is_secret": bool(row["is_secret"]),
                     "is_favorite": bool(row["is_favorite"]),
                     "relevance": row["relevance"],
                 }
@@ -1604,7 +1515,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_secret, ci.is_favorite
+                SELECT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_favorite
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1620,7 +1531,7 @@ class ClipboardDB:
             placeholders = ",".join("?" * len(tag_ids))
             cursor.execute(
                 f"""
-                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_secret, ci.is_favorite
+                SELECT DISTINCT ci.id, ci.timestamp, ci.type, ci.data, ci.thumbnail, ci.name, ci.format_type, ci.formatted_content, ci.is_favorite
                 FROM clipboard_items ci
                 INNER JOIN item_tags it ON ci.id = it.item_id
                 WHERE it.tag_id IN ({placeholders})
@@ -1642,7 +1553,6 @@ class ClipboardDB:
                     "name": row["name"],
                     "format_type": row["format_type"],
                     "formatted_content": row["formatted_content"],
-                    "is_secret": bool(row["is_secret"]),
                     "is_favorite": bool(row["is_favorite"]),
                 }
             )

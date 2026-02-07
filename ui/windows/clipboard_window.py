@@ -72,22 +72,8 @@ class ClipboardWindow(Gtk.ApplicationWindow):
         # Load settings
         self.settings = get_settings()
 
-        # Initialize password service for secrets
-        from ui.services.password_service import PasswordService
-        self.password_service = PasswordService(on_notification=self.show_notification)
-
         # Connect close request handler
         self.connect("close-request", self._on_close_request)
-
-        # Connect focus change handler to clear secret authentication
-        self.connect("notify::is-active", self._on_focus_changed)
-
-        # Add global click handler to clear secret authentication when clicking elsewhere
-        # Use BUBBLE phase so buttons can handle clicks first, then we clear auth
-        click_gesture = Gtk.GestureClick.new()
-        click_gesture.set_propagation_phase(Gtk.PropagationPhase.BUBBLE)
-        click_gesture.connect("released", self._on_window_clicked)
-        self.add_controller(click_gesture)
 
         # Set window properties - 1/4 screen width and full height
         display = Gdk.Display.get_default()
@@ -400,7 +386,7 @@ class ClipboardWindow(Gtk.ApplicationWindow):
 
         # Delegate to TabManager if available
         if hasattr(self, 'tab_manager'):
-            self.tab_manager.handle_notebook_tab_switched(notebook, page, page_num)
+            self.tab_manager.handle_tab_switched(notebook, None)
 
     def _jump_to_top(self, list_type):
         """Scroll to the top of the specified list"""
@@ -504,23 +490,6 @@ class ClipboardWindow(Gtk.ApplicationWindow):
         # Quit the app completely
         self.get_application().quit()
         return False  # Allow the window to close
-
-    def _on_focus_changed(self, window, param):
-        """Handle window focus changes - clear secret authentication when focus is lost."""
-        if not self.is_active():
-            # Window lost focus or was minimized - clear secret authentication
-            logger.info("Window focus lost, clearing secret authentication")
-            self.password_service.clear_authentication()
-
-    def _on_window_clicked(self, gesture, n_press, x, y):
-        """Handle clicks anywhere in the window - clear secret authentication.
-
-        This runs in BUBBLE phase AFTER child widgets handle the click.
-        Secret buttons claim their events in CAPTURE phase, so if we get here,
-        it means the user clicked somewhere other than an action button.
-        """
-        logger.debug("Window click detected, clearing secret authentication")
-        self.password_service.clear_authentication()
 
     def _reload_current_tab(self):
         """Reload items in the current tab"""

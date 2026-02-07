@@ -105,26 +105,6 @@ class TestSearchAndFiltering:
         for item in results:
             assert item["type"] in ["text", "file"]
 
-    def test_search_excludes_secret_items(self, temp_db: ClipboardDB):
-        """Test that search excludes secret items' content."""
-        # Add normal item
-        temp_db.add_item("text", b"public searchable content")
-
-        # Add secret item
-        secret_id = temp_db.add_item(
-            "text",
-            b"secret password 12345",
-            name="My Secret",
-            is_secret=True
-        )
-
-        # Search for content that's in the secret
-        results = temp_db.search_items("password")
-
-        # Secret item content should not be searchable
-        secret_in_results = any(item["id"] == secret_id for item in results)
-        assert not secret_in_results
-
     def test_search_phrase_exact_match(self, temp_db: ClipboardDB):
         """Test searching for exact phrase with quotes."""
         temp_db.add_item("text", b"hello world example")

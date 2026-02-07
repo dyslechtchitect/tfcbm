@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+import sys
+
+# This helper is executed by PolicyKit after successful authentication.
+# It doesn't need to perform any checks itself, as Polkit handles the authentication.
+# If this script is executed, it means authentication was successful.
+# Therefore, we just exit with 0.
+
+if __name__ == "__main__":
+    sys.exit(0)

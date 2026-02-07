@@ -29,12 +29,10 @@ from ui.rows.handlers import (
     ClipboardOperationsHandler,
     ItemDialogHandler,
     ItemDragDropHandler,
-    ItemSecretManager,
     ItemTagManager,
     ItemIPCService,
 )
 from ui.services.clipboard_service import ClipboardService
-from ui.services.password_service import PasswordService
 
 logger = logging.getLogger("TFCBM.UI")
 
@@ -49,14 +47,12 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.show_pasted_time = show_pasted_time
         self.search_query = search_query
         self.clipboard_service = ClipboardService()
-        self.password_service = PasswordService(on_notification=self.window.show_notification)
 
         # Initialize IPC service for server communication
         self.ipc_service = ItemIPCService(
             item=item,
             window=window,
             on_rebuild_content=self._rebuild_content,
-            on_update_lock_button=self._update_lock_button_icon,
             on_display_tags=self._display_tags,
             on_update_header_name=self._update_header_name,
         )
@@ -66,7 +62,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             item=item,
             window=window,
             ws_service=self.ipc_service,
-            password_service=self.password_service,
             clipboard_service=self.clipboard_service,
         )
 
@@ -74,19 +69,9 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.dialog_handler = ItemDialogHandler(
             item=item,
             window=window,
-            password_service=self.password_service,
             ws_service=self.ipc_service,
             get_root=self.get_root,
             search_query=self.search_query,
-        )
-
-        # Initialize secret manager
-        self.secret_manager = ItemSecretManager(
-            item=item,
-            window=window,
-            password_service=self.password_service,
-            ws_service=self.ipc_service,
-            get_root=self.get_root,
         )
 
         item_height = self.window.settings.item_height
@@ -116,14 +101,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # ScrolledWindow for content only
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_child(viewport)
-
-        # Set initial scroll policy based on whether item is secret
-        # Secret items show static centered placeholder, no scrolling needed
-        is_secret = item.get('is_secret', False)
-        if is_secret:
-            scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
-        else:
-            scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.EXTERNAL)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.EXTERNAL)
 
         # SIMPLE FIXED SIZING - min 100px, max 200px content area
         scrolled.set_vexpand(False)
@@ -158,7 +136,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.drag_drop_handler = ItemDragDropHandler(
             item=item,
             card_frame=card_frame,
-            password_service=self.password_service,
             ws_service=self.ipc_service,
             on_show_auth_required=self._show_auth_required_notification,
             on_show_fetch_error=self._show_fetch_error_notification,
@@ -185,7 +162,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
             on_view=self.dialog_handler.handle_view_action,
             on_save=self.dialog_handler.handle_save_action,
             on_tags=self._on_tags_action,
-            on_secret=self.secret_manager.handle_secret_action,
             on_delete=self.dialog_handler.handle_delete_action,
         )
         self.actions_widget = self.actions.build()
@@ -268,7 +244,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
 
     def _rebuild_content(self):
         """Rebuild the content area to reflect updated item data."""
-        logger.info(f"_rebuild_content called for item {self.item.get('id')}, is_secret={self.item.get('is_secret')}")
+        logger.info(f"_rebuild_content called for item {self.item.get('id')}")
 
         # Remove old content widget
         self.main_box.remove(self.content_widget)
@@ -280,13 +256,7 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         # Append to main_box (it will be added at the end, which is correct)
         self.main_box.append(self.content_widget)
 
-        # Adjust scrolling based on content type
-        # Secret items don't need scrolling - just show centered placeholder
-        is_secret = self.item.get('is_secret', False)
-        if is_secret:
-            self.scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
-        else:
-            self.scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.EXTERNAL)
+        self.scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.EXTERNAL)
 
         # Force GTK to show and redraw the new widgets
         self.content_widget.show()
@@ -294,19 +264,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
         self.card_frame.queue_draw()
 
         logger.info(f"_rebuild_content completed for item {self.item.get('id')}")
-        return False  # For GLib.idle_add
-
-    def _update_lock_button_icon(self):
-        """Update the lock button icon to reflect current secret status."""
-        logger.info(f"_update_lock_button_icon called for item {self.item.get('id')}, is_secret={self.item.get('is_secret')}")
-
-        # Update the secret button icon via the actions component
-        if hasattr(self, 'actions') and self.actions:
-            self.actions.update_secret_button_icon()
-            logger.info(f"Updated secret button icon for item {self.item.get('id')}")
-        else:
-            logger.warning("Could not find actions to update secret button icon")
-
         return False  # For GLib.idle_add
 
     def _update_header_name(self):
@@ -336,9 +293,6 @@ class ClipboardItemRow(Gtk.ListBoxRow):
     def _on_row_clicked(self, row):
         """Copy item to clipboard when row is clicked."""
         logger.info(f"[KEYBOARD] Row clicked for item {self.item.get('id')}")
-
-        # Check if this is a secret item
-        is_secret = self.item.get("is_secret", False)
 
         # Copy to clipboard (handles authentication for secrets)
         copy_success = self.clipboard_ops.perform_copy_to_clipboard(

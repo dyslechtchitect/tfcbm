@@ -2,7 +2,6 @@
 
 This handler manages:
 - Preparing drag content (text, images, files)
-- Secret authentication for drag operations
 - Drag begin visual feedback
 - File pre-fetching for drag-and-drop
 """
@@ -29,7 +28,6 @@ class ItemDragDropHandler:
         self,
         item: dict,
         card_frame,
-        password_service,
         ws_service,
         on_show_auth_required: callable,
         on_show_fetch_error: callable,
@@ -39,14 +37,12 @@ class ItemDragDropHandler:
         Args:
             item: The clipboard item data dictionary
             card_frame: The card widget used for drag icon
-            password_service: PasswordService for authentication
             ipc_service: ItemIPCService for server communication
             on_show_auth_required: Callback to show auth required notification
             on_show_fetch_error: Callback to show fetch error notification
         """
         self.item = item
         self.card_frame = card_frame
-        self.password_service = password_service
         self.ipc_service = ws_service
         self.on_show_auth_required = on_show_auth_required
         self.on_show_fetch_error = on_show_fetch_error
@@ -56,50 +52,19 @@ class ItemDragDropHandler:
         """Prepare data for drag operation."""
         item_type = self.item.get("type", "")
         item_id = self.item.get("id")
-        is_secret = self.item.get("is_secret", False)
 
         print(
-            f"[DND] _on_drag_prepare called for type: {item_type}, id: {item_id}, is_secret: {is_secret}"
+            f"[DND] _on_drag_prepare called for type: {item_type}, id: {item_id}"
         )
-
-        # Check if item is secret and require authentication
-        if is_secret:
-            logger.info(f"Attempting to drag secret item {item_id}, checking authentication")
-            # Check if authenticated for THIS specific drag operation on THIS item
-            if not self.password_service.is_authenticated_for("drag", item_id):
-                logger.info("Not authenticated for drag, prompting for password")
-                # We can't show async dialog during drag prepare, so prevent drag
-                GLib.idle_add(self.on_show_auth_required)
-                return None
-            else:
-                logger.info("Authenticated, allowing drag of secret item")
 
         # Handle different content types
         if item_type == "text" or item_type == "url":
             # Text content - provide as text/plain
             content = self.item.get("content", "")
 
-            # For secrets, fetch real content (not the "-secret-" placeholder)
-            if is_secret:
-                logger.info(f"Fetching real content for secret item {item_id} for drag")
-                real_content = self.ipc_service.fetch_secret_content(item_id)
-                if real_content:
-                    content = real_content
-                    logger.info(f"Using real content for drag (length: {len(str(content))})")
-                else:
-                    logger.error("Failed to fetch secret content for drag")
-                    GLib.idle_add(self.on_show_fetch_error)
-                    # Consume authentication on error
-                    if is_secret:
-                        self.password_service.consume_authentication("drag", item_id)
-                    return None
-
             if isinstance(content, bytes):
                 content = content.decode("utf-8", errors="ignore")
             value = GObject.Value(str, content)
-            # Consume authentication after successful drag preparation
-            if is_secret:
-                self.password_service.consume_authentication("drag", item_id)
             return Gdk.ContentProvider.new_for_value(value)
 
         elif item_type.startswith("image/") or item_type == "screenshot":
@@ -198,9 +163,6 @@ class ItemDragDropHandler:
                         f"PNG:{len(image_bytes)}, JPEG:{len(jpeg_bytes)}, "
                         f"BMP:{len(bmp_bytes)})"
                     )
-                    # Consume authentication after successful drag preparation
-                    if is_secret:
-                        self.password_service.consume_authentication("drag", item_id)
                     return provider
                 else:
                     print(
@@ -220,9 +182,6 @@ class ItemDragDropHandler:
                     "text/uri-list", GLib.Bytes.new(uri_list_bytes)
                 )
                 print(f"[DND] Providing file/folder URI: {file_uri}")
-                # Consume authentication after successful drag preparation
-                if is_secret:
-                    self.password_service.consume_authentication("drag", item_id)
                 return provider
             else:
                 print(

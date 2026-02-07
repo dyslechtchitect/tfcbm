@@ -16,7 +16,6 @@ class ItemActions:
         on_view: Callable[[], None],
         on_save: Callable[[], None],
         on_tags: Callable[[], None],
-        on_secret: Callable[[], None],
         on_delete: Callable[[], None],
     ):
         self.item = item
@@ -24,7 +23,6 @@ class ItemActions:
         self.on_view = on_view
         self.on_save = on_save
         self.on_tags = on_tags
-        self.on_secret = on_secret
         self.on_delete = on_delete
 
     def build(self) -> Gtk.Widget:
@@ -42,7 +40,6 @@ class ItemActions:
         self._add_view_button(button_box)
         self._add_save_button(button_box)
         self._add_tags_button(button_box)
-        self._add_secret_button(button_box)
         self._add_delete_button(button_box)
 
         header_box.append(button_box)
@@ -134,81 +131,6 @@ class ItemActions:
 
         container.append(button)
 
-    def _add_secret_button(self, container: Gtk.Box) -> None:
-        button = Gtk.Button()
-
-        # Choose icon based on secret status
-        is_secret = self.item.get("is_secret", False)
-        if is_secret:
-            button.set_icon_name("changes-prevent-symbolic")  # Locked
-            button.set_tooltip_text("Unmark as protected")
-        else:
-            button.set_icon_name("changes-allow-symbolic")  # Unlocked
-            button.set_tooltip_text("Mark as protected")
-
-        button.add_css_class("flat")
-
-        # Add visual styling for locked items
-        if is_secret:
-            css_provider = Gtk.CssProvider()
-            css_data = (
-                "button { color: #e01b24 !important; "
-                "-gtk-icon-palette: error #e01b24; }"
-            )
-            css_provider.load_from_data(css_data.encode())
-            button.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
-            )
-
-        def on_click(gesture, n_press, x, y):
-            self._trigger_secret()
-            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
-            return True
-
-        gesture = Gtk.GestureClick.new()
-        gesture.connect("released", on_click)
-        gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        button.add_controller(gesture)
-
-        # Store reference for updating icon later
-        self.secret_button = button
-
-        container.append(button)
-
-    def update_secret_button_icon(self):
-        """Update the secret button icon based on current secret status."""
-        if not hasattr(self, 'secret_button') or not self.secret_button:
-            return
-
-        is_secret = self.item.get("is_secret", False)
-
-        # Update icon
-        if is_secret:
-            self.secret_button.set_icon_name("changes-prevent-symbolic")  # Locked
-            self.secret_button.set_tooltip_text("Unmark as protected")
-        else:
-            self.secret_button.set_icon_name("changes-allow-symbolic")  # Unlocked
-            self.secret_button.set_tooltip_text("Mark as protected")
-
-        # Update styling
-        if is_secret:
-            # Add red color for locked
-            css_provider = Gtk.CssProvider()
-            css_data = (
-                "button { color: #e01b24 !important; "
-                "-gtk-icon-palette: error #e01b24; }"
-            )
-            css_provider.load_from_data(css_data.encode())
-            self.secret_button.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
-            )
-        else:
-            # Remove red color for unlocked - reset to default
-            # We need to remove all providers and re-add only the default ones
-            context = self.secret_button.get_style_context()
-            # The button will naturally revert to default styling when CSS provider is removed
-            # GTK handles this automatically
-
     def _add_delete_button(self, container: Gtk.Box) -> None:
         button = Gtk.Button()
         button.set_icon_name("user-trash-symbolic")
@@ -238,9 +160,6 @@ class ItemActions:
 
     def _trigger_tags(self) -> None:
         self.on_tags()
-
-    def _trigger_secret(self) -> None:
-        self.on_secret()
 
     def _trigger_delete(self) -> None:
         self.on_delete()

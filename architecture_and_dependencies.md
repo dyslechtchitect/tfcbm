@@ -42,12 +42,10 @@ graph TB
     subgraph "User's Desktop"
         CLIP["System Clipboard\n(Wayland/X11)"]
         PORTAL["XDG Desktop Portal\nGlobalShortcuts"]
-        PKEXEC["pkexec\n(via flatpak-spawn)"]
     end
 
     CLIP -- "changed signal" --> CM
     PORTAL -- "Activated signal" --> SL
-    PKEXEC -- "auth for secrets" --> APP
 
     subgraph "Storage (XDG paths)"
         SQLITE[("~/.local/share/.../clipboard.db")]
@@ -137,7 +135,6 @@ sys, threading, time, traceback, typing, urllib.parse
 | Tool | Usage | Notes |
 |------|-------|-------|
 | **xdotool** | Auto-paste after copy | System dep |
-| **pkexec** | Protected item authentication | Via `flatpak-spawn --host` |
 
 ## Flatpak Runtime
 
@@ -180,7 +177,6 @@ UI and server communicate via a UNIX domain socket at
 | `delete_item` | `id` |
 | `update_tags` | `item_id`, `tags` |
 | `toggle_favorite` | `id` |
-| `toggle_secret` | `id` |
 | `get_settings` | -- |
 | `update_settings` | settings dict |
 

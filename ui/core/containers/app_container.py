@@ -7,7 +7,6 @@ from ui.config import AppPaths, AppSettings
 from ui.services import (
     ClipboardService,
     DatabaseService,
-    PasswordService,
     TagService,
 )
 
@@ -20,7 +19,6 @@ class AppContainer:
     _db_service: Optional[DatabaseService] = field(default=None, init=False, repr=False)
     _clipboard_service: Optional[ClipboardService] = field(default=None, init=False, repr=False)
     _tag_service: Optional[TagService] = field(default=None, init=False, repr=False)
-    _password_service: Optional[PasswordService] = field(default=None, init=False, repr=False)
 
     @property
     def db_service(self) -> DatabaseService:
@@ -39,12 +37,6 @@ class AppContainer:
         if self._tag_service is None:
             self._tag_service = TagService(self.db_service.db)
         return self._tag_service
-
-    @property
-    def password_service(self) -> PasswordService:
-        if self._password_service is None:
-            self._password_service = PasswordService()
-        return self._password_service
 
     @classmethod
     def create(

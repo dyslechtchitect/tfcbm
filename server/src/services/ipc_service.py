@@ -215,7 +215,6 @@ class IPCService:
             "name": item.get("name"),
             "format_type": item.get("format_type"),
             "formatted_content": base64.b64encode(item["formatted_content"]).decode("utf-8") if item.get("formatted_content") else None,
-            "is_secret": item.get("is_secret", False),
             "is_favorite": item.get("is_favorite", False),
             "content_truncated": content_truncated,
         }
@@ -293,8 +292,6 @@ class IPCService:
             await self._handle_get_items_by_tags(connection, data)
         elif action == "update_item_name":
             await self._handle_update_item_name(connection, data)
-        elif action == "toggle_secret":
-            await self._handle_toggle_secret(connection, data)
         elif action == "toggle_favorite":
             await self._handle_toggle_favorite(connection, data)
         elif action == "get_item":
@@ -586,46 +583,6 @@ class IPCService:
             logger.info(f"Updated name for item {item_id}: {success}")
         else:
             response = {"type": "item_name_updated", "success": False, "error": "item_id is required"}
-            await connection.send_json(response)
-
-    async def _handle_toggle_secret(self, connection: IPCConnection, data):
-        """Handle toggle_secret action"""
-        item_id = data.get("item_id")
-        is_secret = data.get("is_secret", False)
-        name = data.get("name")
-
-        if item_id is not None:
-            logger.info(f"Toggling secret for item {item_id}: is_secret={is_secret}, name='{name}'")
-            success = self.db_service.toggle_secret(item_id, is_secret, name)
-
-            if success:
-                updated_item = self.db_service.get_item(item_id)
-                response = {
-                    "type": "secret_toggled",
-                    "item_id": item_id,
-                    "is_secret": is_secret,
-                    "name": updated_item.get("name") if updated_item else name,
-                    "success": True
-                }
-                await connection.send_json(response)
-                logger.info(f"Sent secret_toggled response for item {item_id}")
-
-                await self.broadcast({
-                    "type": "item_updated",
-                    "item_id": item_id,
-                    "is_secret": is_secret,
-                    "name": updated_item.get("name") if updated_item else name
-                })
-            else:
-                response = {
-                    "type": "secret_toggled",
-                    "success": False,
-                    "error": "Secret items must have a name"
-                }
-                await connection.send_json(response)
-            logger.info(f"Toggled secret for item {item_id}: {success}")
-        else:
-            response = {"type": "secret_toggled", "success": False, "error": "item_id is required"}
             await connection.send_json(response)
 
     async def _handle_toggle_favorite(self, connection: IPCConnection, data):

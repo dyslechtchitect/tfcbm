@@ -2,7 +2,6 @@
 
 This handler manages:
 - Copying text, images, and files to clipboard
-- Secret authentication for copy operations
 - Paste simulation
 - Fetching full content from server for images and files
 """
@@ -28,7 +27,6 @@ class ClipboardOperationsHandler:
         item: dict,
         window,
         ws_service,
-        password_service,
         clipboard_service,
     ):
         """Initialize the clipboard operations handler.
@@ -37,13 +35,11 @@ class ClipboardOperationsHandler:
             item: The clipboard item data dictionary
             window: The window instance for notifications
             ipc_service: ItemIPCService for server communication
-            password_service: PasswordService for authentication
             clipboard_service: ClipboardService for clipboard operations
         """
         self.item = item
         self.window = window
         self.ipc_service = ws_service
-        self.password_service = password_service
         self.clipboard_service = clipboard_service
 
     def _skip_monitor(self):
@@ -69,41 +65,9 @@ class ClipboardOperationsHandler:
         Returns:
             bool: True if copy was successful, False otherwise
         """
-        # Check if item is secret and require authentication
-        is_secret = self.item.get("is_secret", False)
-        if is_secret:
-            logger.info(f"Item {item_id} is secret, checking authentication")
-            # Check if authenticated for THIS specific copy operation on THIS item
-            if not self.password_service.is_authenticated_for("copy", item_id):
-                logger.info("Not authenticated for copy operation, prompting for password")
-                # Prompt for authentication for THIS operation on THIS item
-                # Note: we need the root widget, which we'll get from a callback
-                if not self.password_service.authenticate_for("copy", item_id, self.window):
-                    logger.info("Authentication failed or cancelled")
-                    self.window.show_notification("Authentication required to copy protected item")
-                    return False
-                else:
-                    logger.info("Authentication successful for copy operation")
-            else:
-                logger.info("Already authenticated for copy operation")
-
-            # For secrets, we need to fetch the actual content from the server
-            # (not the "-secret-" placeholder)
-            logger.info(f"Fetching real content for secret item {item_id}")
-            content = self.ipc_service.fetch_secret_content(item_id)
-            if not content:
-                self.window.show_notification("Failed to retrieve secret content")
-                # Consume authentication even on failure
-                self.password_service.consume_authentication("copy", item_id)
-                return False
-            logger.info(f"Retrieved secret content (length: {len(str(content))})")
-
         clipboard = Gdk.Display.get_default().get_clipboard()
         if not clipboard:
             self.window.show_notification("Error: Could not access clipboard.")
-            # Consume authentication even on error
-            if is_secret:
-                self.password_service.consume_authentication("copy", item_id)
             return False
 
         try:
@@ -145,17 +109,11 @@ class ClipboardOperationsHandler:
                             f"{'URL' if item_type == 'url' else 'Text'} copied to clipboard"
                         )
                     self.ipc_service.record_paste(item_id)
-                    # Consume authentication after successful copy
-                    if is_secret:
-                        self.password_service.consume_authentication("copy", item_id)
                     return True
                 else:
                     self.window.show_notification(
                         "Error copying: content is empty."
                     )
-                    # Consume authentication even on error
-                    if is_secret:
-                        self.password_service.consume_authentication("copy", item_id)
                     return False
             elif item_type == "file":
                 self.window.show_notification("Loading file...")
@@ -167,9 +125,6 @@ class ClipboardOperationsHandler:
                 return True  # Async operation started successfully
         except Exception as e:
             self.window.show_notification(f"Error copying: {str(e)}")
-            # Consume authentication even on error
-            if is_secret:
-                self.password_service.consume_authentication("copy", item_id)
             return False
 
         return True  # Default success
@@ -220,9 +175,6 @@ class ClipboardOperationsHandler:
                                         f"📷 Image copied ({size_kb:.1f} KB)"
                                     )
                                     self.ipc_service.record_paste(item_id)
-                                    # Consume authentication after successful copy
-                                    if self.item.get("is_secret", False):
-                                        self.password_service.consume_authentication("copy", item_id)
                                 except Exception as e:
                                     self.window.show_notification(
                                         f"Error copying: {str(e)}"
@@ -294,9 +246,6 @@ class ClipboardOperationsHandler:
                                 f"📁 Folder copied: {folder_name}"
                             )
                             self.ipc_service.record_paste(item_id)
-                            # Consume authentication after successful copy
-                            if self.item.get("is_secret", False):
-                                self.password_service.consume_authentication("copy", item_id)
                         except Exception as e:
                             self.window.show_notification(
                                 f"Error copying folder: {str(e)}"
@@ -352,8 +301,6 @@ class ClipboardOperationsHandler:
                         f"📄 File copied: {file_name}"
                     )
                     self.ipc_service.record_paste(item_id)
-                    if self.item.get("is_secret", False):
-                        self.password_service.consume_authentication("copy", item_id)
                 except Exception as e:
                     self.window.show_notification(
                         f"Error copying file: {str(e)}"
@@ -414,8 +361,6 @@ class ClipboardOperationsHandler:
                                         f"📄 File copied: {file_name}"
                                     )
                                     self.ipc_service.record_paste(item_id)
-                                    if self.item.get("is_secret", False):
-                                        self.password_service.consume_authentication("copy", item_id)
                                 except Exception as e:
                                     self.window.show_notification(
                                         f"Error copying file: {str(e)}"
