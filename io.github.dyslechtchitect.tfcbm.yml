@@ -10,7 +10,6 @@ finish-args:
   - --socket=fallback-x11
   - --device=dri
   - --filesystem=home:ro                                  # Required: Read file contents when files are copied
-  - --talk-name=org.freedesktop.Flatpak
 
 modules:
   - name: tfcbm
@@ -19,4 +18,4 @@ modules:
       - type: git
         url: https://github.com/dyslechtchitect/tfcbm.git
         tag: v1.0
-        commit: f52fa02f61c7442688d2111a32bb726e38c54611
+        commit: 018ba961653d6b78df5d99c02bfc3c05e7351043
