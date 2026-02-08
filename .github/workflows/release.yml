@@ -19,31 +19,6 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder xvfb
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Create release manifest
-        run: |
-          # Rewrite the manifest to build from the local checkout instead of a git tag
-          cat > build-manifest.yml << 'MANIFEST'
-          id: io.github.dyslechtchitect.tfcbm
-          runtime: org.gnome.Platform
-          runtime-version: '49'
-          sdk: org.gnome.Sdk
-          command: tfcbm
-
-          finish-args:
-            - --share=ipc
-            - --socket=wayland
-            - --socket=fallback-x11
-            - --device=dri
-            - --filesystem=home:ro
-
-          modules:
-            - name: tfcbm
-              buildsystem: meson
-              sources:
-                - type: dir
-                  path: .
-          MANIFEST
-
       - name: Build Flatpak bundle
         run: |
           xvfb-run flatpak-builder \
@@ -55,7 +30,7 @@ jobs:
             --arch=x86_64 \
             --default-branch=stable \
             --ccache \
-            build-dir build-manifest.yml
+            build-dir io.github.dyslechtchitect.tfcbm.yml
           flatpak build-bundle repo tfcbm-x86_64.flatpak io.github.dyslechtchitect.tfcbm stable
 
       - name: Upload artifact
