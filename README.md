@@ -12,8 +12,8 @@
 A clipboard manager for Linux. Keeps a searchable history of everything you copy.
 
 <p align="center">
-  <a href="https://github.com/dyslechtchitect/tfcbm/releases/latest">
-    <img src="https://img.shields.io/badge/Download-.flatpak-blue?style=for-the-badge&logo=flatpak" alt="Download Flatpak" height="48">
+  <a href="https://dyslechtchitect.github.io/tfcbm/io.github.dyslechtchitect.tfcbm.flatpakref">
+    <img src="https://img.shields.io/badge/Install-Click_to_Install-blue?style=for-the-badge&logo=flatpak" alt="Click to Install" height="48">
   </a>
 </p>
 
@@ -31,7 +31,13 @@ Press `Ctrl+Escape` (configurable) to open. Click an item or press Enter to copy
 
 ## Install
 
-Download the `.flatpak` bundle from the [latest release](https://github.com/dyslechtchitect/tfcbm/releases/latest) and install it:
+Click the button above or install directly:
+
+```bash
+flatpak install https://dyslechtchitect.github.io/tfcbm/io.github.dyslechtchitect.tfcbm.flatpakref
+```
+
+Or download the `.flatpak` bundle from the [latest release](https://github.com/dyslechtchitect/tfcbm/releases/latest) and install manually:
 
 ```bash
 flatpak install tfcbm-x86_64.flatpak

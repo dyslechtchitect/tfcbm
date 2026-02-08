@@ -4,6 +4,11 @@ on:
   push:
     tags: [ 'v*' ]
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   build:
     name: Build Flatpak
@@ -19,25 +24,64 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder xvfb
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Build Flatpak bundle
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Build Flatpak
         run: |
           xvfb-run flatpak-builder \
             --user \
             --disable-rofiles-fuse \
-            --repo=repo \
+            --repo=pages/repo \
             --force-clean \
             --install-deps-from=flathub \
             --arch=x86_64 \
             --default-branch=stable \
+            --gpg-sign=8A8E15B4709CFC41 \
             --ccache \
             build-dir io.github.dyslechtchitect.tfcbm.yml
-          flatpak build-bundle repo tfcbm-x86_64.flatpak io.github.dyslechtchitect.tfcbm stable
 
-      - name: Upload artifact
+      - name: Update repo metadata
+        run: |
+          flatpak build-update-repo pages/repo \
+            --generate-static-deltas \
+            --gpg-sign=8A8E15B4709CFC41 \
+            --title="TFCBM" \
+            --default-branch=stable \
+            --prune \
+            --prune-depth=2
+
+      - name: Build bundle for release asset
+        run: |
+          flatpak build-bundle pages/repo tfcbm-x86_64.flatpak io.github.dyslechtchitect.tfcbm stable --gpg-keys=<(gpg --export 8A8E15B4709CFC41)
+
+      - name: Copy flatpakref to pages
+        run: cp io.github.dyslechtchitect.tfcbm.flatpakref pages/
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages/
+
+      - name: Upload bundle artifact
         uses: actions/upload-artifact@v4
         with:
           name: tfcbm-x86_64-flatpak
           path: tfcbm-x86_64.flatpak
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   release:
     name: Create Release
