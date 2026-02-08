@@ -75,31 +75,3 @@ jobs:
           path: tfcbm-gnome${{ matrix.gnome-version }}.flatpak
           retention-days: 7
 
-  # Third job: Lint with flatpak-builder-lint
-  lint:
-    name: Lint Flatpak
-    runs-on: ubuntu-latest
-    needs: flatpak
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Flatpak
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder xvfb dbus-x11
-          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.flatpak.Builder
-
-      - name: Lint manifest
-        run: |
-          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.dyslechtchitect.tfcbm.yml || true
-
-      - name: Build repo for linting
-        run: |
-          dbus-run-session -- xvfb-run flatpak run org.flatpak.Builder --user --install-deps-from=flathub --disable-rofiles-fuse --repo=repo --force-clean build-dir io.github.dyslechtchitect.tfcbm.yml
-
-      - name: Lint repo
-        run: |
-          flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo || true

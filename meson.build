@@ -48,7 +48,7 @@ install_data(
   install_dir: datadir / 'dbus-1/services'
 )
 
-# Install LICENSE file (required by Flathub)
+# Install LICENSE file
 install_data(
   'LICENSE',
   install_dir: datadir / 'licenses' / meson.project_name()
