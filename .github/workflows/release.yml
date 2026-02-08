@@ -39,7 +39,7 @@ jobs:
             --install-deps-from=flathub \
             --arch=x86_64 \
             --default-branch=stable \
-            --gpg-sign=8A8E15B4709CFC41 \
+            --gpg-sign=D93CF57462FBBE4E \
             --ccache \
             build-dir io.github.dyslechtchitect.tfcbm.yml
 
@@ -47,7 +47,7 @@ jobs:
         run: |
           flatpak build-update-repo pages/repo \
             --generate-static-deltas \
-            --gpg-sign=8A8E15B4709CFC41 \
+            --gpg-sign=D93CF57462FBBE4E \
             --title="TFCBM" \
             --default-branch=stable \
             --prune \
@@ -55,7 +55,7 @@ jobs:
 
       - name: Build bundle for release asset
         run: |
-          flatpak build-bundle pages/repo tfcbm-x86_64.flatpak io.github.dyslechtchitect.tfcbm stable --gpg-keys=<(gpg --export 8A8E15B4709CFC41)
+          flatpak build-bundle pages/repo tfcbm-x86_64.flatpak io.github.dyslechtchitect.tfcbm stable --gpg-keys=<(gpg --export D93CF57462FBBE4E)
 
       - name: Copy flatpakref to pages
         run: cp io.github.dyslechtchitect.tfcbm.flatpakref pages/
