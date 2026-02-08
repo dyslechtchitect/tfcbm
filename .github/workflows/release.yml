@@ -18,6 +18,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up QEMU for aarch64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Install flatpak and flatpak-builder
         run: |
           sudo apt-get update
@@ -29,7 +34,7 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
 
-      - name: Build Flatpak
+      - name: Build Flatpak (x86_64)
         run: |
           mkdir -p pages
           xvfb-run flatpak-builder \
@@ -39,6 +44,20 @@ jobs:
             --force-clean \
             --install-deps-from=flathub \
             --arch=x86_64 \
+            --default-branch=stable \
+            --gpg-sign=D93CF57462FBBE4E \
+            --ccache \
+            build-dir io.github.dyslechtchitect.tfcbm.yml
+
+      - name: Build Flatpak (aarch64)
+        run: |
+          xvfb-run flatpak-builder \
+            --user \
+            --disable-rofiles-fuse \
+            --repo=pages/repo \
+            --force-clean \
+            --install-deps-from=flathub \
+            --arch=aarch64 \
             --default-branch=stable \
             --gpg-sign=D93CF57462FBBE4E \
             --ccache \
@@ -54,9 +73,10 @@ jobs:
             --prune \
             --prune-depth=2
 
-      - name: Build bundle for release asset
+      - name: Build bundles for release
         run: |
-          flatpak build-bundle pages/repo tfcbm-x86_64.flatpak io.github.dyslechtchitect.tfcbm stable --gpg-keys=<(gpg --export D93CF57462FBBE4E)
+          flatpak build-bundle pages/repo tfcbm-x86_64.flatpak io.github.dyslechtchitect.tfcbm stable --arch=x86_64 --gpg-keys=<(gpg --export D93CF57462FBBE4E)
+          flatpak build-bundle pages/repo tfcbm-aarch64.flatpak io.github.dyslechtchitect.tfcbm stable --arch=aarch64 --gpg-keys=<(gpg --export D93CF57462FBBE4E)
 
       - name: Copy flatpakref to pages
         run: cp io.github.dyslechtchitect.tfcbm.flatpakref pages/
@@ -66,11 +86,13 @@ jobs:
         with:
           path: pages/
 
-      - name: Upload bundle artifact
+      - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tfcbm-x86_64-flatpak
-          path: tfcbm-x86_64.flatpak
+          name: tfcbm-flatpak-bundles
+          path: |
+            tfcbm-x86_64.flatpak
+            tfcbm-aarch64.flatpak
 
   deploy-pages:
     name: Deploy to GitHub Pages
@@ -93,13 +115,15 @@ jobs:
       contents: write
 
     steps:
-      - name: Download artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: tfcbm-x86_64-flatpak
+          name: tfcbm-flatpak-bundles
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: tfcbm-x86_64.flatpak
+          files: |
+            tfcbm-x86_64.flatpak
+            tfcbm-aarch64.flatpak
