@@ -4,6 +4,8 @@ summary: The Friendly Clipboard Manager
 description: |
   Track clipboard history with support for text, images, and files.
   Search, tag, and organize clipboard items with keyboard shortcuts.
+contact: https://github.com/dyslechtchitect/tfcbm/issues
+donation: https://github.com/dyslechtchitect/tfcbm#support-this-project
 license: GPL-3.0-or-later
 grade: stable
 confinement: strict
@@ -24,6 +26,9 @@ apps:
       - wayland
       - x11
       - opengl
+      - gsettings
+      - dbus
+      - unity7
 
 parts:
   tfcbm:
@@ -38,5 +43,6 @@ parts:
       - python3
       - python3-gi
       - xdotool
+      - dconf-cli
     parse-info:
       - usr/share/metainfo/io.github.dyslechtchitect.tfcbm.metainfo.xml

@@ -52,6 +52,16 @@ class ClipboardApp(Gtk.Application):
 
     def do_startup(self):
         """Application startup - set icon"""
+        # Optionally initialize libadwaita for native GNOME styling.
+        # Falls back to plain GTK4 theming on DEs without libadwaita.
+        try:
+            gi.require_version("Adw", "1")
+            from gi.repository import Adw
+            Adw.init()
+            Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.DEFAULT)
+        except (ImportError, ValueError):
+            pass
+
         Gtk.Application.do_startup(self)
 
         # Set the default icon name for the application

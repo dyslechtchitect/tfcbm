@@ -105,7 +105,29 @@ class HistoryLoaderManager:
         thread.start()
 
     async def ipc_client(self):
-        """IPC client to connect to backend."""
+        """IPC client to connect to backend with retry logic."""
+        max_retries = 10
+        retry_delay = 0.5  # seconds, doubles each attempt
+
+        for attempt in range(max_retries):
+            try:
+                return await self._ipc_client_inner()
+            except (ConnectionRefusedError, FileNotFoundError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.info(f"IPC connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {retry_delay:.1f}s...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 5.0)
+                else:
+                    logger.error(f"IPC connection failed after {max_retries} attempts: {e}")
+                    GLib.idle_add(self.window.show_error, f"Could not connect to server: {e}")
+            except Exception as e:
+                logger.error(f"IPC error: {e}")
+                traceback.print_exc()
+                GLib.idle_add(self.window.show_error, str(e))
+                return
+
+    async def _ipc_client_inner(self):
+        """Inner IPC client logic (separated for retry wrapper)."""
         print(f"Connecting to IPC server at {self.socket_path}...")
 
         try:
@@ -191,6 +213,8 @@ class HistoryLoaderManager:
             logger.info("IPC connection closed normally")
         except StopAsyncIteration:
             logger.info("IPC async iteration stopped")
+        except (ConnectionRefusedError, FileNotFoundError, OSError):
+            raise  # Let retry wrapper handle these
         except Exception as e:
             logger.error(f"IPC error: {e}")
             traceback.print_exc()

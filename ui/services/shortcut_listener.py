@@ -103,20 +103,39 @@ class ShortcutListener:
 
     def _warn_no_portal(self):
         """Log instructions for manual shortcut setup."""
+        shortcut = self._load_shortcut()
+        binding_str = shortcut.to_display_string() if shortcut else "Ctrl+Escape"
+        gsettings_str = shortcut.to_gsettings_string() if shortcut else "<Control>Escape"
+
         if os.environ.get("SNAP"):
             logger.warning(
                 "GlobalShortcuts portal is not usable under snap confinement. "
-                "To use a global shortcut, add a custom keyboard shortcut in your "
-                "desktop environment's settings with the command: tfcbm"
+                "Run this command ONCE in a host terminal to set up the keyboard shortcut:\n\n"
+                "  bash -c 'PATH_LIST=$(gsettings get org.gnome.settings-daemon.plugins.media-keys "
+                "custom-keybindings); "
+                "if echo \"$PATH_LIST\" | grep -q tfcbm; then echo \"Already registered\"; else "
+                "NEW=$(echo \"$PATH_LIST\" | sed \"s|\\]|, "
+                "\\x27/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/tfcbm/\\x27]|;"
+                "s|\\@as \\[\\], |[|;s|\\[, |[|\"); "
+                "gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "
+                "\"$NEW\"; "
+                "gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
+                "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/tfcbm/ "
+                "name \"TFCBM Clipboard Manager\"; "
+                "gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
+                "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/tfcbm/ "
+                "command \"snap run tfcbm\"; "
+                "gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
+                "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/tfcbm/ "
+                "binding \"%s\"; "
+                "echo \"Shortcut registered: %s → snap run tfcbm\"; fi'"
+                % (gsettings_str, binding_str)
             )
         else:
             logger.warning(
                 "XDG GlobalShortcuts portal is not available on this desktop environment. "
                 "To use a global shortcut, configure one manually in your DE's keyboard settings "
-                "that runs: dbus-send --session --type=method_call "
-                "--dest=io.github.dyslechtchitect.tfcbm.ClipboardService "
-                "/io/github/dyslechtchitect/tfcbm/ClipboardService "
-                "io.github.dyslechtchitect.tfcbm.ClipboardService.Activate uint32:0"
+                "that runs: snap run tfcbm"
             )
 
     def _check_portal_available(self):
@@ -511,7 +530,8 @@ class ShortcutListener:
 
     def _reload_shortcut(self):
         if not self._portal_available:
-            logger.info("Portal not available, shortcut reload skipped.")
+            logger.info("Portal not available, updating gsettings shortcut fallback.")
+            self._register_gsettings_shortcut()
             return
         if self._busy:
             logger.debug("Session operation in progress, skipping reload.")
