@@ -4,6 +4,7 @@ TFCBM Server Main Entry Point
 Initializes all services with dependency injection and starts the server
 """
 import asyncio
+import ctypes
 import logging
 import os
 import signal
@@ -11,6 +12,13 @@ import subprocess
 import sys
 import threading
 import time
+
+# Set process name to "tfcbm-agent" so system monitors show it correctly
+try:
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    libc.prctl(15, b"tfcbm-agent", 0, 0, 0)  # PR_SET_NAME = 15
+except Exception:
+    pass
 
 # Configure logging
 logging.basicConfig(

@@ -23,12 +23,12 @@ if [ -S "$SOCKET_PATH" ]; then
         # Socket exists but no server - clean up stale socket
         rm -f "$SOCKET_PATH"
         # Start new server
-        bash -c 'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"; exec -a tfcbm-server $PYTHON "$PKGLIBDIR/main.py"' >> "$SERVER_LOG" 2>&1 &
+        bash -c 'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"; exec -a tfcbm-agent $PYTHON "$PKGLIBDIR/main.py"' >> "$SERVER_LOG" 2>&1 &
         SERVER_PID=$!
     fi
 else
     # Start the IPC server in background
-    bash -c 'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"; exec -a tfcbm-server $PYTHON "$PKGLIBDIR/main.py"' >> "$SERVER_LOG" 2>&1 &
+    bash -c 'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"; exec -a tfcbm-agent $PYTHON "$PKGLIBDIR/main.py"' >> "$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
 fi
 
@@ -45,4 +45,4 @@ if [ ! -S "$SOCKET_PATH" ]; then
 fi
 
 # Launch the UI (handles clipboard monitor + shortcut listener in-process)
-exec -a tfcbm $PYTHON ui/main.py --server-pid $SERVER_PID --activate "$@"
+exec -a tfcbm-ui $PYTHON ui/main.py --server-pid $SERVER_PID --activate "$@"

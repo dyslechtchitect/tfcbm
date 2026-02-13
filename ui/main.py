@@ -4,8 +4,16 @@ TFCBM UI - GTK4 clipboard manager interface
 Minimal entry point - classes are in separate modules.
 """
 
+import ctypes
 import sys
 from pathlib import Path
+
+# Set process name to "tfcbm-ui" so system monitors show it correctly
+try:
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    libc.prctl(15, b"tfcbm-ui", 0, 0, 0)  # PR_SET_NAME = 15
+except Exception:
+    pass
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -17,6 +25,9 @@ import logging
 import os
 
 from gi.repository import GLib # GLib for get_user_data_dir
+
+# Set GLib program name so KDE/GNOME system monitor can match to desktop file for icon
+GLib.set_prgname("io.github.dyslechtchitect.tfcbm")
 
 # Get Flatpak's user data directory for logs
 log_dir = Path(GLib.get_user_data_dir()) / "tfcbm" # Create a subdirectory for logs
