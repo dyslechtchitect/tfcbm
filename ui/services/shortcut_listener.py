@@ -57,20 +57,22 @@ class ShortcutListener:
 
         self._portal_available = self._check_portal_available()
         if not self._portal_available:
-            logger.warning(
-                "XDG GlobalShortcuts portal is not available on this desktop environment. "
-                "To use a global shortcut, configure one manually in your DE's keyboard settings "
-                "that runs: dbus-send --session --type=method_call "
-                "--dest=io.github.dyslechtchitect.tfcbm.ClipboardService "
-                "/io/github/dyslechtchitect/tfcbm/ClipboardService "
-                "io.github.dyslechtchitect.tfcbm.ClipboardService.Activate uint32:0"
-            )
+            self._warn_no_portal()
             self.monitor_settings()
             logger.info("Shortcut listener started (portal unavailable, monitoring settings only).")
             return
 
         self._subscribe_activated_signal()
         self._create_session()
+
+        if not self.session_path:
+            # Session creation failed (e.g. snap confinement blocks /proc access).
+            self._portal_available = False
+            if self._activated_sub_id:
+                self.bus.signal_unsubscribe(self._activated_sub_id)
+                self._activated_sub_id = 0
+            self._warn_no_portal()
+
         self.monitor_settings()
         logger.info("Shortcut listener started.")
 
@@ -99,6 +101,24 @@ class ShortcutListener:
             self._activated_sub_id = 0
         logger.info("Shortcut listener stopped.")
 
+    def _warn_no_portal(self):
+        """Log instructions for manual shortcut setup."""
+        if os.environ.get("SNAP"):
+            logger.warning(
+                "GlobalShortcuts portal is not usable under snap confinement. "
+                "To use a global shortcut, add a custom keyboard shortcut in your "
+                "desktop environment's settings with the command: tfcbm"
+            )
+        else:
+            logger.warning(
+                "XDG GlobalShortcuts portal is not available on this desktop environment. "
+                "To use a global shortcut, configure one manually in your DE's keyboard settings "
+                "that runs: dbus-send --session --type=method_call "
+                "--dest=io.github.dyslechtchitect.tfcbm.ClipboardService "
+                "/io/github/dyslechtchitect/tfcbm/ClipboardService "
+                "io.github.dyslechtchitect.tfcbm.ClipboardService.Activate uint32:0"
+            )
+
     def _check_portal_available(self):
         """Check that the GlobalShortcuts interface is actually exposed by the portal."""
         try:
@@ -114,9 +134,37 @@ class ShortcutListener:
                 None,
             )
             xml = result.unpack()[0]
-            return "org.freedesktop.portal.GlobalShortcuts" in xml
+            if "org.freedesktop.portal.GlobalShortcuts" in xml:
+                return True
+            # In sandboxed environments (snap), the D-Bus proxy may filter
+            # introspection XML.  Try a direct method call as fallback.
+            logger.info("GlobalShortcuts not in introspection XML, probing directly...")
         except GLib.Error:
             return False
+
+        # Direct probe: attempt to read the interface version property.
+        # An UnknownInterface / UnknownMethod error means it truly doesn't exist.
+        try:
+            self.bus.call_sync(
+                PORTAL_BUS_NAME,
+                PORTAL_OBJECT_PATH,
+                "org.freedesktop.DBus.Properties",
+                "Get",
+                GLib.Variant("(ss)", (PORTAL_SHORTCUTS_IFACE, "version")),
+                GLib.VariantType("(v)"),
+                Gio.DBusCallFlags.NONE,
+                5000,
+                None,
+            )
+            logger.info("GlobalShortcuts portal confirmed via direct probe")
+            return True
+        except GLib.Error as e:
+            msg = str(e.message) if e.message else ""
+            if "UnknownInterface" in msg or "UnknownMethod" in msg:
+                return False
+            # Other errors (e.g. access denied) suggest the interface exists
+            logger.info("GlobalShortcuts probe returned '%s', assuming available", msg)
+            return True
 
     def _sender_token(self):
         """Return a unique sender token derived from the bus connection name."""

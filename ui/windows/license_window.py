@@ -42,9 +42,10 @@ class LicenseWindow(Gtk.Dialog):
 
     def _load_license_text(self):
         """Load license text from installed location or fallback to source."""
-        # Try Flatpak installed location first
         license_paths = [
             "/app/share/licenses/tfcbm/LICENSE",  # Flatpak
+            os.path.join(os.environ.get('SNAP', ''), 'usr', 'share', 'licenses', 'tfcbm', 'LICENSE'),  # Snap
+            "/usr/share/licenses/tfcbm/LICENSE",  # System install
             os.path.join(os.path.dirname(__file__), "..", "..", "LICENSE"),  # Development
         ]
 

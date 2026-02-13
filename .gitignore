@@ -437,3 +437,11 @@ TODO_*.md
 PRODUCTION_*.md
 
 *.local.yml
+
+# === Snap Build Artifacts ===
+*.snap
+*.snap-build
+snap/.snapcraft/
+stage/
+prime/
+squashfs-root/

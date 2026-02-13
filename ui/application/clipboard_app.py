@@ -269,14 +269,19 @@ class ClipboardApp(Gtk.Application):
 
         return 0
 
+    def _settings_path(self):
+        """Return the canonical settings file path (same as JsonSettingsStore)."""
+        import os
+        config_home = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+        return Path(config_home) / "tfcbm" / "settings.json"
+
     def do_activate(self):
         """Activate the application - toggle window visibility"""
 
         # Check if license has already been accepted
         import json
-        from pathlib import Path
 
-        settings_path = Path.home() / ".var/app/io.github.dyslechtchitect.tfcbm/config/settings.json"
+        settings_path = self._settings_path()
         license_accepted = False
 
         try:
@@ -312,9 +317,8 @@ class ClipboardApp(Gtk.Application):
     def _save_license_acceptance(self):
         """Save license acceptance status to settings.json"""
         import json
-        from pathlib import Path
 
-        settings_path = Path.home() / ".var/app/io.github.dyslechtchitect.tfcbm/config/settings.json"
+        settings_path = self._settings_path()
 
         try:
             # Load existing settings or create new
