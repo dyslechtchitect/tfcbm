@@ -1,5 +1,5 @@
 name: tfcbm
-version: '1.0.1'
+version: '1.0.3'
 summary: The Friendly Clipboard Manager
 description: |
   Track clipboard history with support for text, images, and files.
@@ -12,16 +12,6 @@ confinement: strict
 base: core24
 
 adopt-info: tfcbm
-
-slots:
-  dbus-tfcbm:
-    interface: dbus
-    bus: session
-    name: io.github.dyslechtchitect.tfcbm
-  dbus-clipboard-service:
-    interface: dbus
-    bus: session
-    name: io.github.dyslechtchitect.tfcbm.ClipboardService
 
 apps:
   tfcbm:
@@ -38,9 +28,6 @@ apps:
       - opengl
       - gsettings
       - unity7
-    slots:
-      - dbus-tfcbm
-      - dbus-clipboard-service
 
 parts:
   tfcbm:

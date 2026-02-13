@@ -76,14 +76,19 @@ class TFCBMDBusService:
             logger.info("✓ DBus object registered at /io/github/dyslechtchitect/tfcbm/ClipboardService")
 
             # Own the bus name io.github.dyslechtchitect.tfcbm.ClipboardService
-            self.bus_name_id = Gio.bus_own_name_on_connection(
-                self.connection,
-                "io.github.dyslechtchitect.tfcbm.ClipboardService",
-                Gio.BusNameOwnerFlags.NONE,
-                None,  # name_acquired_closure
-                None,  # name_lost_closure
-            )
-            logger.info("✓ Owned D-Bus name io.github.dyslechtchitect.tfcbm.ClipboardService")
+            # Skip under snap confinement — AppArmor blocks name ownership
+            # without a dbus slot, but the object is still callable in-process.
+            if not os.environ.get("SNAP"):
+                self.bus_name_id = Gio.bus_own_name_on_connection(
+                    self.connection,
+                    "io.github.dyslechtchitect.tfcbm.ClipboardService",
+                    Gio.BusNameOwnerFlags.NONE,
+                    None,  # name_acquired_closure
+                    None,  # name_lost_closure
+                )
+                logger.info("✓ Owned D-Bus name io.github.dyslechtchitect.tfcbm.ClipboardService")
+            else:
+                logger.info("Snap confinement detected, skipping D-Bus name ownership")
 
             return True
 

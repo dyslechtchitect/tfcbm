@@ -1,6 +1,7 @@
 """Main TFCBM application - DE-agnostic version using GTK4."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 from ui.windows.license_window import LicenseWindow
@@ -22,9 +23,14 @@ class ClipboardApp(Gtk.Application):
     """Main application"""
 
     def __init__(self, server_pid=None):
+        flags = Gio.ApplicationFlags.HANDLES_COMMAND_LINE
+        # Under snap confinement, AppArmor blocks D-Bus name ownership.
+        # Use NON_UNIQUE so GTK skips bus-name registration entirely.
+        if os.environ.get("SNAP"):
+            flags |= Gio.ApplicationFlags.NON_UNIQUE
         super().__init__(
             application_id="io.github.dyslechtchitect.tfcbm",
-            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
+            flags=flags,
         )
         self.server_pid = server_pid
         self.dbus_service = None

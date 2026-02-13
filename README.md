@@ -13,13 +13,29 @@ A clipboard manager for Linux. Keeps a searchable history of everything you copy
 
 ## Install
 
+### Snap Store
+
+<p align="center">
+  <a href="https://snapcraft.io/tfcbm">
+    <img src="https://snapcraft.io/static/images/badges/en/snap-store-black.svg" alt="Get it from the Snap Store" height="48">
+  </a>
+</p>
+
+Or install from the command line:
+
+```bash
+sudo snap install tfcbm
+```
+
+### Flatpak
+
 <p align="center">
   <a href="https://dyslechtchitect.github.io/tfcbm/io.github.dyslechtchitect.tfcbm.flatpakref">
     <img src="https://img.shields.io/badge/Install-Click_to_Install-blue?style=for-the-badge&logo=flatpak" alt="Click to Install" height="48">
   </a>
 </p>
 
-Click the button above or install directly:
+Or install from the command line:
 
 ```bash
 flatpak install https://dyslechtchitect.github.io/tfcbm/io.github.dyslechtchitect.tfcbm.flatpakref
