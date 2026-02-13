@@ -13,6 +13,16 @@ base: core24
 
 adopt-info: tfcbm
 
+slots:
+  dbus-tfcbm:
+    interface: dbus
+    bus: session
+    name: io.github.dyslechtchitect.tfcbm
+  dbus-clipboard-service:
+    interface: dbus
+    bus: session
+    name: io.github.dyslechtchitect.tfcbm.ClipboardService
+
 apps:
   tfcbm:
     extensions: [gnome]
@@ -27,8 +37,10 @@ apps:
       - x11
       - opengl
       - gsettings
-      - dbus
       - unity7
+    slots:
+      - dbus-tfcbm
+      - dbus-clipboard-service
 
 parts:
   tfcbm:
