@@ -44,5 +44,6 @@ parts:
       - python3-gi
       - xdotool
       - dconf-cli
+      - libproxy1v5
     parse-info:
       - usr/share/metainfo/io.github.dyslechtchitect.tfcbm.metainfo.xml

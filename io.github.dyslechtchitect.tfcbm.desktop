@@ -9,3 +9,4 @@ Terminal=false
 Categories=Utility;GTK;
 Keywords=clipboard;manager;history;copy;paste;
 StartupNotify=true
+StartupWMClass=io.github.dyslechtchitect.tfcbm

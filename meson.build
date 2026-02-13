@@ -67,3 +67,4 @@ configure_file(
   install_dir: bindir,
   install_mode: 'rwxr-xr-x'
 )
+
