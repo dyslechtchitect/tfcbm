@@ -44,6 +44,17 @@
     <content_rating type="oars-1.1"/>
 
     <releases>
+        <release version="1.1.0" date="2026-02-15">
+            <description>
+                <p>Theme settings</p>
+                <ul>
+                    <li>Background color tint with 10-color palette</li>
+                    <li>Window transparency toggle and opacity slider</li>
+                    <li>Adapts to OS light/dark theme automatically</li>
+                    <li>Settings persist across sessions</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.0" date="2026-01-23">
             <description>
                 <p>Initial release</p>

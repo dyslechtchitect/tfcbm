@@ -25,6 +25,8 @@ from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from server.src.settings import get_settings
 from ui.builders.main_window_builder import MainWindowBuilder
+from ui.infrastructure.json_settings_store import JsonSettingsStore
+from ui.utils.color_utils import hex_to_rgba
 from ui.managers.filter_bar_manager import FilterBarManager
 from ui.managers.history_loader_manager import HistoryLoaderManager
 from ui.managers.keyboard_shortcut_handler import KeyboardShortcutHandler
@@ -277,10 +279,145 @@ class ClipboardWindow(Gtk.ApplicationWindow):
         # Register UI PID with server for cleanup
         GLib.idle_add(self._register_ui_pid_with_server)
 
+        # Apply saved theme
+        self._apply_saved_theme()
+
         logger.info(
             f"ClipboardWindow initialized in {time.time() - start_time:.2f} seconds"
         )
 
+
+    def _apply_saved_theme(self):
+        """Load and apply theme from settings."""
+        store = JsonSettingsStore()
+        theme = store.get_theme()
+        self.apply_theme(theme)
+
+    def apply_theme(self, theme: dict):
+        """Apply all theme settings to the window (used on startup)."""
+        self.apply_theme_color(theme.get('background_color'))
+        self.apply_theme_opacity(
+            theme.get('transparency_enabled', False),
+            theme.get('transparency_level', 1.0),
+        )
+
+    @staticmethod
+    def _is_dark_theme():
+        """Detect whether the OS is using a dark or light GTK theme."""
+        settings = Gtk.Settings.get_default()
+        if settings.get_property("gtk-application-prefer-dark-theme"):
+            return True
+        theme_name = (settings.get_property("gtk-theme-name") or "").lower()
+        return "dark" in theme_name
+
+    def apply_theme_color(self, color):
+        """Apply only the background color tint (muted, fully opaque)."""
+        if color:
+            dark = self._is_dark_theme()
+            h = color.lstrip('#')
+            cr, cg, cb = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+            if dark:
+                base = 61       # dark grey
+                mix = 0.20
+                card_off = 12   # cards slightly lighter
+                entry_off = 30  # entries even lighter
+                border = "rgba(255,255,255,0.08)"
+                fg = "rgb(255, 255, 255)"
+                fg_dim = "rgba(255, 255, 255, 0.7)"
+            else:
+                base = 210      # light grey (not too close to white)
+                mix = 0.20
+                card_off = 8    # cards slightly lighter
+                entry_off = 18  # entries lighter still
+                border = "rgba(0,0,0,0.12)"
+                fg = "rgb(30, 30, 30)"
+                fg_dim = "rgba(30, 30, 30, 0.65)"
+
+            r = int(base + (cr - base) * mix)
+            g = int(base + (cg - base) * mix)
+            b = int(base + (cb - base) * mix)
+            bg = f"rgb({r}, {g}, {b})"
+
+            lr = max(0, min(255, r + card_off))
+            lg = max(0, min(255, g + card_off))
+            lb = max(0, min(255, b + card_off))
+            bg_light = f"rgb({lr}, {lg}, {lb})"
+
+            er = max(0, min(255, r + entry_off))
+            eg = max(0, min(255, g + entry_off))
+            eb = max(0, min(255, b + entry_off))
+            bg_entry = f"rgb({er}, {eg}, {eb})"
+
+            css = (
+                f"window.background {{ background-color: {bg}; color: {fg}; }}\n"
+                f"notebook > stack {{ background-color: {bg}; color: {fg}; }}\n"
+                f"listbox.boxed-list {{ background-color: {bg_light}; color: {fg};"
+                f"  border-color: {border}; }}\n"
+                f"listbox.boxed-list > row {{ background-color: {bg_light}; color: {fg};"
+                f"  border-color: {border}; }}\n"
+                f"scrolledwindow {{ background-color: {bg}; }}\n"
+                f"viewport {{ background-color: {bg}; }}\n"
+                f".clipboard-item-card {{ background-color: {bg_light}; color: {fg}; }}\n"
+                f"headerbar {{ background-color: {bg}; color: {fg}; }}\n"
+                f"notebook > header {{ background-color: {bg}; color: {fg}; }}\n"
+                f"notebook tab {{ color: {fg}; }}\n"
+                f"label {{ color: {fg}; }}\n"
+                f"label.dim-label {{ color: {fg_dim}; }}\n"
+                f"frame {{\n"
+                f"  background-color: {bg};\n"
+                f"  border-color: {border};\n"
+                f"  color: {fg};\n"
+                f"}}\n"
+                f"frame.view,\n"
+                f"frame.view scrolledwindow,\n"
+                f"frame.view viewport,\n"
+                f"frame.view box {{\n"
+                f"  background-color: {bg_entry};\n"
+                f"  border-radius: 12px;\n"
+                f"  border-color: transparent;\n"
+                f"  color: {fg};\n"
+                f"}}\n"
+                f"frame.view {{\n"
+                f"  border: 1px solid {border};\n"
+                f"}}\n"
+                f".toolbar {{ background-color: {bg}; color: {fg}; }}\n"
+                f"searchbar {{ background-color: {bg}; }}\n"
+                f"entry, search > entry {{\n"
+                f"  background-color: {bg_entry};\n"
+                f"  border-radius: 12px;\n"
+                f"  border: 1px solid {border};\n"
+                f"  color: {fg};\n"
+                f"}}\n"
+                f"switch {{\n"
+                f"  background-color: {bg_light};\n"
+                f"}}\n"
+                f"scale trough {{\n"
+                f"  background-color: {bg_light};\n"
+                f"}}\n"
+                f"spinbutton {{\n"
+                f"  background-color: {bg_entry};\n"
+                f"  color: {fg};\n"
+                f"}}\n"
+                f"button {{ color: {fg}; }}\n"
+            )
+            if not hasattr(self, '_theme_css_provider'):
+                self._theme_css_provider = Gtk.CssProvider()
+                Gtk.StyleContext.add_provider_for_display(
+                    Gdk.Display.get_default(),
+                    self._theme_css_provider,
+                    Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
+                )
+            self._theme_css_provider.load_from_string(css)
+        elif hasattr(self, '_theme_css_provider'):
+            self._theme_css_provider.load_from_string("")
+
+    def apply_theme_opacity(self, enabled, level=0.9):
+        """Apply only the window opacity."""
+        if enabled:
+            self.set_opacity(max(0.3, min(1.0, level)))
+        else:
+            self.set_opacity(1.0)
 
     def _create_loader(self):
         """Create an animated loader using the TFCBM loader.svg"""

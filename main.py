@@ -196,6 +196,14 @@ class TFCBMServer:
         try:
             while True:
                 time.sleep(1)
+                # Watchdog: if UI PID was registered and is now dead, shut down
+                ui_pid = self.ipc_service.ui_pid
+                if ui_pid:
+                    try:
+                        os.kill(ui_pid, 0)
+                    except ProcessLookupError:
+                        logging.info(f"UI process {ui_pid} died, shutting down server")
+                        self.signal_handler(signal.SIGTERM, None)
         except KeyboardInterrupt:
             logging.info("\nStopping server...")
 

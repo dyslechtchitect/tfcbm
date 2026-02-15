@@ -667,27 +667,16 @@ class IPCService:
         logger.info("Received shutdown request via IPC")
         response = {"type": "shutdown_acknowledged"}
         await connection.send_json(response)
-        logger.info("Shutdown acknowledged, initiating graceful shutdown...")
+        logger.info("Shutdown acknowledged, exiting immediately")
 
         # Close database connection
         try:
-            logger.info("Closing database connection...")
             self.db_service.close()
-            logger.info("Database connection closed")
-        except Exception as e:
-            logger.error(f"Error closing database: {e}")
+        except Exception:
+            pass
 
-        # Schedule immediate process exit from event loop
-        # os._exit() bypasses Python cleanup and exits immediately
-        import os
-        import asyncio
-
-        def force_exit():
-            logger.info("Forcing process exit...")
-            os._exit(0)
-
-        # Schedule exit after brief delay to allow response to send
-        asyncio.get_event_loop().call_later(0.1, force_exit)
+        # Exit immediately — the response is already sent (drain completed in send_json)
+        os._exit(0)
 
     async def _handle_get_total_count(self, connection: IPCConnection):
         """Handle get_total_count action"""

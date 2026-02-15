@@ -71,6 +71,21 @@ class JsonSettingsStore(ISettingsStore):
             logger.error("Error saving shortcut: %s", e)
             return False
 
+    def get_theme(self) -> dict:
+        """Read theme settings from JSON."""
+        config = self._load_config()
+        return config.get('theme', {
+            'background_color': None,
+            'transparency_enabled': False,
+            'transparency_level': 1.0,
+        })
+
+    def set_theme(self, theme: dict):
+        """Write theme settings to JSON."""
+        config = self._load_config()
+        config['theme'] = theme
+        self._save_config(config)
+
     def start_monitoring(self) -> bool:
         """No-op for JSON store. Monitoring is handled by ClipboardMonitor."""
         return True

@@ -2,7 +2,9 @@
 
 import logging
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 from ui.windows.license_window import LicenseWindow
 import gi
@@ -262,6 +264,44 @@ class ClipboardApp(Gtk.Application):
         except Exception as e:
             print(f"[CLEANUP] Error during cleanup: {e}")
             logger.error(f"Error during cleanup: {e}")
+
+        # Fallback: ensure server process is actually dead
+        if self.server_pid:
+            self._ensure_process_dead(self.server_pid)
+
+    def _ensure_process_dead(self, pid):
+        """Ensure a process is dead, escalating from poll to SIGTERM to SIGKILL."""
+        # Wait up to 2 seconds for process to die on its own (IPC shutdown)
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                print(f"[CLEANUP] Server process {pid} is dead")
+                return
+            time.sleep(0.1)
+
+        # Still alive — send SIGTERM
+        print(f"[CLEANUP] Server {pid} still alive, sending SIGTERM")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+
+        # Wait up to 1 second for SIGTERM
+        for _ in range(10):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                print(f"[CLEANUP] Server process {pid} terminated after SIGTERM")
+                return
+            time.sleep(0.1)
+
+        # Still alive — send SIGKILL
+        print(f"[CLEANUP] Server {pid} still alive, sending SIGKILL")
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
     def do_command_line(self, command_line):
         """Handle command-line arguments"""

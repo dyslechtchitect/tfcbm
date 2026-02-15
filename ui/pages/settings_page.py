@@ -17,6 +17,7 @@ from ui.domain.keyboard import KeyboardShortcut
 from ui.infrastructure.gtk_keyboard_parser import GtkKeyboardParser
 from ui.infrastructure.json_settings_store import JsonSettingsStore
 from ui.services.shortcut_service import ShortcutService
+from ui.utils.color_utils import sanitize_color, hex_to_rgba
 
 
 def _create_settings_row(title, subtitle=None):
@@ -177,8 +178,215 @@ class SettingsPage:
         storage_list.append(db_row)
         page_box.append(storage_frame)
 
+        # Theme group
+        theme_frame = self._build_theme_group()
+        page_box.append(theme_frame)
+
         scrolled.set_child(page_box)
         return scrolled
+
+    THEME_COLORS = [
+        "#3584e4",  # Blue
+        "#33d17a",  # Green
+        "#f6d32d",  # Yellow
+        "#ff7800",  # Orange
+        "#e01b24",  # Red
+        "#9141ac",  # Purple
+        "#986a44",  # Brown
+        "#5e5c64",  # Gray
+        "#ff69b4",  # Pink
+        "#7fff00",  # Chartreuse
+    ]
+
+    def _build_theme_group(self):
+        """Build the theme settings section with color picker and transparency controls."""
+        frame, listbox = _create_settings_group(
+            "Theme", "Customize window appearance"
+        )
+
+        theme = self.settings_store.get_theme()
+        current_color = theme.get('background_color')
+
+        # Row 1: Background Color
+        color_row = Gtk.ListBoxRow()
+        color_row.set_activatable(False)
+        color_outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        color_outer.set_margin_top(8)
+        color_outer.set_margin_bottom(8)
+        color_outer.set_margin_start(12)
+        color_outer.set_margin_end(12)
+
+        color_label = Gtk.Label(label="Background Color")
+        color_label.set_halign(Gtk.Align.START)
+        color_outer.append(color_label)
+
+        color_flow = Gtk.FlowBox()
+        color_flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        color_flow.set_max_children_per_line(11)
+        color_flow.set_column_spacing(6)
+        color_flow.set_row_spacing(6)
+        color_flow.set_homogeneous(True)
+
+        # "Default" button (no tint)
+        default_btn = Gtk.Button()
+        default_btn.set_size_request(36, 36)
+        default_btn.set_label("X")
+        default_btn.set_tooltip_text("Default (no tint)")
+        default_btn.color_value = None
+        default_css = Gtk.CssProvider()
+        default_css.load_from_string(
+            "button { background-color: #9a9996; background-image: none;"
+            " border-radius: 18px; border: none; box-shadow: none;"
+            " min-width: 36px; min-height: 36px; padding: 0;"
+            " font-weight: bold; color: white; }"
+        )
+        default_btn.get_style_context().add_provider(
+            default_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        def on_default_click(btn, flow=color_flow):
+            parent = btn.get_parent()
+            if parent:
+                flow.select_child(parent)
+
+        default_btn.connect("clicked", on_default_click)
+        color_flow.append(default_btn)
+
+        # Color buttons
+        for color in self.THEME_COLORS:
+            color_btn = Gtk.Button()
+            color_btn.set_size_request(36, 36)
+            color_clean = sanitize_color(color)
+            color_btn.color_value = color_clean
+            css_provider = Gtk.CssProvider()
+            css_provider.load_from_string(
+                f"button {{ background-color: {color_clean}; background-image: none;"
+                f" border-radius: 18px; border: none; box-shadow: none;"
+                f" min-width: 36px; min-height: 36px; padding: 0; }}"
+            )
+            color_btn.get_style_context().add_provider(
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+
+            def on_color_click(btn, flow=color_flow):
+                parent = btn.get_parent()
+                if parent:
+                    flow.select_child(parent)
+
+            color_btn.connect("clicked", on_color_click)
+            color_flow.append(color_btn)
+
+        # Select the current color
+        select_index = 0  # Default button at index 0
+        if current_color:
+            for i, c in enumerate(self.THEME_COLORS):
+                if sanitize_color(c) == current_color:
+                    select_index = i + 1  # +1 because default is at 0
+                    break
+
+        def select_initial_color():
+            child = color_flow.get_child_at_index(select_index)
+            if child:
+                color_flow.select_child(child)
+            return False
+
+        GLib.idle_add(select_initial_color)
+
+        color_flow.connect("selected-children-changed", self._on_theme_color_changed)
+        self._theme_color_flow = color_flow
+
+        color_outer.append(color_flow)
+        color_row.set_child(color_outer)
+        listbox.append(color_row)
+
+        # Row 2: Transparency toggle
+        transparency_row, transparency_box = _create_settings_row(
+            "Enable Transparency",
+            "Make the window semi-transparent (requires compositor)"
+        )
+        self._transparency_switch = Gtk.Switch()
+        self._transparency_switch.set_active(theme.get('transparency_enabled', False))
+        self._transparency_switch.set_valign(Gtk.Align.CENTER)
+        self._transparency_switch.connect("notify::active", self._on_transparency_toggled)
+        transparency_box.append(self._transparency_switch)
+        listbox.append(transparency_row)
+
+        # Row 3: Opacity slider
+        opacity_row, opacity_box = _create_settings_row(
+            "Window Opacity",
+            "Adjust transparency level (30% – 100%)"
+        )
+        adjustment = Gtk.Adjustment.new(
+            value=theme.get('transparency_level', 0.9),
+            lower=0.3,
+            upper=1.0,
+            step_increment=0.05,
+            page_increment=0.1,
+            page_size=0,
+        )
+        self._opacity_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL)
+        self._opacity_scale.set_adjustment(adjustment)
+        self._opacity_scale.set_draw_value(True)
+        self._opacity_scale.set_digits(2)
+        self._opacity_scale.set_hexpand(True)
+        self._opacity_scale.set_size_request(150, -1)
+        self._opacity_scale.set_sensitive(theme.get('transparency_enabled', False))
+        self._opacity_scale.connect("value-changed", self._on_opacity_changed)
+        opacity_box.append(self._opacity_scale)
+        listbox.append(opacity_row)
+
+        return frame
+
+    def _on_theme_color_changed(self, flow):
+        """Handle color selection change — apply color only, don't touch transparency."""
+        selected = flow.get_selected_children()
+        if not selected:
+            return
+
+        child = selected[0]
+        btn = child.get_child()
+        color = getattr(btn, 'color_value', None)
+
+        theme = self.settings_store.get_theme()
+        theme['background_color'] = color
+        self.settings_store.set_theme(theme)
+
+        if self.window:
+            self.window.apply_theme_color(color)
+
+    def _on_transparency_toggled(self, switch, _param):
+        """Handle transparency toggle — apply opacity only, don't touch color."""
+        enabled = switch.get_active()
+        self._opacity_scale.set_sensitive(enabled)
+
+        theme = self.settings_store.get_theme()
+        theme['transparency_enabled'] = enabled
+        self.settings_store.set_theme(theme)
+
+        if self.window:
+            level = theme.get('transparency_level', 0.9)
+            self.window.apply_theme_opacity(enabled, level)
+
+    def _on_opacity_changed(self, scale):
+        """Handle opacity slider change — live preview, debounced save."""
+        level = scale.get_value()
+
+        # Live preview: set opacity directly (cheap, no file I/O)
+        if self.window:
+            self.window.set_opacity(max(0.3, min(1.0, level)))
+
+        # Debounce the file save — cancel previous pending save
+        if hasattr(self, '_opacity_save_timeout') and self._opacity_save_timeout:
+            GLib.source_remove(self._opacity_save_timeout)
+
+        def save_opacity():
+            theme = self.settings_store.get_theme()
+            theme['transparency_level'] = round(level, 2)
+            self.settings_store.set_theme(theme)
+            self._opacity_save_timeout = None
+            return False
+
+        self._opacity_save_timeout = GLib.timeout_add(300, save_opacity)
 
     def _build_clipboard_group(self):
         """Build the clipboard behavior settings section."""
