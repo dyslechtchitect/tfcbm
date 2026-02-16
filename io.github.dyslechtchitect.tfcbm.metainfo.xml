@@ -44,6 +44,17 @@
     <content_rating type="oars-1.1"/>
 
     <releases>
+        <release version="1.1.1" date="2026-02-16">
+            <description>
+                <p>Theme bugfixes</p>
+                <ul>
+                    <li>Fix tag colors getting muted by theme</li>
+                    <li>Fix light theme readability and contrast</li>
+                    <li>Fix zombie/orphan processes on restart</li>
+                    <li>Fix transparency slider crash</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.1.0" date="2026-02-15">
             <description>
                 <p>Theme settings</p>

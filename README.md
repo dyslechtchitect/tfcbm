@@ -59,7 +59,18 @@ flatpak install tfcbm-x86_64.flatpak
 
 Press `Ctrl+Escape` (configurable) to open. Click an item or press Enter to copy it back to the clipboard.
 
-## Build from Source
+## Build and Install Locally
+
+### Snap
+
+```bash
+git clone https://github.com/dyslechtchitect/tfcbm.git
+cd tfcbm
+snapcraft
+sudo snap install tfcbm_*.snap --dangerous
+```
+
+### Flatpak
 
 ```bash
 flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
