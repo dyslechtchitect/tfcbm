@@ -144,7 +144,7 @@ class TagDisplayManager:
                 logger.error(f"  CSS data: {repr(css_data)}")
                 logger.error(f"  Tag: {tag_name}, Color: {repr(tag_color)}")
             btn.get_style_context().add_provider(
-                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+                css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 2
             )
 
             # Add drag source for drag-and-drop

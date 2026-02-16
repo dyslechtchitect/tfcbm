@@ -40,6 +40,7 @@ class ClipboardApp(Gtk.Application):
         self.main_window = None  # Track main window even when hidden
         self.clipboard_monitor = None
         self.shortcut_listener = None
+        self._cleanup_done = False
 
         self.add_main_option(
             "activate",
@@ -219,7 +220,11 @@ class ClipboardApp(Gtk.Application):
         Gtk.Application.do_shutdown(self)
 
     def _cleanup_server(self):
-        """Request graceful shutdown of server via IPC"""
+        """Request graceful shutdown of server via IPC (idempotent)."""
+        if self._cleanup_done:
+            print("[CLEANUP] _cleanup_server already ran, skipping")
+            return
+        self._cleanup_done = True
         print(f"[CLEANUP] _cleanup_server called")
         logger.info("Requesting server shutdown via IPC")
 
