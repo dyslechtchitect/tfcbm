@@ -174,8 +174,15 @@ class ClipboardApp(Gtk.Application):
 
     def _on_shortcut_unavailable(self, reason, details):
         """Show an info dialog when global shortcuts can't be set up."""
+        try:
+            self._show_shortcut_unavailable_dialog(reason, details)
+        except Exception as e:
+            logger.error("Failed to show shortcut unavailable dialog: %s", e)
+
+    def _show_shortcut_unavailable_dialog(self, reason, details):
         parent = self.main_window
         if not parent:
+            logger.warning("No main window for shortcut unavailable dialog")
             return
 
         if reason == "missing_backend" and details:
