@@ -75,6 +75,13 @@ class ShortcutListener:
                 self.bus.signal_unsubscribe(self._activated_sub_id)
                 self._activated_sub_id = 0
             self._warn_no_portal()
+            if self._on_shortcut_unavailable:
+                from ui.utils.system_info import get_missing_portal_backend
+                missing = get_missing_portal_backend()
+                if missing:
+                    GLib.idle_add(self._on_shortcut_unavailable, "missing_backend", missing)
+                else:
+                    GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
 
         self.monitor_settings()
         logger.info("Shortcut listener started.")
@@ -182,7 +189,7 @@ class ShortcutListener:
             return True
         except GLib.Error as e:
             msg = str(e.message) if e.message else ""
-            if "UnknownInterface" in msg or "UnknownMethod" in msg:
+            if "UnknownInterface" in msg or "UnknownMethod" in msg or "No such interface" in msg:
                 return False
             # Other errors (e.g. access denied) suggest the interface exists
             logger.info("GlobalShortcuts probe returned '%s', assuming available", msg)
@@ -540,8 +547,7 @@ class ShortcutListener:
 
     def _reload_shortcut(self):
         if not self._portal_available:
-            logger.info("Portal not available, updating gsettings shortcut fallback.")
-            self._register_gsettings_shortcut()
+            logger.info("Portal not available, cannot reload shortcut via portal.")
             if self._on_shortcut_unavailable:
                 GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
             return
