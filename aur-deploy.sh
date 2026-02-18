@@ -12,6 +12,12 @@ if [ -n "$1" ]; then
   PKGVER="$1"
 fi
 
+echo "==> Installing dependencies..."
+sudo pacman -S --needed --noconfirm base-devel git pacman-contrib
+
+# Get maintainer email
+read -rp "Enter your maintainer email for PKGBUILD: " MAINTAINER_EMAIL
+
 echo "==> Deploying tfcbm v${PKGVER} to AUR..."
 
 # Clone or update the AUR repo
@@ -27,7 +33,7 @@ fi
 
 # Write the PKGBUILD with the target version
 cat > PKGBUILD << PKGBUILD_EOF
-# Maintainer: dyslechtchitect <your-email@example.com>
+# Maintainer: dyslechtchitect <${MAINTAINER_EMAIL}>
 pkgname=tfcbm
 pkgver=${PKGVER}
 pkgrel=1

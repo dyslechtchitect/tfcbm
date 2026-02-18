@@ -8,14 +8,17 @@ WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo "==> Installing build dependencies..."
-sudo pacman -S --needed --noconfirm base-devel git python python-gobject gtk4 gdk-pixbuf2 meson xdotool
+sudo pacman -S --needed --noconfirm base-devel git pacman-contrib python python-gobject gtk4 gdk-pixbuf2 meson xdotool
 
 echo "==> Setting up build directory in $WORK_DIR..."
 cd "$WORK_DIR"
 
+# Get maintainer email
+read -rp "Enter your maintainer email for PKGBUILD: " MAINTAINER_EMAIL
+
 # Write the PKGBUILD
-cat > PKGBUILD << 'PKGBUILD_EOF'
-# Maintainer: dyslechtchitect <your-email@example.com>
+cat > PKGBUILD << PKGBUILD_EOF
+# Maintainer: dyslechtchitect <${MAINTAINER_EMAIL}>
 pkgname=tfcbm
 pkgver=1.1.1
 pkgrel=1
@@ -35,18 +38,18 @@ optdepends=(
   'libadwaita: adaptive GNOME styling'
   'webkit2gtk-6.0: HTML preview in clipboard items'
 )
-source=("${pkgname}-${pkgver}.tar.gz::https://github.com/dyslechtchitect/tfcbm/archive/refs/tags/v${pkgver}.tar.gz")
+source=("\${pkgname}-\${pkgver}.tar.gz::https://github.com/dyslechtchitect/tfcbm/archive/refs/tags/v\${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 build() {
-  cd "${pkgname}-${pkgver}"
+  cd "\${pkgname}-\${pkgver}"
   meson setup builddir --prefix=/usr
   meson compile -C builddir
 }
 
 package() {
-  cd "${pkgname}-${pkgver}"
-  meson install -C builddir --destdir="${pkgdir}"
+  cd "\${pkgname}-\${pkgver}"
+  meson install -C builddir --destdir="\${pkgdir}"
 }
 PKGBUILD_EOF
 
