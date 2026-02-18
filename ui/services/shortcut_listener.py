@@ -16,6 +16,7 @@ import time
 from gi.repository import Gio, GLib
 
 from ui.domain.keyboard import KeyboardShortcut
+from ui.utils.system_info import get_missing_portal_backend
 
 logger = logging.getLogger("TFCBM.ShortcutListener")
 logging.basicConfig(level=logging.INFO)
@@ -60,7 +61,11 @@ class ShortcutListener:
         if not self._portal_available:
             self._warn_no_portal()
             if self._on_shortcut_unavailable:
-                GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
+                missing = get_missing_portal_backend()
+                if missing:
+                    GLib.idle_add(self._on_shortcut_unavailable, "missing_backend", missing)
+                else:
+                    GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
             self.monitor_settings()
             logger.info("Shortcut listener started (portal unavailable, monitoring settings only).")
             return
@@ -76,7 +81,6 @@ class ShortcutListener:
                 self._activated_sub_id = 0
             self._warn_no_portal()
             if self._on_shortcut_unavailable:
-                from ui.utils.system_info import get_missing_portal_backend
                 missing = get_missing_portal_backend()
                 if missing:
                     GLib.idle_add(self._on_shortcut_unavailable, "missing_backend", missing)
@@ -407,7 +411,6 @@ class ShortcutListener:
             if response_code != 0:
                 logger.error("BindShortcuts failed with response code %d", response_code)
                 if self._on_shortcut_unavailable:
-                    from ui.utils.system_info import get_missing_portal_backend
                     missing = get_missing_portal_backend()
                     if missing:
                         GLib.idle_add(self._on_shortcut_unavailable, "missing_backend", missing)
@@ -549,7 +552,11 @@ class ShortcutListener:
         if not self._portal_available:
             logger.info("Portal not available, cannot reload shortcut via portal.")
             if self._on_shortcut_unavailable:
-                GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
+                missing = get_missing_portal_backend()
+                if missing:
+                    GLib.idle_add(self._on_shortcut_unavailable, "missing_backend", missing)
+                else:
+                    GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
             return
         if self._busy:
             logger.debug("Session operation in progress, skipping reload.")
