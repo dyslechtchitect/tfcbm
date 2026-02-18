@@ -13,6 +13,28 @@ A clipboard manager for Linux. Keeps a searchable history of everything you copy
 
 ## Install
 
+### AUR (Arch Linux)
+
+Install with an AUR helper:
+
+```bash
+yay -S --noconfirm tfcbm
+```
+
+Or with `paru`:
+
+```bash
+paru -S --noconfirm tfcbm
+```
+
+Or build manually:
+
+```bash
+git clone https://aur.archlinux.org/tfcbm.git /tmp/tfcbm-aur
+cd /tmp/tfcbm-aur
+makepkg -si
+```
+
 ### Snap Store
 
 <p align="center">
@@ -60,6 +82,17 @@ flatpak install tfcbm-x86_64.flatpak
 Press `Ctrl+Escape` (configurable) to open. Click an item or press Enter to copy it back to the clipboard.
 
 ## Build and Install Locally
+
+### AUR (Arch Linux)
+
+```bash
+sudo pacman -S --needed base-devel git python python-gobject gtk4 gdk-pixbuf2 meson xdotool
+git clone https://aur.archlinux.org/tfcbm.git /tmp/tfcbm-aur
+cd /tmp/tfcbm-aur
+makepkg -si
+```
+
+(Or use `./aur-test.sh` from the source repo to automate this.)
 
 ### Snap
 
