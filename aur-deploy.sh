@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AUR_DIR="$SCRIPT_DIR/aur-tfcbm"
-PKGVER="1.1.1"
+PKGVER="1.1.2"
 
 # Allow overriding version: ./aur-deploy.sh 1.2.0
 if [ -n "$1" ]; then
