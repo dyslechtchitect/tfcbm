@@ -188,7 +188,8 @@ class ClipboardApp(Gtk.Application):
         if reason == "missing_backend" and details:
             pkg_name, install_cmd = details
             title = "Keyboard Shortcut Setup"
-            text = "To enable global keyboard shortcuts, install the portal backend and restart the app:"
+            text = ("To enable global keyboard shortcuts, install the portal backend, "
+                    "then restart your session (logout and log back in):")
             command = install_cmd
         else:
             title = "Keyboard Shortcut Setup"
