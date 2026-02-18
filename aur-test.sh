@@ -1,6 +1,6 @@
 #!/bin/bash
 # AUR Local Test Script for TFCBM
-# Run this on Arch Linux to build and install the package locally.
+# Builds and installs from the LOCAL git checkout (not a GitHub release tag).
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,17 +10,22 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 echo "==> Installing build dependencies..."
 sudo pacman -S --needed --noconfirm base-devel git pacman-contrib python python-gobject gtk4 gdk-pixbuf2 meson xdotool
 
-echo "==> Setting up build directory in $WORK_DIR..."
-cd "$WORK_DIR"
-
 # Get maintainer email
 read -rp "Enter your maintainer email for PKGBUILD: " MAINTAINER_EMAIL
+
+# Create a tarball from the local checkout
+PKGVER="$(git -C "$SCRIPT_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")-local"
+echo "==> Creating tarball from local checkout (version: $PKGVER)..."
+git -C "$SCRIPT_DIR" archive --format=tar.gz --prefix="tfcbm-${PKGVER}/" HEAD > "$WORK_DIR/tfcbm-${PKGVER}.tar.gz"
+
+echo "==> Setting up build directory in $WORK_DIR..."
+cd "$WORK_DIR"
 
 # Write the PKGBUILD
 cat > PKGBUILD << PKGBUILD_EOF
 # Maintainer: dyslechtchitect <${MAINTAINER_EMAIL}>
 pkgname=tfcbm
-pkgver=1.1.1
+pkgver=${PKGVER}
 pkgrel=1
 pkgdesc="The Friendly Clipboard Manager - Track and manage your clipboard history"
 arch=('any')
@@ -38,7 +43,7 @@ optdepends=(
   'libadwaita: adaptive GNOME styling'
   'webkit2gtk-6.0: HTML preview in clipboard items'
 )
-source=("\${pkgname}-\${pkgver}.tar.gz::https://github.com/dyslechtchitect/tfcbm/archive/refs/tags/v\${pkgver}.tar.gz")
+source=("tfcbm-\${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 build() {
@@ -53,12 +58,9 @@ package() {
 }
 PKGBUILD_EOF
 
-echo "==> Generating checksums..."
-updpkgsums
-
 echo "==> Building and installing package..."
 makepkg -si --noconfirm
 
 echo ""
-echo "==> SUCCESS! tfcbm is installed."
+echo "==> SUCCESS! tfcbm (local build) is installed."
 echo "    Run 'tfcbm --activate' to verify it works."

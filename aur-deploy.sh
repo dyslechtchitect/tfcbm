@@ -1,6 +1,7 @@
 #!/bin/bash
 # AUR Deploy Script for TFCBM
 # Run this on Arch Linux to publish or update the AUR package.
+# Does a local test build first, then pushes to AUR.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,6 +19,51 @@ sudo pacman -S --needed --noconfirm base-devel git pacman-contrib
 # Get maintainer email
 read -rp "Enter your maintainer email for PKGBUILD: " MAINTAINER_EMAIL
 
+# --- Local test build first ---
+echo ""
+echo "==> Running local test build before deploying..."
+TEST_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEST_DIR"' EXIT
+
+# Create tarball from local checkout to verify meson build works
+git -C "$SCRIPT_DIR" archive --format=tar.gz --prefix="tfcbm-${PKGVER}/" HEAD > "$TEST_DIR/tfcbm-${PKGVER}.tar.gz"
+
+cat > "$TEST_DIR/PKGBUILD" << TEST_EOF
+pkgname=tfcbm
+pkgver=${PKGVER}
+pkgrel=1
+pkgdesc="The Friendly Clipboard Manager - Track and manage your clipboard history"
+arch=('any')
+url="https://github.com/dyslechtchitect/tfcbm"
+license=('GPL-3.0-or-later')
+depends=(
+  'python'
+  'python-gobject'
+  'gtk4'
+  'gdk-pixbuf2'
+  'meson'
+  'xdotool'
+)
+source=("tfcbm-\${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "\${pkgname}-\${pkgver}"
+  meson setup builddir --prefix=/usr
+  meson compile -C builddir
+}
+
+package() {
+  cd "\${pkgname}-\${pkgver}"
+  meson install -C builddir --destdir="\${pkgdir}"
+}
+TEST_EOF
+
+(cd "$TEST_DIR" && makepkg -f)
+echo "==> Local test build PASSED."
+
+# --- Deploy to AUR ---
+echo ""
 echo "==> Deploying tfcbm v${PKGVER} to AUR..."
 
 # Clone or update the AUR repo
