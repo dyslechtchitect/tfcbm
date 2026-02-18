@@ -70,7 +70,12 @@ echo "==> Deploying tfcbm v${PKGVER} to AUR..."
 if [ -d "$AUR_DIR" ]; then
   echo "==> AUR repo already exists, pulling latest..."
   cd "$AUR_DIR"
-  git pull
+  if ! git pull 2>/dev/null; then
+    echo "==> Pull failed (stale repo?), re-cloning..."
+    rm -rf "$AUR_DIR"
+    git clone ssh://aur@aur.archlinux.org/tfcbm.git "$AUR_DIR"
+    cd "$AUR_DIR"
+  fi
 else
   echo "==> Cloning AUR repo..."
   git clone ssh://aur@aur.archlinux.org/tfcbm.git "$AUR_DIR"
