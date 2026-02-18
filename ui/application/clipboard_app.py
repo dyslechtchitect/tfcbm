@@ -159,7 +159,9 @@ class ClipboardApp(Gtk.Application):
         if self.shortcut_listener:
             return
         from ui.services.shortcut_listener import ShortcutListener
-        self.shortcut_listener = ShortcutListener(on_activated=self._on_shortcut_activated)
+        self.shortcut_listener = ShortcutListener(
+            on_activated=self._on_shortcut_activated,
+            on_shortcut_unavailable=self._on_shortcut_unavailable)
         self.shortcut_listener.start()
         logger.info("Shortcut listener started")
 
@@ -169,6 +171,61 @@ class ClipboardApp(Gtk.Application):
             self.dbus_service.activate_window(activation_token, timestamp)
         else:
             logger.warning("No dbus_service available for shortcut activation")
+
+    def _on_shortcut_unavailable(self, reason, details):
+        """Show an info dialog when global shortcuts can't be set up."""
+        parent = self.main_window
+        if not parent:
+            return
+
+        if reason == "missing_backend" and details:
+            pkg_name, install_cmd = details
+            title = "Keyboard Shortcut Setup"
+            text = "To enable global keyboard shortcuts, install the portal backend and restart the app:"
+            command = install_cmd
+        else:
+            title = "Keyboard Shortcut Setup"
+            text = ("To use a global shortcut, set up a custom keybinding in your "
+                    "desktop environment's keyboard settings that runs:")
+            command = "tfcbm"
+
+        dialog = Gtk.MessageDialog(
+            transient_for=parent,
+            modal=True,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text=title,
+            secondary_text=text,
+        )
+
+        # Copyable command snippet
+        cmd_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        cmd_box.set_margin_start(12)
+        cmd_box.set_margin_end(12)
+        cmd_box.set_margin_bottom(6)
+
+        cmd_entry = Gtk.Entry()
+        cmd_entry.set_text(command)
+        cmd_entry.set_editable(False)
+        cmd_entry.set_hexpand(True)
+        cmd_entry.add_css_class("monospace")
+        cmd_box.append(cmd_entry)
+
+        copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
+        copy_btn.set_tooltip_text("Copy to clipboard")
+        def on_copy(btn):
+            display = parent.get_display()
+            clipboard = display.get_clipboard()
+            clipboard.set(command)
+        copy_btn.connect("clicked", on_copy)
+        cmd_box.append(copy_btn)
+
+        dialog.get_content_area().append(cmd_box)
+
+        dialog.connect("response", lambda d, r: d.destroy())
+        dialog.present()
+
+        logger.info("Shortcut setup info shown: %s (reason=%s)", command, reason)
 
     def _stop_shortcut_listener(self):
         """Stop the shortcut listener."""

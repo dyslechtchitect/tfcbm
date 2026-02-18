@@ -35,7 +35,7 @@ SHORTCUT_ID_PREFIX = "toggle-clipboard"
 
 
 class ShortcutListener:
-    def __init__(self, on_activated=None):
+    def __init__(self, on_activated=None, on_shortcut_unavailable=None):
         self.bus = None
         self.session_path = None
         self.monitor = None
@@ -45,6 +45,7 @@ class ShortcutListener:
         self._busy = False
         self._last_activate_time = 0
         self._on_activated_callback = on_activated
+        self._on_shortcut_unavailable = on_shortcut_unavailable
         self._active_shortcut_id = None
         self._bind_response_sub_id = 0
 
@@ -58,6 +59,8 @@ class ShortcutListener:
         self._portal_available = self._check_portal_available()
         if not self._portal_available:
             self._warn_no_portal()
+            if self._on_shortcut_unavailable:
+                GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
             self.monitor_settings()
             logger.info("Shortcut listener started (portal unavailable, monitoring settings only).")
             return
@@ -396,6 +399,13 @@ class ShortcutListener:
             response_code, results = params.unpack()
             if response_code != 0:
                 logger.error("BindShortcuts failed with response code %d", response_code)
+                if self._on_shortcut_unavailable:
+                    from ui.utils.system_info import get_missing_portal_backend
+                    missing = get_missing_portal_backend()
+                    if missing:
+                        GLib.idle_add(self._on_shortcut_unavailable, "missing_backend", missing)
+                    else:
+                        GLib.idle_add(self._on_shortcut_unavailable, "bind_error", None)
                 return
             shortcuts_result = results.get("shortcuts", [])
             logger.info("Shortcuts bound successfully: %s", shortcuts_result)
@@ -532,6 +542,8 @@ class ShortcutListener:
         if not self._portal_available:
             logger.info("Portal not available, updating gsettings shortcut fallback.")
             self._register_gsettings_shortcut()
+            if self._on_shortcut_unavailable:
+                GLib.idle_add(self._on_shortcut_unavailable, "unsupported_de", None)
             return
         if self._busy:
             logger.debug("Session operation in progress, skipping reload.")

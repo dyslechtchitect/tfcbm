@@ -1,6 +1,7 @@
 """System information collection for debugging."""
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -66,6 +67,31 @@ def get_system_info() -> dict:
         pass
 
     return info
+
+
+def get_missing_portal_backend():
+    """Return (package_name, install_command) if portal backend is missing, else None."""
+    if 'FLATPAK_ID' in os.environ or os.environ.get('SNAP'):
+        return None
+    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
+    if 'gnome' in desktop:
+        backend = 'xdg-desktop-portal-gnome'
+    elif 'kde' in desktop or 'plasma' in desktop:
+        backend = 'xdg-desktop-portal-kde'
+    else:
+        return None
+    if shutil.which(backend):
+        return None
+    # Detect package manager for install command
+    if Path('/etc/arch-release').exists():
+        cmd = f"sudo pacman -S {backend}"
+    elif shutil.which('dnf'):
+        cmd = f"sudo dnf install {backend}"
+    elif shutil.which('apt'):
+        cmd = f"sudo apt install {backend}"
+    else:
+        cmd = f"Install '{backend}' using your package manager"
+    return (backend, cmd)
 
 
 def log_system_info(logger):
