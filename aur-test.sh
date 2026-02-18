@@ -14,7 +14,7 @@ sudo pacman -S --needed --noconfirm base-devel git pacman-contrib python python-
 read -rp "Enter your maintainer email for PKGBUILD: " MAINTAINER_EMAIL
 
 # Create a tarball from the local checkout
-PKGVER="$(git -C "$SCRIPT_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")-local"
+PKGVER="$(git -C "$SCRIPT_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0").local"
 echo "==> Creating tarball from local checkout (version: $PKGVER)..."
 git -C "$SCRIPT_DIR" archive --format=tar.gz --prefix="tfcbm-${PKGVER}/" HEAD > "$WORK_DIR/tfcbm-${PKGVER}.tar.gz"
 
