@@ -135,6 +135,7 @@ jobs:
 
       - name: Build AppImage
         run: |
+          sudo apt-get update
           VERSION="${GITHUB_REF_NAME#v}"
           ./build-appimage.sh "$VERSION"
 
