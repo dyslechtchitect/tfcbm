@@ -13,6 +13,15 @@ A clipboard manager for Linux. Keeps a searchable history of everything you copy
 
 ## Install
 
+### AppImage
+
+Download the latest `.AppImage` from the [releases page](https://github.com/dyslechtchitect/tfcbm/releases/latest), then:
+
+```bash
+chmod +x tfcbm-*.AppImage
+./tfcbm-*.AppImage
+```
+
 ### AUR (Arch Linux)
 
 Install with an AUR helper:
@@ -82,6 +91,15 @@ flatpak install tfcbm-x86_64.flatpak
 Press `Ctrl+Escape` (configurable) to open. Click an item or press Enter to copy it back to the clipboard.
 
 ## Build and Install Locally
+
+### AppImage
+
+```bash
+git clone https://github.com/dyslechtchitect/tfcbm.git
+cd tfcbm
+./build-appimage.sh
+./tfcbm-*.AppImage
+```
 
 ### AUR (Arch Linux)
 

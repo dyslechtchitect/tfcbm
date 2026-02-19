@@ -422,6 +422,10 @@ build-test/
 repo*
 *.flatpak
 
+# === AppImage Build Artifacts ===
+appimage-build/
+*.AppImage
+
 # === Internal Documentation (keep only README.md) ===
 docs/
 **/README_*.md
