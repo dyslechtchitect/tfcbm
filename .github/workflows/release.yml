@@ -125,10 +125,29 @@ jobs:
           name: tfcbm-snap
           path: ${{ steps.build.outputs.snap }}
 
+  build-appimage:
+    name: Build AppImage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build AppImage
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./build-appimage.sh "$VERSION"
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfcbm-appimage
+          path: "*.AppImage"
+
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build, build-snap]
+    needs: [build, build-snap, build-appimage]
     permissions:
       contents: write
 
@@ -143,6 +162,11 @@ jobs:
         with:
           name: tfcbm-snap
 
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfcbm-appimage
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -151,3 +175,4 @@ jobs:
             tfcbm-x86_64.flatpak
             tfcbm-aarch64.flatpak
             *.snap
+            *.AppImage
