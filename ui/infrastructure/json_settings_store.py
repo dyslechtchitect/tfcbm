@@ -71,6 +71,16 @@ class JsonSettingsStore(ISettingsStore):
             logger.error("Error saving shortcut: %s", e)
             return False
 
+    def get_shortcut_dialog_dismissed(self) -> bool:
+        """Return True if the user has dismissed the shortcut setup dialog permanently."""
+        return bool(self._load_config().get('shortcut_dialog_dismissed', False))
+
+    def set_shortcut_dialog_dismissed(self, dismissed: bool):
+        """Persist whether the shortcut setup dialog should be suppressed."""
+        config = self._load_config()
+        config['shortcut_dialog_dismissed'] = dismissed
+        self._save_config(config)
+
     def get_theme(self) -> dict:
         """Read theme settings from JSON."""
         config = self._load_config()

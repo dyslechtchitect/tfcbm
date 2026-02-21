@@ -1,5 +1,6 @@
 """Main TFCBM application - DE-agnostic version using GTK4."""
 
+import json
 import logging
 import os
 import signal
@@ -175,13 +176,10 @@ class ClipboardApp(Gtk.Application):
     def _on_shortcut_unavailable(self, reason, details):
         """Show an info dialog when global shortcuts can't be set up."""
         try:
-            settings_path = self._settings_path()
-            if settings_path.exists():
-                with open(settings_path, 'r') as f:
-                    cfg = json.load(f)
-                if cfg.get('shortcut_dialog_dismissed'):
-                    logger.debug("Shortcut dialog suppressed by user preference")
-                    return
+            from ui.infrastructure.json_settings_store import JsonSettingsStore
+            if JsonSettingsStore().get_shortcut_dialog_dismissed():
+                logger.debug("Shortcut dialog suppressed by user preference")
+                return
             self._show_shortcut_unavailable_dialog(reason, details)
         except Exception as e:
             logger.error("Failed to show shortcut unavailable dialog: %s", e)
@@ -246,15 +244,8 @@ class ClipboardApp(Gtk.Application):
         def on_response(d, r):
             if dont_show_check.get_active():
                 try:
-                    settings_path = self._settings_path()
-                    cfg = {}
-                    if settings_path.exists():
-                        with open(settings_path, 'r') as f:
-                            cfg = json.load(f)
-                    cfg['shortcut_dialog_dismissed'] = True
-                    settings_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(settings_path, 'w') as f:
-                        json.dump(cfg, f, indent=2)
+                    from ui.infrastructure.json_settings_store import JsonSettingsStore
+                    JsonSettingsStore().set_shortcut_dialog_dismissed(True)
                     logger.info("Shortcut dialog suppressed by user request")
                 except Exception as e:
                     logger.error("Failed to save shortcut dialog preference: %s", e)
