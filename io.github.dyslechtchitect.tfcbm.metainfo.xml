@@ -44,6 +44,14 @@
     <content_rating type="oars-1.1"/>
 
     <releases>
+        <release version="1.1.5" date="2026-02-21">
+            <description>
+                <p>Usability fix</p>
+                <ul>
+                    <li>Add "Don't show this again" option to the Keyboard Shortcut Setup dialog, fixing repeated popups on unsupported desktop environments (e.g. Sway)</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.1.1" date="2026-02-16">
             <description>
                 <p>Theme bugfixes</p>

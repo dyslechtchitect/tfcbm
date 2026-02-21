@@ -5,7 +5,7 @@ set -e
 
 APP_ID="io.github.dyslechtchitect.tfcbm"
 APP_NAME="tfcbm"
-VERSION="1.1.2"
+VERSION="1.1.5"
 ARCH="x86_64"
 
 # Allow overriding version: ./build-appimage.sh 1.2.0

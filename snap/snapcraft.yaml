@@ -1,5 +1,5 @@
 name: tfcbm
-version: '1.1.1'
+version: '1.1.5'
 summary: The Friendly Clipboard Manager
 description: |
   Track clipboard history with support for text, images, and files.

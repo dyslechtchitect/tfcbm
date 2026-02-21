@@ -43,7 +43,7 @@ def show_about_dialog(parent_window):
 
     about.set_program_name("TFCBM")
     about.set_logo_icon_name("io.github.dyslechtchitect.tfcbm")
-    about.set_version("1.1.1")
+    about.set_version("1.1.5")
     about.set_comments(f"{random_tagline}\n\nA clipboard manager that keeps your copy-paste history organized and accessible.")
     about.set_website("https://github.com/dyslechtchitect/tfcbm")
     about.set_website_label("GitHub")
