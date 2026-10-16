@@ -44,6 +44,16 @@
     <content_rating type="oars-1.1"/>
 
     <releases>
+        <release version="1.1.6" date="2026-10-16">
+            <description>
+                <p>AppImage fixes</p>
+                <ul>
+                    <li>Fix the AppImage failing to start: the launcher looked for the application in the host's /usr/lib/tfcbm instead of inside the bundle</li>
+                    <li>Bundle PyGObject in AppImages built on Debian/Ubuntu, which previously shipped without it</li>
+                    <li>Show the actual launch command in the Keyboard Shortcut Setup dialog instead of always suggesting "tfcbm"</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.1.5" date="2026-02-21">
             <description>
                 <p>Usability fix</p>
