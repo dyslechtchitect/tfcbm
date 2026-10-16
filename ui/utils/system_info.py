@@ -6,6 +6,18 @@ import subprocess
 from pathlib import Path
 
 
+def get_launch_command() -> str:
+    """Return the command that starts tfcbm the way it is currently installed."""
+    appimage = os.environ.get('APPIMAGE')
+    if appimage:
+        return appimage
+    if os.environ.get('SNAP'):
+        return 'snap run tfcbm'
+    if 'FLATPAK_ID' in os.environ:
+        return 'flatpak run io.github.dyslechtchitect.tfcbm'
+    return 'tfcbm'
+
+
 def get_system_info() -> dict:
     """
     Collect system information for debugging.

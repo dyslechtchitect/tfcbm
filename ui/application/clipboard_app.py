@@ -7,6 +7,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+from ui.utils.system_info import get_launch_command
 from ui.windows.license_window import LicenseWindow
 import gi
 
@@ -200,7 +201,7 @@ class ClipboardApp(Gtk.Application):
             title = "Keyboard Shortcut Setup"
             text = ("To use a global shortcut, set up a custom keybinding in your "
                     "desktop environment's keyboard settings that runs:")
-            command = "tfcbm"
+            command = get_launch_command()
 
         dialog = Gtk.MessageDialog(
             transient_for=parent,

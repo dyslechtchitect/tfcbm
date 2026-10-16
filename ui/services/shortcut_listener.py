@@ -16,7 +16,7 @@ import time
 from gi.repository import Gio, GLib
 
 from ui.domain.keyboard import KeyboardShortcut
-from ui.utils.system_info import get_missing_portal_backend
+from ui.utils.system_info import get_launch_command, get_missing_portal_backend
 
 logger = logging.getLogger("TFCBM.ShortcutListener")
 logging.basicConfig(level=logging.INFO)
@@ -149,7 +149,7 @@ class ShortcutListener:
             logger.warning(
                 "XDG GlobalShortcuts portal is not available on this desktop environment. "
                 "To use a global shortcut, configure one manually in your DE's keyboard settings "
-                "that runs: snap run tfcbm"
+                "that runs: %s" % get_launch_command()
             )
 
     def _check_portal_available(self):
