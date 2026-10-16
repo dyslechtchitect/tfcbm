@@ -1,14 +1,59 @@
 #!/bin/bash
-export LD_LIBRARY_PATH="$SNAP/usr/lib:$SNAP/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+# Root of the bundle the app is running from: $SNAP under snap, $APPDIR under
+# an AppImage (both the runtime and linuxdeploy's AppRun export it), empty for
+# a plain system install. Every installed path is relative to it.
+APPROOT="${SNAP:-$APPDIR}"
 
-PKGLIBDIR="${SNAP}@pkglibdir@"
+# Fall back to locating the bundle from this script when neither is set, e.g.
+# when an AppDir is executed directly rather than through the AppImage runtime.
+if [ -z "$APPROOT" ]; then
+    SELF_DIR="$(dirname "$(readlink -f "$0")")"
+    for candidate in "$SELF_DIR" "$SELF_DIR/../.."; do
+        if [ -f "$candidate@pkglibdir@/main.py" ]; then
+            APPROOT="$(cd "$candidate" && pwd)"
+            # A system install resolves to "/", which needs no prefix at all.
+            [ "$APPROOT" = "/" ] && APPROOT=""
+            break
+        fi
+    done
+fi
+
+export LD_LIBRARY_PATH="$APPROOT/usr/lib:$APPROOT/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+
+PKGLIBDIR="${APPROOT}@pkglibdir@"
 export PKGLIBDIR
-PYTHON="${SNAP:+python3}"
-PYTHON="${PYTHON:-@PYTHON@}"
+
+# Snap carries its own python3 on PATH; an AppImage bundles the interpreter
+# inside the bundle; a system install uses the one meson was configured with.
+if [ -n "$SNAP" ]; then
+    PYTHON="python3"
+elif [ -n "$APPROOT" ] && [ -x "$APPROOT/usr/bin/python3" ]; then
+    PYTHON="$APPROOT/usr/bin/python3"
+else
+    PYTHON="@PYTHON@"
+fi
 export PYTHON
 
 export PYTHONPATH="$PKGLIBDIR:${PYTHONPATH}"
-cd "$PKGLIBDIR"
+
+# The bundled interpreter finds its own stdlib relative to argv[0], but the
+# site-packages that hold the PyGObject bindings are only picked up when the
+# bundle layout matches the build host's, so add them explicitly.
+if [ -z "$SNAP" ] && [ -n "$APPROOT" ]; then
+    for site_dir in "$APPROOT"/usr/lib/python3/dist-packages \
+                    "$APPROOT"/usr/lib/python3.*/dist-packages \
+                    "$APPROOT"/usr/lib/python3.*/site-packages \
+                    "$APPROOT"/usr/local/lib/python3.*/dist-packages \
+                    "$APPROOT"/usr/local/lib/python3.*/site-packages; do
+        [ -d "$site_dir" ] && export PYTHONPATH="$site_dir:$PYTHONPATH"
+    done
+    export PATH="$APPROOT/usr/bin:$PATH"
+fi
+
+cd "$PKGLIBDIR" || {
+    echo "Error: tfcbm is not installed at $PKGLIBDIR" >&2
+    exit 1
+}
 
 # Log directory for server output
 LOG_DIR="${XDG_RUNTIME_DIR:-/tmp}"
@@ -50,4 +95,4 @@ if [ ! -S "$SOCKET_PATH" ]; then
 fi
 
 # Launch the UI (handles clipboard monitor + shortcut listener in-process)
-exec -a tfcbm-ui $PYTHON ui/main.py --server-pid $SERVER_PID --activate "$@"
+exec -a tfcbm-ui "$PYTHON" "$PKGLIBDIR/ui/main.py" --server-pid $SERVER_PID --activate "$@"

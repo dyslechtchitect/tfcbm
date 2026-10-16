@@ -63,18 +63,35 @@ cp "$(which python3)" "$APPDIR/usr/bin/python3"
 mkdir -p "$APPDIR/usr/lib/python${PYTHON_VER}"
 cp -r "/usr/lib/python${PYTHON_VER}/." "$APPDIR/usr/lib/python${PYTHON_VER}/"
 
-# Copy PyGObject bindings
-SITE_PACKAGES=$(python3 -c "import site; print(site.getsitepackages()[0])")
-mkdir -p "$APPDIR/$SITE_PACKAGES"
-for pkg in gi pygtkcompat cairo; do
-  if [ -d "$SITE_PACKAGES/$pkg" ]; then
-    cp -r "$SITE_PACKAGES/$pkg" "$APPDIR/$SITE_PACKAGES/"
-  fi
-done
-# Copy .so modules for gi (pycairo, etc.)
-for so in $(find "$SITE_PACKAGES" -maxdepth 1 -name "*.so" 2>/dev/null); do
-  cp "$so" "$APPDIR/$SITE_PACKAGES/"
-done
+# Copy PyGObject bindings. Every site directory has to be searched, not just
+# the first one: on Debian/Ubuntu getsitepackages()[0] is the (empty)
+# /usr/local/lib/pythonX.Y/dist-packages while gi lives in
+# /usr/lib/python3/dist-packages, so taking [0] silently bundles nothing.
+# Each directory is mirrored at its own path so the bundled interpreter, whose
+# prefix becomes $APPDIR/usr, finds the packages where it expects them.
+FOUND_GI=0
+while read -r SITE_PACKAGES; do
+  [ -d "$SITE_PACKAGES" ] || continue
+  mkdir -p "$APPDIR$SITE_PACKAGES"
+  for pkg in gi pygtkcompat cairo; do
+    if [ -d "$SITE_PACKAGES/$pkg" ]; then
+      cp -r "$SITE_PACKAGES/$pkg" "$APPDIR$SITE_PACKAGES/"
+      [ "$pkg" = "gi" ] && FOUND_GI=1
+    fi
+  done
+  # Copy .so modules sitting next to the packages (pycairo, etc.)
+  for so in "$SITE_PACKAGES"/*.so; do
+    [ -f "$so" ] && cp "$so" "$APPDIR$SITE_PACKAGES/"
+  done
+done <<EOF
+$(python3 -c "import site; print('\n'.join(site.getsitepackages()))")
+EOF
+
+if [ "$FOUND_GI" -ne 1 ]; then
+  echo "ERROR: PyGObject (gi) not found in any site directory." >&2
+  echo "       Install python3-gi / python-gobject before building." >&2
+  exit 1
+fi
 
 # --- Step 4: Bundle GI typelibs ---
 echo "==> Bundling GI typelibs..."
